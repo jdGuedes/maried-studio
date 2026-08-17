@@ -50,6 +50,7 @@ export type Generation = {
   product: string;
   mode: GenerationMode;
   scene_template: string | null;
+  model_reference: string | null;
 
   status:
     | "CREATED"

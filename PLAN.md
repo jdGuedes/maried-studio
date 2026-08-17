@@ -63,11 +63,11 @@ Critério de aceite:
 
 ## Fase 3 - BODY_DETAIL para todas as categorias
 
-Status: planejada.
+Status: parcialmente implementada.
 
 Tarefas:
 
-- remover direções visuais como escolha do usuário para `BODY_DETAIL`;
+- remover direções visuais como escolha do usuário para `BODY_DETAIL` no contrato backend;
 - exigir `model_reference_id`;
 - mapear área corporal automaticamente por categoria;
 - preservar regra validada de `EARRING`;
@@ -90,6 +90,13 @@ Critério de aceite:
 - sistema escolhe área corporal;
 - cada categoria possui regra especializada;
 - geração consome 1 crédito.
+
+Implementado em `AI-002`:
+
+- `BODY_DETAIL` exige `model_reference_id` e rejeita `scene_template_id`.
+- `Generation` preserva vínculo com `ModelReference`.
+- `PromptEngine` recebe instrução da `ModelReference`.
+- Contratos de payload para `STILL`, `INSTAGRAM` e `MODEL` também rejeitam combinações inválidas.
 
 ## Fase 4 - Cenários Instagramáveis
 
@@ -324,16 +331,20 @@ Responsabilidades:
 
 ### AI-002 - Detalhe no Corpo
 
-Status inicial: `BLOCKED`.
+Status: `AUTO_VALIDATED`.
 
 `DEPENDS_ON: AI-001`
 
 Escopo:
 - substituir direção visual por ModelReference;
 - preservar `EARRING + BODY_DETAIL`;
-- regras para colar, anel, pulseira e tornozeleira;
+- preparar contrato para regras por categoria;
 - área corporal automática;
 - testes.
+
+Pendências de produto:
+- aprovar regras visuais finais para colar, anel, pulseira e tornozeleira;
+- validar visualmente as saídas antes de produção.
 
 ## Workstream INSTAGRAMABLE
 
@@ -373,6 +384,9 @@ Escopo:
 Status inicial: `BLOCKED`.
 
 `DEPENDS_ON`: contratos backend estabilizados dos modos expostos.
+
+Observação:
+Integrações pontuais já podem consumir os contratos estabilizados de `STILL`, `BODY_DETAIL`, `INSTAGRAM` e `MODEL`, mas a experiência completa dos quatro modos permanece dependente das entregas estruturais e visuais de `AI-003` e `AI-004`.
 
 Escopo:
 - Still sem escolha adicional;

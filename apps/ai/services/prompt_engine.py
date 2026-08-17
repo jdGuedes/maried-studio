@@ -215,18 +215,6 @@ class PromptEngine:
             "around the referenced jewelry. "
             "Do not generate a new jewelry design inspired by the reference.\n\n"
 
-            "MODEL:\n"
-            "Use an extremely photogenic Brazilian woman approximately "
-            "25 to 35 years old with sophisticated, elegant and natural beauty. "
-            "Use realistic healthy skin texture, very light makeup and a "
-            "delicate natural expression. Avoid artificial or plastic AI-looking "
-            "skin.\n\n"
-
-            "HAIR:\n"
-            "Use well-groomed medium-brown straight or slightly wavy hair. "
-            "Keep the hair behind the ear so that no part of the jewelry is "
-            "hidden.\n\n"
-
             "COMPOSITION:\n"
             "Use a professional close-up showing only the relevant part of "
             "the face, jawline, ear, neck and hair. "
@@ -263,6 +251,7 @@ class PromptEngine:
         mode,
         scene_template,
         generation_rule,
+        model_reference=None,
     ):
         rules = (
             PreservationRule.objects
@@ -349,6 +338,13 @@ class PromptEngine:
                 if scene_template
                 else
                 "Use a clean professional commercial composition."
+            ),
+
+            (
+                "MODEL REFERENCE REQUIREMENTS:\n"
+                + model_reference.prompt_instruction
+                if model_reference
+                else ""
             ),
 
             (

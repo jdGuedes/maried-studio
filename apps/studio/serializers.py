@@ -36,6 +36,11 @@ class GenerationCreateSerializer(serializers.Serializer):
         allow_null=True,
     )
 
+    model_reference_id = serializers.UUIDField(
+        required=False,
+        allow_null=True,
+    )
+
     idempotency_key = serializers.CharField(
         required=False,
         max_length=100,
@@ -46,6 +51,91 @@ class GenerationCreateSerializer(serializers.Serializer):
             "idempotency_key",
             uuid.uuid4().hex,
         )
+
+        mode = attrs["mode"]
+        scene_template_id = attrs.get("scene_template_id")
+        model_reference_id = attrs.get("model_reference_id")
+
+        if mode == GenerationMode.STILL:
+            if scene_template_id:
+                raise serializers.ValidationError(
+                    {
+                        "scene_template_id": (
+                            "Still não usa cenário."
+                        )
+                    }
+                )
+
+            if model_reference_id:
+                raise serializers.ValidationError(
+                    {
+                        "model_reference_id": (
+                            "Still não usa modelo."
+                        )
+                    }
+                )
+
+        if mode == GenerationMode.BODY_DETAIL:
+            if scene_template_id:
+                raise serializers.ValidationError(
+                    {
+                        "scene_template_id": (
+                            "Detalhe no Corpo usa "
+                            "ModelReference, não cenário."
+                        )
+                    }
+                )
+
+            if not model_reference_id:
+                raise serializers.ValidationError(
+                    {
+                        "model_reference_id": (
+                            "Detalhe no Corpo exige "
+                            "uma modelo."
+                        )
+                    }
+                )
+
+        if mode == GenerationMode.INSTAGRAM:
+            if not scene_template_id:
+                raise serializers.ValidationError(
+                    {
+                        "scene_template_id": (
+                            "Instagramável exige "
+                            "um cenário."
+                        )
+                    }
+                )
+
+            if model_reference_id:
+                raise serializers.ValidationError(
+                    {
+                        "model_reference_id": (
+                            "Instagramável não usa modelo."
+                        )
+                    }
+                )
+
+        if mode == GenerationMode.MODEL:
+            if scene_template_id:
+                raise serializers.ValidationError(
+                    {
+                        "scene_template_id": (
+                            "Na Modelo usa "
+                            "ModelReference, não cenário."
+                        )
+                    }
+                )
+
+            if not model_reference_id:
+                raise serializers.ValidationError(
+                    {
+                        "model_reference_id": (
+                            "Na Modelo exige "
+                            "uma modelo."
+                        )
+                    }
+                )
 
         return attrs
 
@@ -65,6 +155,7 @@ class GenerationSerializer(serializers.ModelSerializer):
             "product",
             "mode",
             "scene_template",
+            "model_reference",
             "status",
             "failure_type",
 

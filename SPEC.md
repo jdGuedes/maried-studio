@@ -122,7 +122,7 @@ O SuperAdmin deve conseguir cadastrar, editar, ativar, desativar e ordenar cená
 
 ### ModelReference
 
-Nova entidade planejada.
+Entidade implementada.
 
 Uso oficial:
 
@@ -156,7 +156,7 @@ Dados seed iniciais:
 
 ## PromptEngine
 
-Regra de montagem planejada:
+Regra de montagem estrutural:
 
 ```text
 if mode == STILL:
@@ -201,10 +201,16 @@ Campos conceituais:
 Validações:
 
 - `STILL`: rejeitar `scene_template_id` e `model_reference_id` se não forem necessários.
-- `BODY_DETAIL`: exigir `model_reference_id`.
-- `INSTAGRAM`: exigir `scene_template_id`.
-- `MODEL`: exigir `model_reference_id`.
+- `BODY_DETAIL`: exigir `model_reference_id` e rejeitar `scene_template_id`.
+- `INSTAGRAM`: exigir `scene_template_id` e rejeitar `model_reference_id`.
+- `MODEL`: exigir `model_reference_id` e rejeitar `scene_template_id`.
 - rejeitar combinações inválidas.
+
+Implementado:
+
+- `Generation.model_reference` preserva a referência escolhida.
+- `PromptEngine.build(...)` aceita `model_reference`.
+- `SceneTemplate` é filtrado para não atender `BODY_DETAIL` quando o modo é informado.
 
 ### SuperAdmin
 

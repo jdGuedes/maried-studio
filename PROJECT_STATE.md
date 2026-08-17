@@ -73,6 +73,20 @@ Não reescrever, resumir ou otimizar EARRING + BODY_DETAIL sem autorização exp
 - Implementado: model, admin, serializer, endpoint autenticado, seed/data migration e testes.
 - Uso: catálogo global controlado para `BODY_DETAIL` e `MODEL`.
 
+### AI-002 - BODY_DETAIL com ModelReference
+
+- Status: `AUTO_VALIDATED`.
+- Branch: `agent/STRUCTURAL-READY`.
+- Implementado: `Generation.model_reference`, validações de payload por modo, persistência de `ModelReference` na geração e uso da instrução de modelo no `PromptEngine`.
+- Contrato:
+  - `STILL` rejeita cenário e modelo.
+  - `BODY_DETAIL` exige modelo e rejeita cenário.
+  - `INSTAGRAM` exige cenário e rejeita modelo.
+  - `MODEL` exige modelo e rejeita cenário.
+- Preservação: prompt `STILL` não foi alterado; regra `("EARRING", "BODY_DETAIL")` preserva fidelidade, escala, anatomia, composição e qualidade fotográfica, removendo apenas a descrição hardcoded da modelo para permitir `ModelReference`.
+- Frontend: contrato TypeScript aceita `model_reference_id`; experiência final de seleção visual permanece em `FRONT-001`.
+- Testes: cobertura de serializer, serviço, vínculo com `ModelReference`, listagem de `SceneTemplate` e regressão textual do prompt.
+
 ### ADMIN-001 - SuperAdmin Foundation
 
 - Status: `AUTO_VALIDATED`.
@@ -116,8 +130,8 @@ Ainda falta estruturar cadastro, biblioteca oficial e fluxo completo no frontend
 
 - `python manage.py check`: passou.
 - `python manage.py makemigrations --check --dry-run`: passou.
-- `python manage.py test apps.superadmin --keepdb`: passou, 5 testes.
-- `python manage.py test --keepdb`: passou, 22 testes.
+- `python manage.py test apps.studio --keepdb`: passou, 9 testes.
+- `python manage.py test --keepdb`: passou, 31 testes.
 - `npm run lint`: passou.
 - `npm run build`: passou.
 
@@ -161,8 +175,7 @@ Criar ou completar regras especializadas:
 
 Mudança planejada:
 
-- remover escolha de direção visual no `BODY_DETAIL`;
-- adicionar escolha de `ModelReference`;
+- completar regras especializadas pendentes;
 - calcular área corporal automaticamente por categoria.
 
 ### Instagramável

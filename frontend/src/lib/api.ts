@@ -354,6 +354,9 @@ type CreateGenerationInput = {
   sceneTemplateId?:
     string | null;
 
+  modelReferenceId?:
+    string | null;
+
   idempotencyKey:
     string;
 };
@@ -363,6 +366,7 @@ export async function createGeneration({
   productId,
   mode,
   sceneTemplateId,
+  modelReferenceId,
   idempotencyKey,
 }: CreateGenerationInput):
   Promise<Generation> {
@@ -397,6 +401,10 @@ export async function createGeneration({
 
             scene_template_id:
               sceneTemplateId ??
+              null,
+
+            model_reference_id:
+              modelReferenceId ??
               null,
 
             idempotency_key:

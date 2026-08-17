@@ -12,6 +12,7 @@ from apps.products.models import Product
 
 from .models import (
     Generation,
+    GenerationMode,
     SceneTemplate,
 )
 from .serializers import (
@@ -47,6 +48,12 @@ class SceneTemplateListView(generics.ListAPIView):
             )
 
         if mode:
+            if (
+                mode
+                != GenerationMode.INSTAGRAM
+            ):
+                return SceneTemplate.objects.none()
+
             qs = qs.filter(
                 generation_mode=mode
             )
@@ -86,6 +93,9 @@ class GenerationCreateView(APIView):
                 mode=data["mode"],
                 scene_template_id=data.get(
                     "scene_template_id"
+                ),
+                model_reference_id=data.get(
+                    "model_reference_id"
                 ),
                 idempotency_key=data[
                     "idempotency_key"
@@ -205,6 +215,7 @@ class GenerationDetailView(
                 "organization",
                 "product",
                 "scene_template",
+                "model_reference",
                 "generation_rule",
             )
         )

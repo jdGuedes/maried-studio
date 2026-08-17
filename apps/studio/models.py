@@ -4,7 +4,7 @@ from apps.common.models import UUIDTimeStampedModel
 
 class GenerationMode(models.TextChoices):
     INSTAGRAM = "INSTAGRAM", "Instagramável"
-    MODEL = "MODEL", "Modelo"
+    MODEL = "MODEL", "Na Modelo"
     BODY_DETAIL = "BODY_DETAIL", "Detalhe no Corpo"
     STILL = "STILL", "Still"
 
@@ -78,6 +78,7 @@ class Generation(UUIDTimeStampedModel):
     product = models.ForeignKey("products.Product", on_delete=models.PROTECT, related_name="generations")
     mode = models.CharField(max_length=20, choices=GenerationMode.choices)
     scene_template = models.ForeignKey(SceneTemplate, null=True, blank=True, on_delete=models.PROTECT, related_name="generations")
+    model_reference = models.ForeignKey("ai.ModelReference", null=True, blank=True, on_delete=models.PROTECT, related_name="generations")
     generation_rule = models.ForeignKey(GenerationRule, null=True, blank=True, on_delete=models.PROTECT, related_name="generations")
     status = models.CharField(max_length=24, choices=GenerationStatus.choices, default=GenerationStatus.CREATED)
     failure_type = models.CharField(max_length=20, choices=FailureType.choices, blank=True)

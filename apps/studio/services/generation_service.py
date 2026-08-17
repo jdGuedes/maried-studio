@@ -6,6 +6,7 @@ from django.core.files.base import ContentFile
 from django.db import transaction
 from django.utils import timezone
 
+from apps.ai.models import ModelReference
 from apps.ai.providers.openai import OpenAIImageProvider
 from apps.ai.services.prompt_engine import PromptEngine
 from apps.credits.services import CreditService
@@ -33,6 +34,7 @@ class GenerationService:
         product,
         mode,
         scene_template_id,
+        model_reference_id=None,
         idempotency_key,
     ):
         # -----------------------------------------------------
@@ -61,12 +63,11 @@ class GenerationService:
         )
 
         # -----------------------------------------------------
-        # 3. TEMPLATE
-        #
-        # STILL pode trabalhar sem SceneTemplate.
+        # 3. TEMPLATE / MODELREFERENCE
         # -----------------------------------------------------
 
         template = None
+        model_reference = None
 
         if scene_template_id:
             template = SceneTemplate.objects.get(
@@ -75,6 +76,68 @@ class GenerationService:
                 generation_mode=mode,
                 is_active=True,
             )
+
+        if model_reference_id:
+            model_reference = (
+                ModelReference.objects
+                .filter(
+                    pk=model_reference_id,
+                    is_active=True,
+                )
+                .first()
+            )
+
+            if model_reference is None:
+                raise ValueError(
+                    "ModelReference ativo "
+                    "não encontrado."
+                )
+
+        if mode == "STILL" and (
+            template
+            or model_reference
+        ):
+            raise ValueError(
+                "Still não usa cenário ou modelo."
+            )
+
+        if mode == "BODY_DETAIL":
+            if template:
+                raise ValueError(
+                    "Detalhe no Corpo usa "
+                    "ModelReference, não cenário."
+                )
+
+            if not model_reference:
+                raise ValueError(
+                    "Detalhe no Corpo exige "
+                    "uma modelo."
+                )
+
+        if mode == "INSTAGRAM":
+            if not template:
+                raise ValueError(
+                    "Instagramável exige "
+                    "um cenário."
+                )
+
+            if model_reference:
+                raise ValueError(
+                    "Instagramável não usa modelo."
+                )
+
+        if mode == "MODEL":
+            if template:
+                raise ValueError(
+                    "Na Modelo usa "
+                    "ModelReference, não cenário."
+                )
+
+            if not model_reference:
+                raise ValueError(
+                    "Na Modelo exige "
+                    "uma modelo."
+                )
 
         # -----------------------------------------------------
         # 4. CRIA A GENERATION
@@ -86,6 +149,7 @@ class GenerationService:
             product=product,
             mode=mode,
             scene_template=template,
+            model_reference=model_reference,
             generation_rule=rule,
             status=GenerationStatus.CREATED,
             idempotency_key=idempotency_key,
@@ -158,6 +222,7 @@ class GenerationService:
                     "organization",
                     "product",
                     "scene_template",
+                    "model_reference",
                     "generation_rule",
                 )
                 .get(
@@ -239,6 +304,9 @@ class GenerationService:
                 scene_template=(
                     generation.scene_template
                 ),
+                model_reference=(
+                    generation.model_reference
+                ),
                 generation_rule=(
                     generation.generation_rule
                 ),
@@ -270,6 +338,18 @@ class GenerationService:
                 "template_version": (
                     generation.scene_template.version
                     if generation.scene_template
+                    else None
+                ),
+                "model_reference_id": (
+                    str(
+                        generation.model_reference_id
+                    )
+                    if generation.model_reference_id
+                    else None
+                ),
+                "model_reference_code": (
+                    generation.model_reference.code
+                    if generation.model_reference
                     else None
                 ),
                 "framing": (
