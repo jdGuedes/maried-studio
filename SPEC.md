@@ -206,6 +206,31 @@ Validações:
 - `MODEL`: exigir `model_reference_id`.
 - rejeitar combinações inválidas.
 
+### SuperAdmin
+
+Endpoints estruturais globais:
+
+- `GET /api/superadmin/summary/`
+- `GET /api/superadmin/organizations/`
+- `GET /api/superadmin/accounts/`
+- `GET /api/superadmin/plans/`
+- `GET /api/superadmin/subscriptions/`
+- `GET /api/superadmin/credit-wallets/`
+- `GET /api/superadmin/generations/`
+- `POST /api/superadmin/credit-adjustments/`
+
+Todos exigem usuário autenticado com `is_superuser=true`.
+Usuário autenticado comum deve receber 403.
+
+`POST /api/superadmin/credit-adjustments/`:
+
+- `organization_id`
+- `amount`
+- `balance_type`: `PLAN` ou `PURCHASED`
+- `reason`
+
+O ajuste deve passar por `CreditService`, impedir saldo negativo e registrar transação com `actor`, motivo e snapshots antes/depois. Também deve registrar `AuditLog`.
+
 ## Frontend
 
 Labels:

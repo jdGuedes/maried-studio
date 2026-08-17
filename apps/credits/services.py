@@ -793,3 +793,152 @@ class CreditService:
         )
 
         return wallet
+
+    # ======================================================
+    # AJUSTE ADMINISTRATIVO
+    #
+    # Usado somente por SuperAdmin via camada autorizada.
+    # Mantém snapshots e impede saldo negativo.
+    # ======================================================
+
+    @staticmethod
+    @transaction.atomic
+    def adjust_credits(
+        wallet:
+            CreditWallet,
+        amount:
+            int,
+        *,
+        balance_type:
+            str,
+        actor,
+        reason:
+            str,
+    ):
+        if amount == 0:
+            raise ValueError(
+                "A quantidade deve ser "
+                "diferente de zero."
+            )
+
+        if not reason.strip():
+            raise ValueError(
+                "Informe o motivo do ajuste."
+            )
+
+        if balance_type not in [
+            "PLAN",
+            "PURCHASED",
+        ]:
+            raise ValueError(
+                "Tipo de saldo inválido."
+            )
+
+        wallet = (
+            CreditWallet.objects
+            .select_for_update()
+            .get(
+                pk=wallet.pk
+            )
+        )
+
+        before = (
+            CreditService
+            ._snapshot(
+                wallet
+            )
+        )
+
+        plan_amount = 0
+        purchased_amount = 0
+
+        if balance_type == "PLAN":
+            new_balance = (
+                wallet.plan_balance
+                +
+                amount
+            )
+
+            if new_balance < 0:
+                raise ValueError(
+                    "O ajuste deixaria o saldo "
+                    "do plano negativo."
+                )
+
+            if (
+                new_balance
+                <
+                wallet.plan_reserved_balance
+            ):
+                raise ValueError(
+                    "O ajuste deixaria o saldo "
+                    "do plano menor que a reserva."
+                )
+
+            wallet.plan_balance = (
+                new_balance
+            )
+
+            plan_amount = amount
+
+        else:
+            new_balance = (
+                wallet.purchased_balance
+                +
+                amount
+            )
+
+            if new_balance < 0:
+                raise ValueError(
+                    "O ajuste deixaria o saldo "
+                    "avulso negativo."
+                )
+
+            if (
+                new_balance
+                <
+                wallet.purchased_reserved_balance
+            ):
+                raise ValueError(
+                    "O ajuste deixaria o saldo "
+                    "avulso menor que a reserva."
+                )
+
+            wallet.purchased_balance = (
+                new_balance
+            )
+
+            purchased_amount = amount
+
+        CreditService._sync_totals(
+            wallet
+        )
+
+        wallet.save(
+            update_fields=[
+                "balance",
+                "plan_balance",
+                "purchased_balance",
+                "updated_at",
+            ]
+        )
+
+        CreditService._create_transaction(
+            wallet=wallet,
+            actor=actor,
+            transaction_type=(
+                CreditTransactionType
+                .ADJUSTMENT
+            ),
+            amount=amount,
+            plan_amount=plan_amount,
+            purchased_amount=purchased_amount,
+            before=before,
+            description=(
+                "Ajuste administrativo "
+                "de créditos."
+            ),
+            reason=reason.strip(),
+        )
+
+        return wallet

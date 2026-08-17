@@ -275,7 +275,7 @@ Status oficiais:
 
 ### FOUNDATION-001 - Fechar ProfileProvider
 
-Status inicial: `READY`.
+Status: `AUTO_VALIDATED`.
 
 Escopo:
 - RootLayout;
@@ -289,9 +289,11 @@ Não alterar Billing ou PromptEngine.
 ## Workstream BILLING
 
 ### BILLING-001 - Finalizar Plan e Subscription
-Status inicial: `READY` após auditoria do código atual.
+Status: `AUTO_VALIDATED`.
 
 ### BILLING-002 - SubscriptionService
+Status: `AUTO_VALIDATED`.
+
 `DEPENDS_ON: BILLING-001`
 
 ### BILLING-003 - Testes de ciclo
@@ -306,7 +308,7 @@ Billing pode avançar em paralelo com workstreams de IA quando não houver confl
 
 ### AI-001 - Criar ModelReference
 
-Status inicial: `READY`.
+Status: `AUTO_VALIDATED`.
 
 Responsabilidades:
 - entidade;
@@ -384,19 +386,25 @@ Escopo:
 
 ### ADMIN-001 - Administração global base
 
-Status inicial: `BLOCKED`.
+Status: `AUTO_VALIDATED`.
 
 Depende de contratos SuperAdmin/Billing estabilizados.
 
-Escopo futuro:
+Escopo implementado:
 - organizações;
 - contas;
 - planos;
 - assinaturas;
 - créditos;
-- cenários;
-- ModelReference;
+- gerações;
+- falhas;
+- ajuste administrativo de crédito;
 - auditoria.
+
+Pendências futuras:
+- frontend dedicado do SuperAdmin;
+- administração completa de cenários e `ModelReference`;
+- validação de experiência com responsável do produto.
 
 ## Workstream TESTS_QA
 

@@ -68,6 +68,17 @@ urlpatterns = [
             "apps.ai.urls"
         ),
     ),
+
+    # ======================================================
+    # SUPERADMIN
+    # ======================================================
+
+    path(
+        "api/superadmin/",
+        include(
+            "apps.superadmin.urls"
+        ),
+    ),
 ]
 
 

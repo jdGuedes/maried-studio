@@ -35,6 +35,62 @@ Não reescrever, resumir ou otimizar EARRING + BODY_DETAIL sem autorização exp
 
 ## IMPLEMENTADO
 
+### FOUNDATION-001 - Perfil e shell
+
+- Status: `AUTO_VALIDATED`.
+- Branch consolidada: `agent/STRUCTURAL-READY`.
+- Implementado: `ProfileProvider`, `CreditWalletProvider`, `AppShell`, `DashboardHome`, `/api/accounts/me/` e carteira real.
+- Segurança: perfil exige autenticação; PATCH comum não promove `is_superuser`; e-mail permanece somente leitura.
+- Pendências: rotas comerciais futuras para Créditos e Minhas Criações.
+
+### FOUNDATION-002 - Migration do UserManager
+
+- Status: `AUTO_VALIDATED`.
+- Branch consolidada: `agent/STRUCTURAL-READY`.
+- Commit de origem: `40a538f chore: register accounts manager migration`.
+- Implementado: `apps/accounts/migrations/0002_alter_user_managers.py`.
+- Resultado: `makemigrations --check --dry-run` não detecta pendências.
+
+### BILLING-001 - Plan e Subscription
+
+- Status: `AUTO_VALIDATED`.
+- Branch consolidada: `agent/STRUCTURAL-READY`.
+- Implementado: `Plan`, `Subscription`, `BillingCycle.MONTHLY`, status de assinatura, snapshots comerciais, admin e testes.
+
+### BILLING-002 - SubscriptionService
+
+- Status: `AUTO_VALIDATED`.
+- Branch consolidada: `agent/STRUCTURAL-READY`.
+- Commit de origem: `f339059 feat: implement BILLING-002 subscription service`.
+- Implementado: `SubscriptionService.activate(...)`, `renew_current_cycle(...)`, snapshots, cálculo mensal, atomicidade e integração com `CreditService`.
+- Créditos: concessão e renovação passam por `CreditService`; créditos avulsos permanecem na renovação.
+
+### AI-001 - ModelReference
+
+- Status: `AUTO_VALIDATED`.
+- Branch consolidada: `agent/STRUCTURAL-READY`.
+- Commit de origem: `19a2ca8 feat: implement AI-001 model reference`.
+- Implementado: model, admin, serializer, endpoint autenticado, seed/data migration e testes.
+- Uso: catálogo global controlado para `BODY_DETAIL` e `MODEL`.
+
+### ADMIN-001 - SuperAdmin Foundation
+
+- Status: `AUTO_VALIDATED`.
+- Branch: `agent/STRUCTURAL-READY`.
+- Implementado: app `apps.superadmin`, endpoint de resumo, listagens globais e ajuste administrativo de crédito.
+- APIs:
+  - `GET /api/superadmin/summary/`
+  - `GET /api/superadmin/organizations/`
+  - `GET /api/superadmin/accounts/`
+  - `GET /api/superadmin/plans/`
+  - `GET /api/superadmin/subscriptions/`
+  - `GET /api/superadmin/credit-wallets/`
+  - `GET /api/superadmin/generations/`
+  - `POST /api/superadmin/credit-adjustments/`
+- Segurança: endpoints exigem `is_superuser`; usuário comum recebe 403.
+- Créditos: ajuste usa `CreditService.adjust_credits`, impede saldo negativo e registra `CreditTransaction` + `AuditLog`.
+- Testes: cobertura de acesso SuperAdmin, 403 para usuário comum, listagens, ajuste e rejeição de saldo negativo.
+
 ### PromptEngine com quatro modos
 
 O `PromptEngine` atual já contém os modos:
@@ -53,6 +109,17 @@ Esses modos existem conceitualmente no motor, mas nem todos estão completos ou 
 `SceneTemplate` já é compatível com a ideia de cenários para o modo `INSTAGRAM`.
 
 Ainda falta estruturar cadastro, biblioteca oficial e fluxo completo no frontend, conforme o estado real do código.
+
+## TESTES DA CONSOLIDAÇÃO ESTRUTURAL
+
+Última execução na branch `agent/STRUCTURAL-READY`:
+
+- `python manage.py check`: passou.
+- `python manage.py makemigrations --check --dry-run`: passou.
+- `python manage.py test apps.superadmin --keepdb`: passou, 5 testes.
+- `python manage.py test --keepdb`: passou, 22 testes.
+- `npm run lint`: passou.
+- `npm run build`: passou.
 
 ## EM IMPLEMENTAÇÃO
 
@@ -79,22 +146,6 @@ Este pacote documental define:
 - PROJECT_STATE.
 
 ## PLANEJADO
-
-### ModelReference
-
-Criar nova entidade `ModelReference`.
-
-Usada por:
-
-- `BODY_DETAIL`;
-- `MODEL`.
-
-Biblioteca inicial:
-
-- mulher de 25 a 28 anos, pele clara, cabelo loiro;
-- mulher de 25 a 28 anos, pele clara, cabelo preto;
-- mulher de 25 a 28 anos, pele clara, cabelo ruivo;
-- mulher de 25 a 28 anos, pele negra, cabelo escuro.
 
 ### BODY_DETAIL para todas as categorias
 

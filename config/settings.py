@@ -28,6 +28,7 @@ INSTALLED_APPS = [
     "apps.billing",
     "apps.ai",
     "apps.audit",
+    "apps.superadmin",
     "corsheaders",
 ]
 
