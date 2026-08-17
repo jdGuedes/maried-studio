@@ -2,6 +2,27 @@
 
 Estado do projeto para orientar o Codex e evitar confusão entre o que já está validado, implementado, em implementação e planejado.
 
+## MARCO ATUAL
+
+`STRUCTURAL_READY`
+
+Branch local:
+
+- `agent/STRUCTURAL-READY`
+
+Última auditoria estrutural:
+
+- `git status --short`: limpo antes da auditoria.
+- `python manage.py check`: passou.
+- `python manage.py makemigrations --check --dry-run`: passou.
+- `python manage.py test --keepdb`: passou, 40 testes.
+- `npm run lint`: passou.
+- `npm run build`: passou.
+
+Observação:
+
+O push remoto segue bloqueado por credenciais locais do Git. A validação visual autenticada com upload/geração real, prompts finais, estilos finais, preços finais e gateway real permanecem fora deste marco.
+
 ## VALIDADO
 
 ### STILL

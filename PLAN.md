@@ -212,7 +212,7 @@ Critério de aceite:
 
 ## Fase 8 - Testes
 
-Status: planejada.
+Status: implementada estruturalmente.
 
 Tarefas:
 
@@ -228,6 +228,14 @@ Tarefas:
 Critério de aceite:
 
 - testes críticos passam antes de produção.
+
+Implementado em `QA-001`:
+
+- auditoria final passou com `python manage.py check`;
+- sem migrations pendentes;
+- suíte Django passou com 40 testes;
+- `npm run lint` passou;
+- `npm run build` passou.
 
 ## Fase 9 - Validação visual antes de produção
 
@@ -467,7 +475,7 @@ Pendências futuras:
 
 ### QA-001 - Regressão e integração
 
-Status inicial: `BLOCKED`.
+Status: `AUTO_VALIDATED`.
 
 Depende das features-alvo em `REVIEW`.
 
