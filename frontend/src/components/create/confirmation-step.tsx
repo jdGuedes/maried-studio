@@ -35,7 +35,9 @@ type ConfirmationStepProps = {
 
   mode: GenerationMode | null;
 
-  styleName: string | null;
+  selectionLabel: string;
+
+  selectionName: string | null;
 
   isGenerating: boolean;
 
@@ -74,10 +76,10 @@ const modeLabels:
       "Detalhe no Corpo",
 
     MODEL:
-      "Modelo",
+      "Na Modelo",
 
     INSTAGRAM:
-      "Instagram",
+      "Instagramável",
   };
 
 
@@ -90,7 +92,8 @@ export function ConfirmationStep({
   productName,
   category,
   mode,
-  styleName,
+  selectionLabel,
+  selectionName,
   isGenerating,
   error,
   onBack,
@@ -301,12 +304,17 @@ export function ConfirmationStep({
               </div>
 
 
-              {/* ESTILO */}
+              {/* SELEÇÃO VISUAL */}
 
               <div>
 
                 <div className="text-[11px] uppercase tracking-[0.12em] text-[var(--maried-caramel)]">
-                  Estilo
+                  {
+                    mode ===
+                    "STILL"
+                      ? "Seleção"
+                      : selectionLabel
+                  }
                 </div>
 
 
@@ -315,7 +323,7 @@ export function ConfirmationStep({
                   {mode ===
                   "STILL"
                     ? "Não se aplica"
-                    : styleName ??
+                    : selectionName ??
                       "-"}
 
                 </div>

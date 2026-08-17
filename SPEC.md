@@ -284,6 +284,19 @@ Fluxo:
 
 O frontend não deve expor ao usuário a escolha manual da área corporal em `BODY_DETAIL`; isso é regra do sistema.
 
+Contrato estrutural implementado:
+
+- `STILL` envia `scene_template_id=null` e `model_reference_id=null`;
+- `BODY_DETAIL` carrega modelos ativos e envia `model_reference_id`;
+- `MODEL` carrega modelos ativos e envia `model_reference_id`;
+- `INSTAGRAM` carrega cenários ativos e envia `scene_template_id`;
+- confirmação exibe Modelo ou Cenário conforme o modo.
+
+Ainda exige validação humana:
+
+- upload e geração real em sessão autenticada;
+- polimento visual final dos cards de Modelo e Cenário.
+
 ## Créditos
 
 Regra V1:

@@ -1,6 +1,7 @@
 import type {
   Generation,
   GenerationMode,
+  ModelReference,
   Product,
   ProductCategory,
   SceneTemplate,
@@ -326,6 +327,58 @@ export async function getSceneTemplates({
     await parseResponse<
       | PaginatedTemplates
       | SceneTemplate[]
+    >(response);
+
+
+  if (
+    Array.isArray(data)
+  ) {
+    return data;
+  }
+
+
+  return data.results;
+}
+
+
+// ==========================================================
+// MODELOS
+// ==========================================================
+
+type PaginatedModelReferences = {
+  count: number;
+
+  next:
+    string | null;
+
+  previous:
+    string | null;
+
+  results:
+    ModelReference[];
+};
+
+
+export async function getModelReferences():
+  Promise<ModelReference[]> {
+
+  const response =
+    await fetch(
+      `${API_URL}/api/ai/model-references/`,
+      {
+        method:
+          "GET",
+
+        credentials:
+          "include",
+      }
+    );
+
+
+  const data =
+    await parseResponse<
+      | PaginatedModelReferences
+      | ModelReference[]
     >(response);
 
 

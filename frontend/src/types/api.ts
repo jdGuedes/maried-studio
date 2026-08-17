@@ -45,6 +45,20 @@ export type SceneTemplate = {
   sort_order: number;
 };
 
+export type ModelReference = {
+  id: string;
+  code: string;
+  name: string;
+  slug: string;
+  description: string;
+  preview_image: string | null;
+  preview_image_url: string | null;
+  skin_tone: string;
+  hair_color: string;
+  age_range: string;
+  sort_order: number;
+};
+
 export type Generation = {
   id: string;
   product: string;

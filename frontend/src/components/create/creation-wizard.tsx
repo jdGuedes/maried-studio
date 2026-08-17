@@ -16,6 +16,7 @@ import {
 import {
   createGeneration,
   createProduct,
+  getModelReferences,
   getSceneTemplates,
 } from "@/lib/api";
 
@@ -30,6 +31,7 @@ import {
 
 import type {
   Generation,
+  ModelReference,
   ProductCategory,
   SceneTemplate,
 } from "@/types/api";
@@ -115,7 +117,7 @@ const stepLabels = [
   },
   {
     step: 3,
-    label: "Estilo",
+    label: "Visual",
   },
   {
     step: 4,
@@ -207,6 +209,42 @@ export function CreationWizard() {
   const [
     templatesError,
     setTemplatesError,
+  ] = useState<string | null>(
+    null
+  );
+
+
+  // =======================================================
+  // MODELOS
+  // =======================================================
+
+  const [
+    modelReferences,
+    setModelReferences,
+  ] = useState<ModelReference[]>(
+    []
+  );
+
+
+  const [
+    selectedModelReferenceId,
+    setSelectedModelReferenceId,
+  ] = useState<string | null>(
+    null
+  );
+
+
+  const [
+    loadingModelReferences,
+    setLoadingModelReferences,
+  ] = useState(
+    false
+  );
+
+
+  const [
+    modelReferencesError,
+    setModelReferencesError,
   ] = useState<string | null>(
     null
   );
@@ -338,6 +376,36 @@ export function CreationWizard() {
         template.id ===
         selectedTemplateId
     ) ?? null;
+
+
+  const selectedModelReference =
+    modelReferences.find(
+      (modelReference) =>
+        modelReference.id ===
+        selectedModelReferenceId
+    ) ?? null;
+
+
+  function modeUsesSceneTemplate(
+    mode:
+      GenerationMode | null
+  ) {
+    return mode ===
+      "INSTAGRAM";
+  }
+
+
+  function modeUsesModelReference(
+    mode:
+      GenerationMode | null
+  ) {
+    return (
+      mode ===
+        "BODY_DETAIL" ||
+      mode ===
+        "MODEL"
+    );
+  }
 
 
   // =======================================================
@@ -659,6 +727,18 @@ export function CreationWizard() {
       null
     );
 
+    setSelectedModelReferenceId(
+      null
+    );
+
+    setModelReferences(
+      []
+    );
+
+    setModelReferencesError(
+      null
+    );
+
     resetGenerationState();
   }
 
@@ -716,6 +796,18 @@ export function CreationWizard() {
       null
     );
 
+    setSelectedModelReferenceId(
+      null
+    );
+
+    setModelReferences(
+      []
+    );
+
+    setModelReferencesError(
+      null
+    );
+
     resetGenerationState();
   }
 
@@ -739,11 +831,23 @@ export function CreationWizard() {
         null
       );
 
+      setSelectedModelReferenceId(
+        null
+      );
+
       setSceneTemplates(
         []
       );
 
+      setModelReferences(
+        []
+      );
+
       setTemplatesError(
+        null
+      );
+
+      setModelReferencesError(
         null
       );
 
@@ -759,7 +863,9 @@ export function CreationWizard() {
     );
 
     setLoadingTemplates(
-      true
+      modeUsesSceneTemplate(
+        generationMode
+      )
     );
 
     setTemplatesError(
@@ -770,30 +876,80 @@ export function CreationWizard() {
       null
     );
 
-    try {
-      const templates =
-        await getSceneTemplates({
-          category,
-          mode:
-            generationMode,
-        });
+    setSelectedModelReferenceId(
+      null
+    );
 
-      setSceneTemplates(
-        templates
-      );
+    setLoadingModelReferences(
+      modeUsesModelReference(
+        generationMode
+      )
+    );
+
+    setModelReferencesError(
+      null
+    );
+
+    try {
+      if (
+        modeUsesSceneTemplate(
+          generationMode
+        )
+      ) {
+        const templates =
+          await getSceneTemplates({
+            category,
+            mode:
+              generationMode,
+          });
+
+        setSceneTemplates(
+          templates
+        );
+
+        setModelReferences(
+          []
+        );
+
+        if (
+          templates.length ===
+          1
+        ) {
+          setSelectedTemplateId(
+            templates[0].id
+          );
+        }
+      }
 
       if (
-        templates.length ===
-        1
+        modeUsesModelReference(
+          generationMode
+        )
       ) {
-        setSelectedTemplateId(
-          templates[0].id
+        const references =
+          await getModelReferences();
+
+        setModelReferences(
+          references
         );
+
+        setSceneTemplates(
+          []
+        );
+
+        if (
+          references.length ===
+          1
+        ) {
+          setSelectedModelReferenceId(
+            references[0].id
+          );
+        }
       }
 
     } catch (error) {
       console.error(
-        "Erro ao carregar templates:",
+        "Erro ao carregar opções visuais:",
         error
       );
 
@@ -801,14 +957,41 @@ export function CreationWizard() {
         []
       );
 
-      setTemplatesError(
+      setModelReferences(
+        []
+      );
+
+      const message =
         error instanceof Error
           ? error.message
-          : "Não foi possível carregar os estilos."
-      );
+          : "Não foi possível carregar as opções.";
+
+      if (
+        modeUsesSceneTemplate(
+          generationMode
+        )
+      ) {
+        setTemplatesError(
+          message
+        );
+      }
+
+      if (
+        modeUsesModelReference(
+          generationMode
+        )
+      ) {
+        setModelReferencesError(
+          message
+        );
+      }
 
     } finally {
       setLoadingTemplates(
+        false
+      );
+
+      setLoadingModelReferences(
         false
       );
     }
@@ -879,12 +1062,26 @@ export function CreationWizard() {
     }
 
     if (
-      generationMode !==
-        "STILL" &&
+      modeUsesSceneTemplate(
+        generationMode
+      ) &&
       !selectedTemplateId
     ) {
       setGenerationError(
-        "Selecione um estilo antes de continuar."
+        "Selecione um cenário antes de continuar."
+      );
+
+      return;
+    }
+
+    if (
+      modeUsesModelReference(
+        generationMode
+      ) &&
+      !selectedModelReferenceId
+    ) {
+      setGenerationError(
+        "Selecione uma modelo antes de continuar."
       );
 
       return;
@@ -991,6 +1188,7 @@ export function CreationWizard() {
           productId,
           generationMode,
           selectedTemplateId,
+          selectedModelReferenceId,
           idempotencyKey:
             key,
         }
@@ -1005,10 +1203,18 @@ export function CreationWizard() {
             generationMode,
 
           sceneTemplateId:
-            generationMode ===
-            "STILL"
-              ? null
-              : selectedTemplateId,
+            modeUsesSceneTemplate(
+              generationMode
+            )
+              ? selectedTemplateId
+              : null,
+
+          modelReferenceId:
+            modeUsesModelReference(
+              generationMode
+            )
+              ? selectedModelReferenceId
+              : null,
 
           idempotencyKey:
             key,
@@ -1188,6 +1394,18 @@ export function CreationWizard() {
       null
     );
 
+    setModelReferences(
+      []
+    );
+
+    setSelectedModelReferenceId(
+      null
+    );
+
+    setModelReferencesError(
+      null
+    );
+
     setTemplatesError(
       null
     );
@@ -1249,8 +1467,20 @@ export function CreationWizard() {
       null
     );
 
+    setSelectedModelReferenceId(
+      null
+    );
+
     setSceneTemplates(
       []
+    );
+
+    setModelReferences(
+      []
+    );
+
+    setModelReferencesError(
+      null
     );
 
     setGenerationMode(
@@ -1271,6 +1501,102 @@ export function CreationWizard() {
     step >= 4
       ? "100%"
       : `${step * 25}%`;
+
+
+  const selectionTitle =
+    modeUsesModelReference(
+      generationMode
+    )
+      ? "Escolha a modelo."
+      : "Escolha o cenário.";
+
+
+  const selectionDescription =
+    modeUsesModelReference(
+      generationMode
+    )
+      ? "Selecione a referência visual que será usada nesta criação."
+      : "Selecione o cenário comercial para apresentar a sua peça.";
+
+
+  const selectionEmptyTitle =
+    modeUsesModelReference(
+      generationMode
+    )
+      ? "Nenhuma modelo disponível"
+      : "Nenhum cenário disponível";
+
+
+  const selectionEmptyDescription =
+    modeUsesModelReference(
+      generationMode
+    )
+      ? "Não existem modelos ativos para seleção no momento."
+      : "Não existem cenários ativos para esta categoria no momento.";
+
+
+  const selectionOptions =
+    modeUsesModelReference(
+      generationMode
+    )
+      ? modelReferences.map(
+          (
+            modelReference
+          ) => ({
+            id:
+              modelReference.id,
+            name:
+              modelReference.name,
+            description:
+              modelReference.description,
+            previewImageUrl:
+              modelReference.preview_image_url,
+          })
+        )
+      : sceneTemplates.map(
+          (
+            template
+          ) => ({
+            id:
+              template.id,
+            name:
+              template.name,
+            description:
+              `Cenário ${template.name} para esta composição.`,
+            previewImageUrl:
+              template.preview_image,
+          })
+        );
+
+
+  const selectedVisualName =
+    selectedModelReference?.name ??
+    selectedTemplate?.name ??
+    null;
+
+
+  const selectedVisualLabel =
+    modeUsesModelReference(
+      generationMode
+    )
+      ? "Modelo"
+      : "Cenário";
+
+
+  const modeLabel =
+    generationMode ===
+    "STILL"
+      ? "Still"
+      : generationMode ===
+        "BODY_DETAIL"
+        ? "Detalhe no Corpo"
+        : generationMode ===
+          "MODEL"
+          ? "Na Modelo"
+          : generationMode ===
+            "INSTAGRAM"
+            ? "Instagramável"
+            : "-";
 
 
   // =======================================================
@@ -2089,25 +2415,65 @@ export function CreationWizard() {
             <StyleStep
               key="step-3"
 
-              templates={
-                sceneTemplates
+              title={
+                selectionTitle
               }
 
-              selectedTemplateId={
-                selectedTemplateId
+              description={
+                selectionDescription
+              }
+
+              emptyTitle={
+                selectionEmptyTitle
+              }
+
+              emptyDescription={
+                selectionEmptyDescription
+              }
+
+              eyebrow={
+                selectedVisualLabel
+              }
+
+              options={
+                selectionOptions
+              }
+
+              selectedOptionId={
+                modeUsesModelReference(
+                  generationMode
+                )
+                  ? selectedModelReferenceId
+                  : selectedTemplateId
               }
 
               loading={
-                loadingTemplates
+                loadingTemplates ||
+                loadingModelReferences
               }
 
               error={
-                templatesError
+                templatesError ??
+                modelReferencesError
               }
 
-              onChange={
-                setSelectedTemplateId
-              }
+              onChange={(optionId) => {
+                if (
+                  modeUsesModelReference(
+                    generationMode
+                  )
+                ) {
+                  setSelectedModelReferenceId(
+                    optionId
+                  );
+
+                  return;
+                }
+
+                setSelectedTemplateId(
+                  optionId
+                );
+              }}
 
               onBack={() => {
                 setStep(
@@ -2152,9 +2518,12 @@ export function CreationWizard() {
                 generationMode
               }
 
-              styleName={
-                selectedTemplate?.name ??
-                null
+              selectionLabel={
+                selectedVisualLabel
+              }
+
+              selectionName={
+                selectedVisualName
               }
 
               isGenerating={
@@ -2290,22 +2659,24 @@ export function CreationWizard() {
 
                     <div className="mt-2 text-sm font-semibold">
                       {
-                        generationMode
+                        modeLabel
                       }
                     </div>
 
 
-                    {selectedTemplate ? (
+                    {selectedVisualName ? (
 
                       <>
                         <div className="mt-5 text-[10px] uppercase tracking-[0.14em] text-[var(--maried-caramel)]">
-                          Estilo
+                          {
+                            selectedVisualLabel
+                          }
                         </div>
 
 
                         <div className="mt-2 text-sm font-semibold">
                           {
-                            selectedTemplate.name
+                            selectedVisualName
                           }
                         </div>
                       </>

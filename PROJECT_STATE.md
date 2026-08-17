@@ -129,6 +129,19 @@ Não reescrever, resumir ou otimizar EARRING + BODY_DETAIL sem autorização exp
 - Créditos: segue regra V1 `1 geração = 1 crédito`.
 - Pendência: enquadramento visual final corpo inteiro ou 3/4, poses, composição e legibilidade por categoria exigem validação humana de produto.
 
+### FRONT-001 - Fluxos dos quatro modos
+
+- Status: `AUTO_VALIDATED`.
+- Branch: `agent/STRUCTURAL-READY`.
+- Implementado: wizard de criação com labels oficiais, seleção condicional por modo, `ModelReference` para `BODY_DETAIL` e `MODEL`, `SceneTemplate` para `INSTAGRAM` e `STILL` sem seleção adicional.
+- Contrato frontend:
+  - `STILL`: envia `scene_template_id=null` e `model_reference_id=null`.
+  - `BODY_DETAIL`: envia `model_reference_id`.
+  - `MODEL`: envia `model_reference_id`.
+  - `INSTAGRAM`: envia `scene_template_id`.
+- Validação visual: `/criar` renderizou sem overlay em `http://localhost:3000`; interação de categoria funcionou.
+- Pendência: fluxo autenticado com upload/geração real precisa validação humana com arquivo de teste.
+
 ### PromptEngine com quatro modos
 
 O `PromptEngine` atual já contém os modos:
@@ -223,7 +236,7 @@ Planejado:
 
 ### Frontend
 
-Planejado:
+Implementado estruturalmente:
 
 - labels oficiais dos modos;
 - seleção de modelo para Detalhe no Corpo;
@@ -231,6 +244,11 @@ Planejado:
 - seleção de modelo para Na Modelo;
 - Still sem seleção adicional;
 - bloqueio de combinações inválidas.
+
+Pendente:
+
+- validação autenticada com upload e geração real;
+- ajuste visual fino após aprovação humana.
 
 ### Créditos
 

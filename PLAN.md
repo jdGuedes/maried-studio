@@ -160,7 +160,7 @@ Pendências de produto:
 
 ## Fase 6 - Frontend
 
-Status: planejada.
+Status: implementada estruturalmente.
 
 Tarefas:
 
@@ -178,6 +178,19 @@ Critério de aceite:
 - cada modo mostra apenas a escolha adicional correta;
 - Still não mostra escolha adicional;
 - o usuário não escolhe manualmente área corporal.
+
+Implementado em `FRONT-001`:
+
+- labels oficiais dos quatro modos;
+- `STILL` sem seleção adicional;
+- `BODY_DETAIL` e `MODEL` com seleção de `ModelReference`;
+- `INSTAGRAM` com seleção de `SceneTemplate`;
+- payloads enviados sem combinações inválidas.
+
+Pendências:
+
+- validação autenticada com upload/geração real;
+- ajuste visual fino com validação humana.
 
 ## Fase 7 - API, créditos e validações
 
@@ -411,12 +424,12 @@ Pendências de produto:
 
 ### FRONT-001 - Fluxos dos quatro modos
 
-Status inicial: `BLOCKED`.
+Status: `AUTO_VALIDATED`.
 
 `DEPENDS_ON`: contratos backend estabilizados dos modos expostos.
 
 Observação:
-Integrações pontuais já podem consumir os contratos estabilizados de `STILL`, `BODY_DETAIL`, `INSTAGRAM` e `MODEL`, mas a experiência completa dos quatro modos permanece dependente das entregas estruturais e visuais de `AI-003` e `AI-004`.
+Fluxo estrutural implementado. Validação autenticada com upload, geração real e aprovação visual humana continuam necessárias antes de produção.
 
 Escopo:
 - Still sem escolha adicional;

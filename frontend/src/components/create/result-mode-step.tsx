@@ -39,14 +39,14 @@ const modes = [
   },
   {
     value: "MODEL" as const,
-    title: "Modelo",
+    title: "Na Modelo",
     description:
       "Fotografia profissional com modelo usando a sua peça.",
     icon: Sparkles,
   },
   {
     value: "INSTAGRAM" as const,
-    title: "Instagram",
+    title: "Instagramável",
     description:
       "Composição comercial e lifestyle para redes sociais.",
     icon: Camera,

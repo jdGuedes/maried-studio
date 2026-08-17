@@ -9,19 +9,28 @@ import {
   motion,
 } from "motion/react";
 
-import type {
-  SceneTemplate,
-} from "@/types/api";
+export type VisualChoice = {
+  id: string;
+  name: string;
+  description?: string | null;
+  previewImageUrl?: string | null;
+};
 
 type StyleStepProps = {
-  templates: SceneTemplate[];
-  selectedTemplateId: string | null;
+  title: string;
+  description: string;
+  emptyTitle: string;
+  emptyDescription: string;
+  eyebrow: string;
+
+  options: VisualChoice[];
+  selectedOptionId: string | null;
 
   loading: boolean;
   error: string | null;
 
   onChange: (
-    templateId: string
+    optionId: string
   ) => void;
 
   onBack: () => void;
@@ -29,8 +38,13 @@ type StyleStepProps = {
 };
 
 export function StyleStep({
-  templates,
-  selectedTemplateId,
+  title,
+  description,
+  emptyTitle,
+  emptyDescription,
+  eyebrow,
+  options,
+  selectedOptionId,
   loading,
   error,
   onChange,
@@ -39,7 +53,7 @@ export function StyleStep({
 }: StyleStepProps) {
   const canContinue =
     Boolean(
-      selectedTemplateId
+      selectedOptionId
     );
 
   return (
@@ -63,14 +77,11 @@ export function StyleStep({
       {/* CABEÇALHO */}
       <div>
         <h1 className="text-[30px] font-semibold leading-tight tracking-[-0.035em] text-[var(--maried-espresso)] sm:text-[38px]">
-          Escolha o estilo
-          da sua imagem.
+          {title}
         </h1>
 
         <p className="mt-3 max-w-xl text-sm leading-6 text-[var(--maried-cocoa)]">
-          Selecione a direção
-          visual que deseja
-          aplicar à fotografia.
+          {description}
         </p>
       </div>
 
@@ -97,7 +108,7 @@ export function StyleStep({
           </motion.div>
 
           <h2 className="mt-5 text-sm font-semibold">
-            Carregando estilos
+            Carregando opções
           </h2>
 
           <p className="mt-2 text-xs text-[var(--maried-cocoa)]">
@@ -115,7 +126,7 @@ export function StyleStep({
         <div className="mt-8 rounded-[18px] border border-[var(--status-critical)]/20 bg-white p-6">
           <div className="text-sm font-semibold text-[var(--status-critical)]">
             Não foi possível
-            carregar os estilos.
+            carregar as opções.
           </div>
 
           <p className="mt-2 text-xs leading-5 text-[var(--maried-cocoa)]">
@@ -129,16 +140,14 @@ export function StyleStep({
       ================================================ */}
       {!loading &&
       !error &&
-      templates.length === 0 ? (
+      options.length === 0 ? (
         <div className="maried-card mt-8 p-6">
           <h2 className="text-sm font-semibold">
-            Nenhum estilo disponível
+            {emptyTitle}
           </h2>
 
           <p className="mt-2 text-xs leading-5 text-[var(--maried-cocoa)]">
-            Não existem templates
-            ativos para esta categoria
-            e modo no momento.
+            {emptyDescription}
           </p>
         </div>
       ) : null}
@@ -148,20 +157,20 @@ export function StyleStep({
       ================================================ */}
       {!loading &&
       !error &&
-      templates.length > 0 ? (
+      options.length > 0 ? (
         <div className="mt-8 grid gap-3 sm:grid-cols-2">
-          {templates.map(
+          {options.map(
             (
-              template
+              option
             ) => {
               const selected =
-                selectedTemplateId ===
-                template.id;
+                selectedOptionId ===
+                option.id;
 
               return (
                 <motion.button
                   key={
-                    template.id
+                    option.id
                   }
                   type="button"
                   whileTap={{
@@ -170,7 +179,7 @@ export function StyleStep({
                   }}
                   onClick={() => {
                     onChange(
-                      template.id
+                      option.id
                     );
                   }}
                   className={[
@@ -193,22 +202,20 @@ export function StyleStep({
                   ) : null}
 
                   <div className="text-[10px] font-medium uppercase tracking-[0.15em] text-[var(--maried-gold)]">
-                    MARIED STUDIO
+                    {eyebrow}
                   </div>
 
                   <h2 className="mt-4 text-lg font-semibold text-[var(--maried-espresso)]">
                     {
-                      template.name
+                      option.name
                     }
                   </h2>
 
                   <p className="mt-2 text-xs leading-5 text-[var(--maried-cocoa)]">
-                    Estilo{" "}
                     {
-                      template.name
-                    }{" "}
-                    para esta
-                    composição.
+                      option.description ??
+                      "Opção disponível para esta composição."
+                    }
                   </p>
                 </motion.button>
               );
