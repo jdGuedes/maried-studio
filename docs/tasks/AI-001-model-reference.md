@@ -1,7 +1,7 @@
 # AI-001 - Criar ModelReference
 
 ## Status
-`READY`
+`AUTO_VALIDATED`
 
 ## Owner / Workstream
 `BODY_DETAIL / ON_MODEL base`
@@ -16,19 +16,48 @@ Executar somente esta entrega, respeitando `AGENTS.md` e `PLAN.md`.
 Consultar `PLAN.md`.
 
 ## Arquivos permitidos
-Confirmar após auditoria do código real.
+- `apps/ai/models.py`
+- `apps/ai/admin.py`
+- `apps/ai/serializers.py`
+- `apps/ai/views.py`
+- `apps/ai/urls.py`
+- `apps/ai/migrations/**`
+- `apps/ai/tests.py`
+- `PROJECT_STATE.md`
+- `PLAN.md`
+- `SPEC.md`
 
 ## Arquivos proibidos
-Tudo que não estiver diretamente relacionado à tarefa.
+- prompts finais.
+- regras de crédito, billing ou gateway.
+- `SceneTemplate` como substituto de `ModelReference`.
 
 ## Shared files / lock required
-Confirmar durante auditoria. Se houver `prompt_engine.py`, models centrais, settings, urls ou contratos compartilhados, usar lock/coordenação.
+`LOCK_REQUIRED: false`
 
 ## Critérios de aceite
-Usar os critérios correspondentes do `PLAN.md`.
+- `ModelReference` existe como entidade global.
+- Listagem autenticada retorna apenas modelos ativos.
+- Seed inicial cria `MODEL_01` a `MODEL_04`.
+- Admin Django registra a entidade.
+- `ModelReference` não depende de `SceneTemplate`.
 
 ## Testes obrigatórios
-Definir após inspeção do código real e executar os checks do projeto.
+```bash
+python manage.py check
+python manage.py makemigrations --check --dry-run
+python manage.py test apps.ai --keepdb
+python manage.py test --keepdb
+```
 
 ## Relatório final
-Usar o formato obrigatório de `AGENTS.md`.
+Implementado e consolidado na branch `agent/STRUCTURAL-READY`.
+
+Commit de origem:
+
+- `19a2ca8 feat: implement AI-001 model reference`
+
+Resultado:
+
+- `ModelReference` implementado com API autenticada, admin, seed/data migration e testes.
+- Usado estruturalmente por `BODY_DETAIL` e `MODEL`.
