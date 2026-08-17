@@ -100,7 +100,7 @@ Implementado em `AI-002`:
 
 ## Fase 4 - Cenários Instagramáveis
 
-Status: planejada.
+Status: parcialmente implementada.
 
 Tarefas:
 
@@ -116,6 +116,14 @@ Critério de aceite:
 - Instagramável exige cenário;
 - cenário é administrável pelo SuperAdmin;
 - geração consome 1 crédito.
+
+Implementado em `AI-003`:
+
+- listagem pública autenticada retorna somente `SceneTemplate` ativo de `INSTAGRAM`;
+- `BODY_DETAIL` não lista `SceneTemplate`;
+- SuperAdmin lista, cria e edita cenários Instagramáveis;
+- SuperAdmin rejeita `SceneTemplate` fora de `INSTAGRAM` na V1;
+- `seed_studio` cria apenas `SceneTemplate` de `INSTAGRAM`.
 
 ## Fase 5 - MODEL / Na Modelo
 
@@ -350,7 +358,7 @@ Pendências de produto:
 
 ### AI-003 - Instagramável
 
-Status inicial: `READY` após auditoria de SceneTemplate.
+Status: `AUTO_VALIDATED`.
 
 Pode avançar em paralelo com `AI-001` e `BILLING-*` se não disputar shared files.
 
@@ -361,6 +369,11 @@ Escopo:
 - cenários ativos;
 - validações;
 - testes.
+
+Pendências de produto:
+- definir biblioteca inicial de cenários oficiais;
+- aprovar prompts e previews;
+- validar visualmente antes de produção.
 
 ## Workstream ON_MODEL
 

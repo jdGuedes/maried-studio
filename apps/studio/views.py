@@ -31,7 +31,8 @@ class SceneTemplateListView(generics.ListAPIView):
 
     def get_queryset(self):
         qs = SceneTemplate.objects.filter(
-            is_active=True
+            is_active=True,
+            generation_mode=GenerationMode.INSTAGRAM,
         )
 
         category = self.request.query_params.get(
@@ -47,16 +48,11 @@ class SceneTemplateListView(generics.ListAPIView):
                 category=category
             )
 
-        if mode:
-            if (
-                mode
-                != GenerationMode.INSTAGRAM
-            ):
-                return SceneTemplate.objects.none()
-
-            qs = qs.filter(
-                generation_mode=mode
-            )
+        if (
+            mode
+            and mode != GenerationMode.INSTAGRAM
+        ):
+            return SceneTemplate.objects.none()
 
         return qs.order_by(
             "sort_order",

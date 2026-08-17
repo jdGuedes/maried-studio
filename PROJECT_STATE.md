@@ -105,6 +105,22 @@ Não reescrever, resumir ou otimizar EARRING + BODY_DETAIL sem autorização exp
 - Créditos: ajuste usa `CreditService.adjust_credits`, impede saldo negativo e registra `CreditTransaction` + `AuditLog`.
 - Testes: cobertura de acesso SuperAdmin, 403 para usuário comum, listagens, ajuste e rejeição de saldo negativo.
 
+### AI-003 - Instagramável com SceneTemplate
+
+- Status: `AUTO_VALIDATED`.
+- Branch: `agent/STRUCTURAL-READY`.
+- Implementado: `SceneTemplate` como cenário oficial de `INSTAGRAM` na V1, listagem pública autenticada somente para templates ativos de Instagramável, gestão estrutural via SuperAdmin e seed restrito a cenários Instagramáveis.
+- APIs SuperAdmin:
+  - `GET /api/superadmin/scene-templates/`
+  - `POST /api/superadmin/scene-templates/`
+  - `GET /api/superadmin/scene-templates/<id>/`
+  - `PATCH /api/superadmin/scene-templates/<id>/`
+  - `PUT /api/superadmin/scene-templates/<id>/`
+- Segurança: endpoints SuperAdmin exigem `is_superuser`.
+- Contrato: `SceneTemplate` fora de `INSTAGRAM` é rejeitado no SuperAdmin e não aparece na listagem pública.
+- Seed: `seed_studio` não cria `SceneTemplate` para `MODEL`, `BODY_DETAIL` ou `STILL`.
+- Pendência: biblioteca oficial de cenários e prompts finais dependem de validação humana de produto.
+
 ### PromptEngine com quatro modos
 
 O `PromptEngine` atual já contém os modos:
@@ -120,9 +136,9 @@ Esses modos existem conceitualmente no motor, mas nem todos estão completos ou 
 
 ### SceneTemplate compatível com Instagram
 
-`SceneTemplate` já é compatível com a ideia de cenários para o modo `INSTAGRAM`.
+`SceneTemplate` está estruturado como cenário do modo `INSTAGRAM`.
 
-Ainda falta estruturar cadastro, biblioteca oficial e fluxo completo no frontend, conforme o estado real do código.
+Ainda falta definir biblioteca oficial, prompts finais, previews e fluxo completo no frontend, conforme validação humana de produto.
 
 ## TESTES DA CONSOLIDAÇÃO ESTRUTURAL
 
@@ -130,8 +146,8 @@ Ainda falta estruturar cadastro, biblioteca oficial e fluxo completo no frontend
 
 - `python manage.py check`: passou.
 - `python manage.py makemigrations --check --dry-run`: passou.
-- `python manage.py test apps.studio --keepdb`: passou, 9 testes.
-- `python manage.py test --keepdb`: passou, 31 testes.
+- `python manage.py test apps.studio apps.superadmin --keepdb`: passou, 19 testes.
+- `python manage.py test --keepdb`: passou, 36 testes.
 - `npm run lint`: passou.
 - `npm run build`: passou.
 
@@ -183,8 +199,7 @@ Mudança planejada:
 Planejado:
 
 - exibir `INSTAGRAM` como Instagramável;
-- usar `SceneTemplate`;
-- permitir cenários cadastráveis pelo SuperAdmin;
+- definir cenários oficiais aprovados pelo produto;
 - listar cenários ativos no frontend;
 - validar visualmente antes de produção.
 

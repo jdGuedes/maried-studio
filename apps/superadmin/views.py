@@ -11,7 +11,12 @@ from apps.billing.models import Plan, Subscription
 from apps.credits.models import CreditWallet
 from apps.credits.services import CreditService
 from apps.organizations.models import Organization
-from apps.studio.models import Generation, GenerationStatus
+from apps.studio.models import (
+    Generation,
+    GenerationMode,
+    GenerationStatus,
+    SceneTemplate,
+)
 
 from .permissions import IsSuperAdmin
 from .serializers import (
@@ -20,6 +25,7 @@ from .serializers import (
     SuperAdminGenerationSerializer,
     SuperAdminOrganizationSerializer,
     SuperAdminPlanSerializer,
+    SuperAdminSceneTemplateSerializer,
     SuperAdminSubscriptionSerializer,
     SuperAdminUserSerializer,
 )
@@ -237,6 +243,89 @@ class SuperAdminGenerationListView(
             )
 
         return queryset
+
+
+class SuperAdminSceneTemplateListCreateView(
+    generics.ListCreateAPIView
+):
+    serializer_class = (
+        SuperAdminSceneTemplateSerializer
+    )
+
+    permission_classes = [
+        IsSuperAdmin,
+    ]
+
+    def get_queryset(
+        self,
+    ):
+        queryset = (
+            SceneTemplate.objects
+            .filter(
+                generation_mode=GenerationMode.INSTAGRAM
+            )
+            .order_by(
+                "category",
+                "sort_order",
+                "name",
+            )
+        )
+
+        category = (
+            self.request
+            .query_params
+            .get(
+                "category"
+            )
+        )
+
+        is_active = (
+            self.request
+            .query_params
+            .get(
+                "is_active"
+            )
+        )
+
+        if category:
+            queryset = (
+                queryset.filter(
+                    category=category
+                )
+            )
+
+        if is_active in {
+            "true",
+            "false",
+        }:
+            queryset = (
+                queryset.filter(
+                    is_active=(
+                        is_active == "true"
+                    )
+                )
+            )
+
+        return queryset
+
+
+class SuperAdminSceneTemplateDetailView(
+    generics.RetrieveUpdateAPIView
+):
+    serializer_class = (
+        SuperAdminSceneTemplateSerializer
+    )
+
+    permission_classes = [
+        IsSuperAdmin,
+    ]
+
+    queryset = (
+        SceneTemplate.objects
+        .filter(
+            generation_mode=GenerationMode.INSTAGRAM
+        )
+    )
 
 
 class CreditAdjustmentView(

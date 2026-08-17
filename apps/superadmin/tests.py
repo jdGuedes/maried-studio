@@ -9,6 +9,8 @@ from apps.audit.models import AuditLog
 from apps.billing.models import BillingCycle, Plan, Subscription, SubscriptionStatus
 from apps.credits.models import CreditTransaction, CreditTransactionType, CreditWallet
 from apps.organizations.models import Organization
+from apps.products.models import ProductCategory
+from apps.studio.models import GenerationMode, SceneTemplate
 
 
 class SuperAdminApiTests(
@@ -145,6 +147,7 @@ class SuperAdminApiTests(
             "subscriptions",
             "credit-wallets",
             "generations",
+            "scene-templates",
         ]
 
         for route_name in route_names:
@@ -273,4 +276,126 @@ class SuperAdminApiTests(
         self.assertEqual(
             self.wallet.purchased_balance,
             5,
+        )
+
+    def test_superadmin_can_create_instagram_scene_template(
+        self,
+    ):
+        self.client.force_authenticate(
+            self.admin_user
+        )
+
+        response = self.client.post(
+            reverse(
+                "superadmin:scene-templates"
+            ),
+            {
+                "name": "Cenario Comercial",
+                "slug": "cenario-comercial",
+                "generation_mode": GenerationMode.INSTAGRAM,
+                "category": ProductCategory.EARRING,
+                "prompt_template": (
+                    "Use um cenario comercial de teste."
+                ),
+                "version": 1,
+                "is_active": True,
+                "sort_order": 20,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            201,
+        )
+
+        self.assertTrue(
+            SceneTemplate.objects.filter(
+                slug="cenario-comercial",
+                generation_mode=GenerationMode.INSTAGRAM,
+            ).exists()
+        )
+
+    def test_superadmin_rejects_non_instagram_scene_template(
+        self,
+    ):
+        self.client.force_authenticate(
+            self.admin_user
+        )
+
+        response = self.client.post(
+            reverse(
+                "superadmin:scene-templates"
+            ),
+            {
+                "name": "Body Legado",
+                "slug": "body-legado",
+                "generation_mode": GenerationMode.BODY_DETAIL,
+                "category": ProductCategory.EARRING,
+                "prompt_template": (
+                    "Template invalido para V1."
+                ),
+                "version": 1,
+                "is_active": True,
+                "sort_order": 10,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            400,
+        )
+
+        self.assertIn(
+            "generation_mode",
+            response.data,
+        )
+
+    def test_superadmin_can_update_scene_template_status_and_order(
+        self,
+    ):
+        self.client.force_authenticate(
+            self.admin_user
+        )
+
+        template = SceneTemplate.objects.create(
+            name="Cenario Teste",
+            slug="cenario-teste",
+            generation_mode=GenerationMode.INSTAGRAM,
+            category=ProductCategory.EARRING,
+            prompt_template="Cenario inicial.",
+            version=1,
+            is_active=True,
+            sort_order=10,
+        )
+
+        response = self.client.patch(
+            reverse(
+                "superadmin:scene-template-detail",
+                kwargs={
+                    "pk": template.pk,
+                },
+            ),
+            {
+                "is_active": False,
+                "sort_order": 30,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+        )
+
+        template.refresh_from_db()
+
+        self.assertFalse(
+            template.is_active
+        )
+
+        self.assertEqual(
+            template.sort_order,
+            30,
         )

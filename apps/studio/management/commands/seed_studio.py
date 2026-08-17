@@ -53,14 +53,6 @@ TEMPLATES = [
     ("Editorial", "editorial", GenerationMode.INSTAGRAM, "A sophisticated editorial jewelry composition with modern art direction, commercial lighting and strong product readability."),
     ("Lifestyle", "lifestyle", GenerationMode.INSTAGRAM, "A realistic elegant lifestyle setting with natural premium light and subtle contextual elements, keeping the jewelry as protagonist."),
     ("Luxo", "luxury", GenerationMode.INSTAGRAM, "A refined luxury jewelry campaign environment with premium materials, elegant lighting and restrained styling."),
-    ("Elegante", "elegant", GenerationMode.MODEL, "An elegant commercial fashion model composition with refined styling; jewelry remains clearly visible and correctly applied."),
-    ("Casual Chic", "casual-chic", GenerationMode.MODEL, "A polished casual-chic model composition with natural wardrobe and realistic commercial photography."),
-    ("Editorial", "model-editorial", GenerationMode.MODEL, "A fashion editorial model composition with premium art direction while preserving clear jewelry visibility."),
-    ("Natural", "body-natural", GenerationMode.BODY_DETAIL, "Natural skin texture, realistic anatomy, soft commercial light and minimal distraction; body acts as context for the jewelry close-up."),
-    ("Elegante", "body-elegant", GenerationMode.BODY_DETAIL, "Elegant close-up commercial jewelry photography on the relevant body area, with clean styling and maximum product detail."),
-    ("Luxo", "body-luxury", GenerationMode.BODY_DETAIL, "Luxury jewelry close-up on the relevant body area, controlled premium light, realistic skin and product as absolute protagonist."),
-    ("Editorial", "body-editorial", GenerationMode.BODY_DETAIL, "Editorial close-up emphasizing jewelry detail on the relevant body area with refined art direction and realistic anatomy."),
-    ("Still Profissional", "still-professional", GenerationMode.STILL, "Professional catalog still: clean white background, centered isolated product, soft studio light, minimal natural contact shadow, no decorative elements."),
 ]
 
 

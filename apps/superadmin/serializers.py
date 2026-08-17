@@ -4,7 +4,7 @@ from apps.accounts.models import User
 from apps.billing.models import Plan, Subscription
 from apps.credits.models import CreditWallet
 from apps.organizations.models import Organization
-from apps.studio.models import Generation
+from apps.studio.models import Generation, GenerationMode, SceneTemplate
 
 
 class SuperAdminOrganizationSerializer(
@@ -194,6 +194,40 @@ class SuperAdminGenerationSerializer(
             "started_at",
             "completed_at",
         ]
+
+
+class SuperAdminSceneTemplateSerializer(
+    serializers.ModelSerializer
+):
+    class Meta:
+        model = SceneTemplate
+
+        fields = [
+            "id",
+            "name",
+            "slug",
+            "generation_mode",
+            "category",
+            "preview_image",
+            "prompt_template",
+            "version",
+            "is_active",
+            "sort_order",
+            "created_at",
+            "updated_at",
+        ]
+
+    def validate_generation_mode(
+        self,
+        value,
+    ):
+        if value != GenerationMode.INSTAGRAM:
+            raise serializers.ValidationError(
+                "SceneTemplate é permitido apenas "
+                "para Instagramável na V1."
+            )
+
+        return value
 
 
 class CreditAdjustmentSerializer(

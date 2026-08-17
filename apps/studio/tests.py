@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
 from django.test import TestCase
 from django.urls import reverse
 
@@ -312,6 +313,16 @@ class SceneTemplateContractTests(
             is_active=True,
         )
 
+        SceneTemplate.objects.create(
+            name="Instagram Comercial",
+            slug="instagram-comercial-test",
+            generation_mode=GenerationMode.INSTAGRAM,
+            category=ProductCategory.EARRING,
+            prompt_template="Template Instagram ativo.",
+            is_active=True,
+            sort_order=10,
+        )
+
     def test_body_detail_does_not_list_scene_templates(
         self,
     ):
@@ -333,4 +344,56 @@ class SceneTemplateContractTests(
         self.assertEqual(
             response.data["results"],
             [],
+        )
+
+    def test_scene_template_list_returns_only_instagram_templates(
+        self,
+    ):
+        response = self.client.get(
+            reverse(
+                "scene-template-list"
+            ),
+            {
+                "category": ProductCategory.EARRING,
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+        )
+
+        slugs = [
+            item["slug"]
+            for item in response.data["results"]
+        ]
+
+        self.assertEqual(
+            slugs,
+            [
+                "instagram-comercial-test",
+            ],
+        )
+
+
+class SeedStudioCommandTests(
+    TestCase
+):
+    def test_seed_studio_creates_only_instagram_scene_templates(
+        self,
+    ):
+        call_command(
+            "seed_studio",
+        )
+
+        self.assertTrue(
+            SceneTemplate.objects.exists()
+        )
+
+        self.assertFalse(
+            SceneTemplate.objects
+            .exclude(
+                generation_mode=GenerationMode.INSTAGRAM
+            )
+            .exists()
         )

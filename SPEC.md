@@ -100,7 +100,7 @@ Não usar `SceneTemplate` como recurso principal do modo Na Modelo na V1.
 
 ### SceneTemplate
 
-Entidade existente ou compatível com a arquitetura atual.
+Entidade existente e estruturada para a arquitetura atual.
 
 Uso oficial:
 
@@ -119,6 +119,8 @@ Campos esperados:
 - `version`
 
 O SuperAdmin deve conseguir cadastrar, editar, ativar, desativar e ordenar cenários.
+
+Na V1, `SceneTemplate` é aceito apenas para `INSTAGRAM`.
 
 ### ModelReference
 
@@ -223,6 +225,11 @@ Endpoints estruturais globais:
 - `GET /api/superadmin/subscriptions/`
 - `GET /api/superadmin/credit-wallets/`
 - `GET /api/superadmin/generations/`
+- `GET /api/superadmin/scene-templates/`
+- `POST /api/superadmin/scene-templates/`
+- `GET /api/superadmin/scene-templates/<id>/`
+- `PATCH /api/superadmin/scene-templates/<id>/`
+- `PUT /api/superadmin/scene-templates/<id>/`
 - `POST /api/superadmin/credit-adjustments/`
 
 Todos exigem usuário autenticado com `is_superuser=true`.
@@ -236,6 +243,16 @@ Usuário autenticado comum deve receber 403.
 - `reason`
 
 O ajuste deve passar por `CreditService`, impedir saldo negativo e registrar transação com `actor`, motivo e snapshots antes/depois. Também deve registrar `AuditLog`.
+
+SuperAdmin `SceneTemplate`:
+
+- aceita apenas `generation_mode=INSTAGRAM`;
+- permite cadastro, edição, ativação, desativação e ordenação;
+- não define biblioteca oficial de cenários sem aprovação de produto.
+
+Seed estrutural:
+
+- `seed_studio` cria regras de geração por modo, mas cria `SceneTemplate` apenas para `INSTAGRAM`.
 
 ## Frontend
 

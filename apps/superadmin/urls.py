@@ -6,6 +6,8 @@ from .views import (
     SuperAdminGenerationListView,
     SuperAdminOrganizationListView,
     SuperAdminPlanListView,
+    SuperAdminSceneTemplateDetailView,
+    SuperAdminSceneTemplateListCreateView,
     SuperAdminSubscriptionListView,
     SuperAdminSummaryView,
     SuperAdminUserListView,
@@ -50,6 +52,16 @@ urlpatterns = [
         "generations/",
         SuperAdminGenerationListView.as_view(),
         name="generations",
+    ),
+    path(
+        "scene-templates/",
+        SuperAdminSceneTemplateListCreateView.as_view(),
+        name="scene-templates",
+    ),
+    path(
+        "scene-templates/<uuid:pk>/",
+        SuperAdminSceneTemplateDetailView.as_view(),
+        name="scene-template-detail",
     ),
     path(
         "credit-adjustments/",
