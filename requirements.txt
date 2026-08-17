@@ -1,0 +1,8 @@
+Django>=6.0,<6.2
+djangorestframework>=3.17,<3.18
+django-filter>=25
+openai>=1.0
+Pillow>=11
+dj-database-url>=2
+python-dotenv>=1
+psycopg[binary]>=3.2

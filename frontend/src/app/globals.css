@@ -1,0 +1,95 @@
+@import "tailwindcss";
+
+:root {
+  --maried-gold: #a38d5c;
+  --maried-champagne: #d9c89e;
+  --maried-soft-gold: #ede3c8;
+
+  --maried-espresso: #2f211c;
+  --maried-coffee: #49352d;
+  --maried-cocoa: #684c3e;
+  --maried-caramel: #9b7962;
+
+  --maried-ivory: #faf8ef;
+  --maried-cream: #f4efe3;
+  --maried-sand: #e8decf;
+  --maried-white: #ffffff;
+
+  --status-success: #3f7d5a;
+  --status-warning: #b7792b;
+  --status-critical: #a8443a;
+  --status-info: #496a81;
+
+  --background: var(--maried-ivory);
+  --foreground: var(--maried-espresso);
+
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 22px;
+
+  --shadow-soft:
+    0 8px 30px rgba(73, 53, 45, 0.06);
+
+  --shadow-elevated:
+    0 14px 40px rgba(73, 53, 45, 0.10);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--background);
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(
+      circle at 85% 5%,
+      rgba(217, 200, 158, 0.12),
+      transparent 24rem
+    ),
+    var(--background);
+
+  color: var(--foreground);
+
+  font-family:
+    Inter,
+    Arial,
+    Helvetica,
+    sans-serif;
+
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+::selection {
+  background: var(--maried-champagne);
+  color: var(--maried-espresso);
+}
+
+.maried-card {
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid var(--maried-sand);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-soft);
+}
+
+.maried-gold-text {
+  color: var(--maried-gold);
+}
+
+.maried-muted {
+  color: var(--maried-cocoa);
+}

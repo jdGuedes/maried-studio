@@ -1,0 +1,2491 @@
+[
+{
+  "model": "admin.logentry",
+  "pk": 1,
+  "fields": {
+    "action_time": "2026-08-13T00:52:50.804Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "be1f81c0-45d6-486b-b3c7-79c37e39c0b2",
+    "object_repr": "MARIED STUDIO TEST",
+    "action_flag": 1,
+    "change_message": "[{\"added\": {}}]"
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 2,
+  "fields": {
+    "action_time": "2026-08-13T00:57:23.954Z",
+    "user": 1,
+    "content_type": 6,
+    "object_id": "1",
+    "object_repr": "diegoguedesflp@gmail.com",
+    "action_flag": 2,
+    "change_message": "[{\"changed\": {\"fields\": [\"Name\", \"Organization\", \"Role\"]}}]"
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 3,
+  "fields": {
+    "action_time": "2026-08-13T00:57:48.953Z",
+    "user": 1,
+    "content_type": 9,
+    "object_id": "0b232f98-3a34-422c-bf2b-cbbb9ca5b7a5",
+    "object_repr": "CreditWallet object (0b232f98-3a34-422c-bf2b-cbbb9ca5b7a5)",
+    "action_flag": 1,
+    "change_message": "[{\"added\": {}}]"
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 4,
+  "fields": {
+    "action_time": "2026-08-13T00:59:52.263Z",
+    "user": 1,
+    "content_type": 10,
+    "object_id": "c815c788-982c-42dd-8056-63a2cbcb47a9",
+    "object_repr": "Product object (c815c788-982c-42dd-8056-63a2cbcb47a9)",
+    "action_flag": 1,
+    "change_message": "[{\"added\": {}}]"
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 5,
+  "fields": {
+    "action_time": "2026-08-13T01:06:18.740Z",
+    "user": 1,
+    "content_type": 11,
+    "object_id": "e8ec9530-d361-46d1-a742-cfae5dc0c272",
+    "object_repr": "ProductAsset object (e8ec9530-d361-46d1-a742-cfae5dc0c272)",
+    "action_flag": 1,
+    "change_message": "[{\"added\": {}}]"
+  }
+},
+{
+  "model": "sessions.session",
+  "pk": "7uihpca1jbc2dvx11sr30jmmvm00zfg4",
+  "fields": {
+    "session_data": ".eJxVjMsOwiAQRf-FtSEwvF269xvIwIBUDU1KuzL-uzbpQrf3nHNfLOK2triNssSJ2JlJdvrdEuZH6TugO_bbzPPc12VKfFf4QQe_zlSel8P9O2g42rfWxRuRnFCpUgjgtECfHHkCsFUkr1UJsqKyAhwo6aWymXJGbYRzCIa9P8saNwo:1wtbig:lm2NreMsG7ryqvPNcDVWv4bPaDF8ez7qOhwzkZgDcXY",
+    "expire_date": "2026-08-25T01:55:58.992Z"
+  }
+},
+{
+  "model": "accounts.user",
+  "pk": 1,
+  "fields": {
+    "password": "pbkdf2_sha256$1200000$PFPp4IHpuisI6R3GMZMzxe$TpwJA7E7eOhCube7VLky/+uZFF0mbEfCu+h22JcN2UI=",
+    "last_login": "2026-08-11T01:55:58Z",
+    "is_superuser": true,
+    "first_name": "",
+    "last_name": "",
+    "is_staff": true,
+    "is_active": true,
+    "date_joined": "2026-08-10T20:15:50Z",
+    "email": "diegoguedesflp@gmail.com",
+    "name": "SrGuedes",
+    "organization": "be1f81c0-45d6-486b-b3c7-79c37e39c0b2",
+    "role": "OWNER",
+    "groups": [],
+    "user_permissions": []
+  }
+},
+{
+  "model": "organizations.organization",
+  "pk": "be1f81c0-45d6-486b-b3c7-79c37e39c0b2",
+  "fields": {
+    "created_at": "2026-08-13T00:52:50.798Z",
+    "updated_at": "2026-08-13T00:52:50.798Z",
+    "name": "MARIED STUDIO TEST",
+    "slug": "maried-studio-test",
+    "is_active": true
+  }
+},
+{
+  "model": "credits.creditwallet",
+  "pk": "0b232f98-3a34-422c-bf2b-cbbb9ca5b7a5",
+  "fields": {
+    "created_at": "2026-08-13T00:57:48.953Z",
+    "updated_at": "2026-08-13T23:19:06.555Z",
+    "organization": "be1f81c0-45d6-486b-b3c7-79c37e39c0b2",
+    "balance": 5,
+    "reserved_balance": 0
+  }
+},
+{
+  "model": "credits.credittransaction",
+  "pk": "0ec6d7a7-a7f2-4827-97aa-2550a8886c9d",
+  "fields": {
+    "created_at": "2026-08-13T22:48:27.440Z",
+    "updated_at": "2026-08-13T22:48:27.440Z",
+    "wallet": "0b232f98-3a34-422c-bf2b-cbbb9ca5b7a5",
+    "generation": "58f3a3bd-0940-48d5-ab96-c36f0dcf4ad2",
+    "type": "RESERVE",
+    "amount": -1,
+    "balance_before": 7,
+    "balance_after": 7,
+    "reserved_before": 0,
+    "reserved_after": 1,
+    "description": "Crédito reservado para geração de imagem."
+  }
+},
+{
+  "model": "credits.credittransaction",
+  "pk": "1900efaa-44c9-4621-bd74-eb2285c21f61",
+  "fields": {
+    "created_at": "2026-08-13T20:15:00.260Z",
+    "updated_at": "2026-08-13T20:15:00.260Z",
+    "wallet": "0b232f98-3a34-422c-bf2b-cbbb9ca5b7a5",
+    "generation": "18f987fd-6e79-4c2e-a997-cc6bc5ae073d",
+    "type": "RESERVE",
+    "amount": -1,
+    "balance_before": 10,
+    "balance_after": 10,
+    "reserved_before": 0,
+    "reserved_after": 1,
+    "description": "Crédito reservado para geração de imagem."
+  }
+},
+{
+  "model": "credits.credittransaction",
+  "pk": "2add7872-f924-438a-906d-5df977ff0ca9",
+  "fields": {
+    "created_at": "2026-08-13T21:48:58.451Z",
+    "updated_at": "2026-08-13T21:48:58.451Z",
+    "wallet": "0b232f98-3a34-422c-bf2b-cbbb9ca5b7a5",
+    "generation": "c4d10cec-bc08-4996-a6ae-811196e13db5",
+    "type": "RESERVE",
+    "amount": -1,
+    "balance_before": 8,
+    "balance_after": 8,
+    "reserved_before": 0,
+    "reserved_after": 1,
+    "description": "Crédito reservado para geração de imagem."
+  }
+},
+{
+  "model": "credits.credittransaction",
+  "pk": "31d5140a-638e-4cca-9587-346dd447d410",
+  "fields": {
+    "created_at": "2026-08-13T19:45:08.667Z",
+    "updated_at": "2026-08-13T19:45:08.667Z",
+    "wallet": "0b232f98-3a34-422c-bf2b-cbbb9ca5b7a5",
+    "generation": "78b50bcf-3b6d-4317-9c5d-c1f7ead15e51",
+    "type": "REFUND",
+    "amount": 1,
+    "balance_before": 10,
+    "balance_after": 10,
+    "reserved_before": 1,
+    "reserved_after": 0,
+    "description": "Reserva devolvida após falha técnica/cancelamento."
+  }
+},
+{
+  "model": "credits.credittransaction",
+  "pk": "3d131556-46ee-4df2-85a8-83e2d880cc80",
+  "fields": {
+    "created_at": "2026-08-13T20:41:39.438Z",
+    "updated_at": "2026-08-13T20:41:39.438Z",
+    "wallet": "0b232f98-3a34-422c-bf2b-cbbb9ca5b7a5",
+    "generation": "111b096a-0d5d-4858-b083-eb9d069bdd8b",
+    "type": "CONSUME",
+    "amount": -1,
+    "balance_before": 10,
+    "balance_after": 9,
+    "reserved_before": 1,
+    "reserved_after": 0,
+    "description": "Crédito consumido após geração concluída."
+  }
+},
+{
+  "model": "credits.credittransaction",
+  "pk": "3d8af944-e3fc-48ab-9805-124704914502",
+  "fields": {
+    "created_at": "2026-08-13T21:49:57.507Z",
+    "updated_at": "2026-08-13T21:49:57.507Z",
+    "wallet": "0b232f98-3a34-422c-bf2b-cbbb9ca5b7a5",
+    "generation": "c4d10cec-bc08-4996-a6ae-811196e13db5",
+    "type": "CONSUME",
+    "amount": -1,
+    "balance_before": 8,
+    "balance_after": 7,
+    "reserved_before": 1,
+    "reserved_after": 0,
+    "description": "Crédito consumido após geração concluída."
+  }
+},
+{
+  "model": "credits.credittransaction",
+  "pk": "4a5763ce-0425-4734-871a-263f515f96cd",
+  "fields": {
+    "created_at": "2026-08-13T23:19:06.558Z",
+    "updated_at": "2026-08-13T23:19:06.558Z",
+    "wallet": "0b232f98-3a34-422c-bf2b-cbbb9ca5b7a5",
+    "generation": "c807c0ef-eab4-489c-88aa-c4faeea78d11",
+    "type": "CONSUME",
+    "amount": -1,
+    "balance_before": 6,
+    "balance_after": 5,
+    "reserved_before": 1,
+    "reserved_after": 0,
+    "description": "Crédito consumido após geração concluída."
+  }
+},
+{
+  "model": "credits.credittransaction",
+  "pk": "544ef985-ade2-46d8-8fb4-63f24fc5ac3f",
+  "fields": {
+    "created_at": "2026-08-13T23:18:44.185Z",
+    "updated_at": "2026-08-13T23:18:44.185Z",
+    "wallet": "0b232f98-3a34-422c-bf2b-cbbb9ca5b7a5",
+    "generation": "c807c0ef-eab4-489c-88aa-c4faeea78d11",
+    "type": "RESERVE",
+    "amount": -1,
+    "balance_before": 6,
+    "balance_after": 6,
+    "reserved_before": 0,
+    "reserved_after": 1,
+    "description": "Crédito reservado para geração de imagem."
+  }
+},
+{
+  "model": "credits.credittransaction",
+  "pk": "6b5bf3dc-c0b6-4643-a296-551aa5d393f3",
+  "fields": {
+    "created_at": "2026-08-13T20:15:40.910Z",
+    "updated_at": "2026-08-13T20:15:40.910Z",
+    "wallet": "0b232f98-3a34-422c-bf2b-cbbb9ca5b7a5",
+    "generation": "18f987fd-6e79-4c2e-a997-cc6bc5ae073d",
+    "type": "REFUND",
+    "amount": 1,
+    "balance_before": 10,
+    "balance_after": 10,
+    "reserved_before": 1,
+    "reserved_after": 0,
+    "description": "Reserva devolvida após falha técnica/cancelamento."
+  }
+},
+{
+  "model": "credits.credittransaction",
+  "pk": "8a5f55d6-2c13-494c-b1c7-4bee968cb5a5",
+  "fields": {
+    "created_at": "2026-08-13T20:40:58.341Z",
+    "updated_at": "2026-08-13T20:40:58.341Z",
+    "wallet": "0b232f98-3a34-422c-bf2b-cbbb9ca5b7a5",
+    "generation": "111b096a-0d5d-4858-b083-eb9d069bdd8b",
+    "type": "RESERVE",
+    "amount": -1,
+    "balance_before": 10,
+    "balance_after": 10,
+    "reserved_before": 0,
+    "reserved_after": 1,
+    "description": "Crédito reservado para geração de imagem."
+  }
+},
+{
+  "model": "credits.credittransaction",
+  "pk": "8c1220b1-c011-4fcb-9fe1-8bf3dac5fcd0",
+  "fields": {
+    "created_at": "2026-08-13T19:56:07.518Z",
+    "updated_at": "2026-08-13T19:56:07.518Z",
+    "wallet": "0b232f98-3a34-422c-bf2b-cbbb9ca5b7a5",
+    "generation": "7e95cabc-bf7f-4503-9487-81eef576df5e",
+    "type": "RESERVE",
+    "amount": -1,
+    "balance_before": 10,
+    "balance_after": 10,
+    "reserved_before": 0,
+    "reserved_after": 1,
+    "description": "Crédito reservado para geração de imagem."
+  }
+},
+{
+  "model": "credits.credittransaction",
+  "pk": "91454aa7-ceba-4b9c-b9b2-c7bc2163dc89",
+  "fields": {
+    "created_at": "2026-08-13T21:02:25.097Z",
+    "updated_at": "2026-08-13T21:02:25.097Z",
+    "wallet": "0b232f98-3a34-422c-bf2b-cbbb9ca5b7a5",
+    "generation": "8f0b687c-9beb-4257-87e7-8395d088dda1",
+    "type": "CONSUME",
+    "amount": -1,
+    "balance_before": 9,
+    "balance_after": 8,
+    "reserved_before": 1,
+    "reserved_after": 0,
+    "description": "Crédito consumido após geração concluída."
+  }
+},
+{
+  "model": "credits.credittransaction",
+  "pk": "99c3d020-df7f-4fa5-91a5-8a7e266cc12f",
+  "fields": {
+    "created_at": "2026-08-13T12:04:16.734Z",
+    "updated_at": "2026-08-13T12:04:16.734Z",
+    "wallet": "0b232f98-3a34-422c-bf2b-cbbb9ca5b7a5",
+    "generation": "78b50bcf-3b6d-4317-9c5d-c1f7ead15e51",
+    "type": "RESERVE",
+    "amount": -1,
+    "balance_before": 10,
+    "balance_after": 10,
+    "reserved_before": 0,
+    "reserved_after": 1,
+    "description": "Crédito reservado para geração de imagem."
+  }
+},
+{
+  "model": "credits.credittransaction",
+  "pk": "b3064354-6844-4431-9a22-078e1e9634d0",
+  "fields": {
+    "created_at": "2026-08-13T19:56:50.520Z",
+    "updated_at": "2026-08-13T19:56:50.520Z",
+    "wallet": "0b232f98-3a34-422c-bf2b-cbbb9ca5b7a5",
+    "generation": "7e95cabc-bf7f-4503-9487-81eef576df5e",
+    "type": "REFUND",
+    "amount": 1,
+    "balance_before": 10,
+    "balance_after": 10,
+    "reserved_before": 1,
+    "reserved_after": 0,
+    "description": "Reserva devolvida após falha técnica/cancelamento."
+  }
+},
+{
+  "model": "credits.credittransaction",
+  "pk": "c3ea6778-aa02-4625-a596-477ce73eeabd",
+  "fields": {
+    "created_at": "2026-08-13T21:01:24.287Z",
+    "updated_at": "2026-08-13T21:01:24.287Z",
+    "wallet": "0b232f98-3a34-422c-bf2b-cbbb9ca5b7a5",
+    "generation": "8f0b687c-9beb-4257-87e7-8395d088dda1",
+    "type": "RESERVE",
+    "amount": -1,
+    "balance_before": 9,
+    "balance_after": 9,
+    "reserved_before": 0,
+    "reserved_after": 1,
+    "description": "Crédito reservado para geração de imagem."
+  }
+},
+{
+  "model": "credits.credittransaction",
+  "pk": "d15ae746-b196-495c-9a74-97594063eccb",
+  "fields": {
+    "created_at": "2026-08-13T22:48:54.041Z",
+    "updated_at": "2026-08-13T22:48:54.041Z",
+    "wallet": "0b232f98-3a34-422c-bf2b-cbbb9ca5b7a5",
+    "generation": "58f3a3bd-0940-48d5-ab96-c36f0dcf4ad2",
+    "type": "CONSUME",
+    "amount": -1,
+    "balance_before": 7,
+    "balance_after": 6,
+    "reserved_before": 1,
+    "reserved_after": 0,
+    "description": "Crédito consumido após geração concluída."
+  }
+},
+{
+  "model": "products.product",
+  "pk": "c815c788-982c-42dd-8056-63a2cbcb47a9",
+  "fields": {
+    "created_at": "2026-08-13T00:59:51.958Z",
+    "updated_at": "2026-08-13T00:59:51.959Z",
+    "organization": "be1f81c0-45d6-486b-b3c7-79c37e39c0b2",
+    "created_by": 1,
+    "name": "Brinco Teste 001",
+    "category": "EARRING",
+    "status": "ACTIVE"
+  }
+},
+{
+  "model": "products.product",
+  "pk": "f3989761-d4fe-4d9c-8ca7-fd64f50687ed",
+  "fields": {
+    "created_at": "2026-08-13T23:15:21.041Z",
+    "updated_at": "2026-08-13T23:15:21.041Z",
+    "organization": "be1f81c0-45d6-486b-b3c7-79c37e39c0b2",
+    "created_by": 1,
+    "name": "Brinco API Teste 002",
+    "category": "EARRING",
+    "status": "ACTIVE"
+  }
+},
+{
+  "model": "products.productasset",
+  "pk": "c142beb9-632c-46d2-8ec2-9243b8adddd5",
+  "fields": {
+    "created_at": "2026-08-13T23:15:21.240Z",
+    "updated_at": "2026-08-13T23:15:21.240Z",
+    "product": "f3989761-d4fe-4d9c-8ca7-fd64f50687ed",
+    "asset_type": "ORIGINAL",
+    "file": "products/originals/2026/08/WhatsApp_Image_2026-08-13_at_20.14.59.jpeg",
+    "mime_type": "image/jpeg",
+    "width": 900,
+    "height": 1600,
+    "file_size": 77213
+  }
+},
+{
+  "model": "products.productasset",
+  "pk": "e8ec9530-d361-46d1-a742-cfae5dc0c272",
+  "fields": {
+    "created_at": "2026-08-13T01:06:18.739Z",
+    "updated_at": "2026-08-13T01:06:18.739Z",
+    "product": "c815c788-982c-42dd-8056-63a2cbcb47a9",
+    "asset_type": "ORIGINAL",
+    "file": "products/originals/2026/08/brinco_teste.jpg",
+    "mime_type": "",
+    "width": null,
+    "height": null,
+    "file_size": null
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "0147d11f-011c-45a0-9400-eabf1c4a7058",
+  "fields": {
+    "created_at": "2026-08-10T20:17:05.707Z",
+    "updated_at": "2026-08-11T01:57:45.918Z",
+    "name": "Editorial",
+    "slug": "model-editorial",
+    "generation_mode": "MODEL",
+    "category": "BRACELET",
+    "preview_image": "",
+    "prompt_template": "A fashion editorial model composition with premium art direction while preserving clear jewelry visibility.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "02b8c01b-8cef-42d0-a603-dea7abc38818",
+  "fields": {
+    "created_at": "2026-08-10T20:17:04.310Z",
+    "updated_at": "2026-08-11T01:57:44.631Z",
+    "name": "Luxo",
+    "slug": "luxury",
+    "generation_mode": "INSTAGRAM",
+    "category": "BRACELET",
+    "preview_image": "",
+    "prompt_template": "A refined luxury jewelry campaign environment with premium materials, elegant lighting and restrained styling.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "09cf3f5c-ed94-435a-8fc8-b171c079b141",
+  "fields": {
+    "created_at": "2026-08-10T20:17:03.788Z",
+    "updated_at": "2026-08-11T01:57:44.112Z",
+    "name": "Lifestyle",
+    "slug": "lifestyle",
+    "generation_mode": "INSTAGRAM",
+    "category": "RING",
+    "preview_image": "",
+    "prompt_template": "A realistic elegant lifestyle setting with natural premium light and subtle contextual elements, keeping the jewelry as protagonist.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "0a441cbb-6b35-4316-b66c-37a92d959bde",
+  "fields": {
+    "created_at": "2026-08-10T20:17:01.893Z",
+    "updated_at": "2026-08-11T01:57:42.418Z",
+    "name": "Minimal",
+    "slug": "minimal",
+    "generation_mode": "INSTAGRAM",
+    "category": "RING",
+    "preview_image": "",
+    "prompt_template": "A clean premium minimal jewelry scene, restrained props, soft studio light, elegant neutral surface, product in clear focus.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "0bf2aadb-506c-4fc5-ae7c-08cb9a96bf8c",
+  "fields": {
+    "created_at": "2026-08-10T20:17:03.960Z",
+    "updated_at": "2026-08-11T01:57:44.291Z",
+    "name": "Lifestyle",
+    "slug": "lifestyle",
+    "generation_mode": "INSTAGRAM",
+    "category": "ANKLET",
+    "preview_image": "",
+    "prompt_template": "A realistic elegant lifestyle setting with natural premium light and subtle contextual elements, keeping the jewelry as protagonist.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "175327c8-ce8d-4c7f-ac03-6fe6c407bcb5",
+  "fields": {
+    "created_at": "2026-08-10T20:17:06.475Z",
+    "updated_at": "2026-08-11T01:57:46.677Z",
+    "name": "Elegante",
+    "slug": "body-elegant",
+    "generation_mode": "BODY_DETAIL",
+    "category": "NECKLACE",
+    "preview_image": "",
+    "prompt_template": "Elegant close-up commercial jewelry photography on the relevant body area, with clean styling and maximum product detail.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "26711f08-96e1-4812-b86d-dd73df5cab5c",
+  "fields": {
+    "created_at": "2026-08-10T20:17:04.140Z",
+    "updated_at": "2026-08-11T01:57:44.461Z",
+    "name": "Luxo",
+    "slug": "luxury",
+    "generation_mode": "INSTAGRAM",
+    "category": "NECKLACE",
+    "preview_image": "",
+    "prompt_template": "A refined luxury jewelry campaign environment with premium materials, elegant lighting and restrained styling.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "2c3610ad-3ce1-48ab-9159-480961520471",
+  "fields": {
+    "created_at": "2026-08-10T20:17:03.533Z",
+    "updated_at": "2026-08-11T01:57:43.878Z",
+    "name": "Editorial",
+    "slug": "editorial",
+    "generation_mode": "INSTAGRAM",
+    "category": "ANKLET",
+    "preview_image": "",
+    "prompt_template": "A sophisticated editorial jewelry composition with modern art direction, commercial lighting and strong product readability.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "2ddd95e8-b442-4001-aee5-902569dd48fa",
+  "fields": {
+    "created_at": "2026-08-10T20:17:04.395Z",
+    "updated_at": "2026-08-11T01:57:44.716Z",
+    "name": "Luxo",
+    "slug": "luxury",
+    "generation_mode": "INSTAGRAM",
+    "category": "ANKLET",
+    "preview_image": "",
+    "prompt_template": "A refined luxury jewelry campaign environment with premium materials, elegant lighting and restrained styling.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "310cff2d-7f12-4bcf-987b-faf99260cf8b",
+  "fields": {
+    "created_at": "2026-08-10T20:17:06.027Z",
+    "updated_at": "2026-08-11T01:57:46.171Z",
+    "name": "Natural",
+    "slug": "body-natural",
+    "generation_mode": "BODY_DETAIL",
+    "category": "NECKLACE",
+    "preview_image": "",
+    "prompt_template": "Natural skin texture, realistic anatomy, soft commercial light and minimal distraction; body acts as context for the jewelry close-up.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "310f6a43-a23c-4115-bc58-e44518d48c23",
+  "fields": {
+    "created_at": "2026-08-10T20:17:07.276Z",
+    "updated_at": "2026-08-11T01:57:47.352Z",
+    "name": "Luxo",
+    "slug": "body-luxury",
+    "generation_mode": "BODY_DETAIL",
+    "category": "ANKLET",
+    "preview_image": "",
+    "prompt_template": "Luxury jewelry close-up on the relevant body area, controlled premium light, realistic skin and product as absolute protagonist.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "321b3088-016b-46d3-988e-865973dcf891",
+  "fields": {
+    "created_at": "2026-08-10T20:17:02.192Z",
+    "updated_at": "2026-08-11T01:57:42.699Z",
+    "name": "Mármore Claro",
+    "slug": "light-marble",
+    "generation_mode": "INSTAGRAM",
+    "category": "EARRING",
+    "preview_image": "",
+    "prompt_template": "A refined light warm marble jewelry scene, soft diffused commercial lighting, controlled reflections and natural contact shadow.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "323f95e5-dbf3-4d98-a7d1-904c6fbfaca1",
+  "fields": {
+    "created_at": "2026-08-10T20:17:02.341Z",
+    "updated_at": "2026-08-11T01:57:42.784Z",
+    "name": "Mármore Claro",
+    "slug": "light-marble",
+    "generation_mode": "INSTAGRAM",
+    "category": "NECKLACE",
+    "preview_image": "",
+    "prompt_template": "A refined light warm marble jewelry scene, soft diffused commercial lighting, controlled reflections and natural contact shadow.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "34a8b747-c1a1-4fbb-8e64-e8af8bf0dcc9",
+  "fields": {
+    "created_at": "2026-08-10T20:17:06.392Z",
+    "updated_at": "2026-08-11T01:57:46.581Z",
+    "name": "Elegante",
+    "slug": "body-elegant",
+    "generation_mode": "BODY_DETAIL",
+    "category": "EARRING",
+    "preview_image": "",
+    "prompt_template": "Elegant close-up commercial jewelry photography on the relevant body area, with clean styling and maximum product detail.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "351848cf-e0da-45c2-b772-57f4dcf88ff3",
+  "fields": {
+    "created_at": "2026-08-10T20:17:04.225Z",
+    "updated_at": "2026-08-11T01:57:44.547Z",
+    "name": "Luxo",
+    "slug": "luxury",
+    "generation_mode": "INSTAGRAM",
+    "category": "RING",
+    "preview_image": "",
+    "prompt_template": "A refined luxury jewelry campaign environment with premium materials, elegant lighting and restrained styling.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "382b2f0c-8f5a-4656-88d9-3ce8ecc82017",
+  "fields": {
+    "created_at": "2026-08-10T20:17:03.611Z",
+    "updated_at": "2026-08-11T01:57:43.963Z",
+    "name": "Lifestyle",
+    "slug": "lifestyle",
+    "generation_mode": "INSTAGRAM",
+    "category": "EARRING",
+    "preview_image": "",
+    "prompt_template": "A realistic elegant lifestyle setting with natural premium light and subtle contextual elements, keeping the jewelry as protagonist.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "39af0edd-2271-45ce-9a9e-fae804558862",
+  "fields": {
+    "created_at": "2026-08-10T20:17:07.801Z",
+    "updated_at": "2026-08-11T01:57:47.857Z",
+    "name": "Still Profissional",
+    "slug": "still-professional",
+    "generation_mode": "STILL",
+    "category": "EARRING",
+    "preview_image": "",
+    "prompt_template": "Professional catalog still: clean white background, centered isolated product, soft studio light, minimal natural contact shadow, no decorative elements.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "39f493c0-51b3-46c3-9d5c-7ee4b07238c6",
+  "fields": {
+    "created_at": "2026-08-10T20:17:08.055Z",
+    "updated_at": "2026-08-11T01:57:48.211Z",
+    "name": "Still Profissional",
+    "slug": "still-professional",
+    "generation_mode": "STILL",
+    "category": "BRACELET",
+    "preview_image": "",
+    "prompt_template": "Professional catalog still: clean white background, centered isolated product, soft studio light, minimal natural contact shadow, no decorative elements.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "3a195298-e5be-491f-80af-e5b9420b1f86",
+  "fields": {
+    "created_at": "2026-08-10T20:17:07.535Z",
+    "updated_at": "2026-08-11T01:57:47.607Z",
+    "name": "Editorial",
+    "slug": "body-editorial",
+    "generation_mode": "BODY_DETAIL",
+    "category": "RING",
+    "preview_image": "",
+    "prompt_template": "Editorial close-up emphasizing jewelry detail on the relevant body area with refined art direction and realistic anatomy.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "3ccdf827-e4c0-40fb-979b-6ddef3c91bfd",
+  "fields": {
+    "created_at": "2026-08-10T20:17:04.942Z",
+    "updated_at": "2026-08-11T01:57:45.142Z",
+    "name": "Elegante",
+    "slug": "elegant",
+    "generation_mode": "MODEL",
+    "category": "ANKLET",
+    "preview_image": "",
+    "prompt_template": "An elegant commercial fashion model composition with refined styling; jewelry remains clearly visible and correctly applied.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "3f3cec1f-3819-40ac-9ac6-c150bdf37dda",
+  "fields": {
+    "created_at": "2026-08-10T20:17:06.741Z",
+    "updated_at": "2026-08-11T01:57:46.929Z",
+    "name": "Elegante",
+    "slug": "body-elegant",
+    "generation_mode": "BODY_DETAIL",
+    "category": "ANKLET",
+    "preview_image": "",
+    "prompt_template": "Elegant close-up commercial jewelry photography on the relevant body area, with clean styling and maximum product detail.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "3fe61819-d4ca-432f-93ee-ada3f64034de",
+  "fields": {
+    "created_at": "2026-08-10T20:17:07.109Z",
+    "updated_at": "2026-08-11T01:57:47.173Z",
+    "name": "Luxo",
+    "slug": "body-luxury",
+    "generation_mode": "BODY_DETAIL",
+    "category": "RING",
+    "preview_image": "",
+    "prompt_template": "Luxury jewelry close-up on the relevant body area, controlled premium light, realistic skin and product as absolute protagonist.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "45581b8f-7e39-4a21-a765-9a94ef2aae15",
+  "fields": {
+    "created_at": "2026-08-10T20:17:06.657Z",
+    "updated_at": "2026-08-11T01:57:46.846Z",
+    "name": "Elegante",
+    "slug": "body-elegant",
+    "generation_mode": "BODY_DETAIL",
+    "category": "BRACELET",
+    "preview_image": "",
+    "prompt_template": "Elegant close-up commercial jewelry photography on the relevant body area, with clean styling and maximum product detail.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "545e90e6-af82-42b9-a413-e299089b771f",
+  "fields": {
+    "created_at": "2026-08-10T20:17:03.873Z",
+    "updated_at": "2026-08-11T01:57:44.206Z",
+    "name": "Lifestyle",
+    "slug": "lifestyle",
+    "generation_mode": "INSTAGRAM",
+    "category": "BRACELET",
+    "preview_image": "",
+    "prompt_template": "A realistic elegant lifestyle setting with natural premium light and subtle contextual elements, keeping the jewelry as protagonist.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "57094804-a2f2-4e16-97ac-80f657d8c9d0",
+  "fields": {
+    "created_at": "2026-08-10T20:17:02.730Z",
+    "updated_at": "2026-08-11T01:57:43.124Z",
+    "name": "Veludo",
+    "slug": "velvet",
+    "generation_mode": "INSTAGRAM",
+    "category": "EARRING",
+    "preview_image": "",
+    "prompt_template": "A premium velvet jewelry setting with restrained composition, rich tactile background and controlled luxury lighting.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "6069e5bd-76bd-44f4-bda4-b50edfa242f1",
+  "fields": {
+    "created_at": "2026-08-10T20:17:06.293Z",
+    "updated_at": "2026-08-11T01:57:46.507Z",
+    "name": "Natural",
+    "slug": "body-natural",
+    "generation_mode": "BODY_DETAIL",
+    "category": "ANKLET",
+    "preview_image": "",
+    "prompt_template": "Natural skin texture, realistic anatomy, soft commercial light and minimal distraction; body acts as context for the jewelry close-up.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "63c5a930-56b2-41dd-81ef-5710255bd60b",
+  "fields": {
+    "created_at": "2026-08-10T20:17:05.377Z",
+    "updated_at": "2026-08-11T01:57:45.571Z",
+    "name": "Casual Chic",
+    "slug": "casual-chic",
+    "generation_mode": "MODEL",
+    "category": "ANKLET",
+    "preview_image": "",
+    "prompt_template": "A polished casual-chic model composition with natural wardrobe and realistic commercial photography.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "6a91c266-33f9-438c-a4da-4efce20c8d33",
+  "fields": {
+    "created_at": "2026-08-10T20:17:05.293Z",
+    "updated_at": "2026-08-11T01:57:45.493Z",
+    "name": "Casual Chic",
+    "slug": "casual-chic",
+    "generation_mode": "MODEL",
+    "category": "BRACELET",
+    "preview_image": "",
+    "prompt_template": "A polished casual-chic model composition with natural wardrobe and realistic commercial photography.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "6f099df3-ef94-4c2b-9f5f-2c9ceab85d5a",
+  "fields": {
+    "created_at": "2026-08-10T20:17:05.943Z",
+    "updated_at": "2026-08-11T01:57:46.088Z",
+    "name": "Natural",
+    "slug": "body-natural",
+    "generation_mode": "BODY_DETAIL",
+    "category": "EARRING",
+    "preview_image": "",
+    "prompt_template": "Natural skin texture, realistic anatomy, soft commercial light and minimal distraction; body acts as context for the jewelry close-up.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "70be7f1c-3a6f-439e-be92-223ca1365832",
+  "fields": {
+    "created_at": "2026-08-10T20:17:07.716Z",
+    "updated_at": "2026-08-11T01:57:47.782Z",
+    "name": "Editorial",
+    "slug": "body-editorial",
+    "generation_mode": "BODY_DETAIL",
+    "category": "ANKLET",
+    "preview_image": "",
+    "prompt_template": "Editorial close-up emphasizing jewelry detail on the relevant body area with refined art direction and realistic anatomy.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "7616a672-e147-498d-88b4-571df51b0d0a",
+  "fields": {
+    "created_at": "2026-08-10T20:17:02.523Z",
+    "updated_at": "2026-08-11T01:57:42.955Z",
+    "name": "Mármore Claro",
+    "slug": "light-marble",
+    "generation_mode": "INSTAGRAM",
+    "category": "BRACELET",
+    "preview_image": "",
+    "prompt_template": "A refined light warm marble jewelry scene, soft diffused commercial lighting, controlled reflections and natural contact shadow.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "7bc2293a-69d4-4348-9f89-c6e9cffc288b",
+  "fields": {
+    "created_at": "2026-08-10T20:17:03.258Z",
+    "updated_at": "2026-08-11T01:57:43.625Z",
+    "name": "Editorial",
+    "slug": "editorial",
+    "generation_mode": "INSTAGRAM",
+    "category": "NECKLACE",
+    "preview_image": "",
+    "prompt_template": "A sophisticated editorial jewelry composition with modern art direction, commercial lighting and strong product readability.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "7bd7c031-f628-4863-ae1e-b20ae11fae3f",
+  "fields": {
+    "created_at": "2026-08-10T20:17:07.365Z",
+    "updated_at": "2026-08-11T01:57:47.428Z",
+    "name": "Editorial",
+    "slug": "body-editorial",
+    "generation_mode": "BODY_DETAIL",
+    "category": "EARRING",
+    "preview_image": "",
+    "prompt_template": "Editorial close-up emphasizing jewelry detail on the relevant body area with refined art direction and realistic anatomy.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "7c71af63-ea4e-40e7-a2a0-e66cb9772537",
+  "fields": {
+    "created_at": "2026-08-10T20:17:04.477Z",
+    "updated_at": "2026-08-11T01:57:44.796Z",
+    "name": "Elegante",
+    "slug": "elegant",
+    "generation_mode": "MODEL",
+    "category": "EARRING",
+    "preview_image": "",
+    "prompt_template": "An elegant commercial fashion model composition with refined styling; jewelry remains clearly visible and correctly applied.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "8267f5dd-99fc-4be4-9cd5-3e357b4cdc7c",
+  "fields": {
+    "created_at": "2026-08-10T20:17:08.141Z",
+    "updated_at": "2026-08-11T01:57:48.296Z",
+    "name": "Still Profissional",
+    "slug": "still-professional",
+    "generation_mode": "STILL",
+    "category": "ANKLET",
+    "preview_image": "",
+    "prompt_template": "Professional catalog still: clean white background, centered isolated product, soft studio light, minimal natural contact shadow, no decorative elements.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "978d4dec-63b2-49c1-92c1-81840e59a7ce",
+  "fields": {
+    "created_at": "2026-08-10T20:17:05.533Z",
+    "updated_at": "2026-08-11T01:57:45.747Z",
+    "name": "Editorial",
+    "slug": "model-editorial",
+    "generation_mode": "MODEL",
+    "category": "NECKLACE",
+    "preview_image": "",
+    "prompt_template": "A fashion editorial model composition with premium art direction while preserving clear jewelry visibility.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "9a656fcc-7eff-49a9-821a-9de317e8c8cd",
+  "fields": {
+    "created_at": "2026-08-10T20:17:04.698Z",
+    "updated_at": "2026-08-11T01:57:44.886Z",
+    "name": "Elegante",
+    "slug": "elegant",
+    "generation_mode": "MODEL",
+    "category": "NECKLACE",
+    "preview_image": "",
+    "prompt_template": "An elegant commercial fashion model composition with refined styling; jewelry remains clearly visible and correctly applied.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "a0756d1f-dbbc-4165-8374-552cab80d00c",
+  "fields": {
+    "created_at": "2026-08-10T20:17:06.560Z",
+    "updated_at": "2026-08-11T01:57:46.762Z",
+    "name": "Elegante",
+    "slug": "body-elegant",
+    "generation_mode": "BODY_DETAIL",
+    "category": "RING",
+    "preview_image": "",
+    "prompt_template": "Elegant close-up commercial jewelry photography on the relevant body area, with clean styling and maximum product detail.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "a10954d9-05bd-4ed3-8e04-e251906b2848",
+  "fields": {
+    "created_at": "2026-08-10T20:17:03.172Z",
+    "updated_at": "2026-08-11T01:57:43.544Z",
+    "name": "Editorial",
+    "slug": "editorial",
+    "generation_mode": "INSTAGRAM",
+    "category": "EARRING",
+    "preview_image": "",
+    "prompt_template": "A sophisticated editorial jewelry composition with modern art direction, commercial lighting and strong product readability.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "a65a76e7-3428-4910-aacf-3a11267973d6",
+  "fields": {
+    "created_at": "2026-08-10T20:17:03.086Z",
+    "updated_at": "2026-08-11T01:57:43.464Z",
+    "name": "Veludo",
+    "slug": "velvet",
+    "generation_mode": "INSTAGRAM",
+    "category": "ANKLET",
+    "preview_image": "",
+    "prompt_template": "A premium velvet jewelry setting with restrained composition, rich tactile background and controlled luxury lighting.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "ab26accc-9d21-4d8c-ba90-48b9e9e65774",
+  "fields": {
+    "created_at": "2026-08-10T20:17:05.027Z",
+    "updated_at": "2026-08-11T01:57:45.226Z",
+    "name": "Casual Chic",
+    "slug": "casual-chic",
+    "generation_mode": "MODEL",
+    "category": "EARRING",
+    "preview_image": "",
+    "prompt_template": "A polished casual-chic model composition with natural wardrobe and realistic commercial photography.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "b263c770-c1c8-4a97-8d6a-17a4f42a342e",
+  "fields": {
+    "created_at": "2026-08-10T20:17:06.125Z",
+    "updated_at": "2026-08-11T01:57:46.337Z",
+    "name": "Natural",
+    "slug": "body-natural",
+    "generation_mode": "BODY_DETAIL",
+    "category": "RING",
+    "preview_image": "",
+    "prompt_template": "Natural skin texture, realistic anatomy, soft commercial light and minimal distraction; body acts as context for the jewelry close-up.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "b487369c-bb2c-4479-a0d6-50948b0ace37",
+  "fields": {
+    "created_at": "2026-08-10T20:17:07.970Z",
+    "updated_at": "2026-08-11T01:57:48.114Z",
+    "name": "Still Profissional",
+    "slug": "still-professional",
+    "generation_mode": "STILL",
+    "category": "RING",
+    "preview_image": "",
+    "prompt_template": "Professional catalog still: clean white background, centered isolated product, soft studio light, minimal natural contact shadow, no decorative elements.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "b4ade31b-da03-47da-a853-b2f0933e493e",
+  "fields": {
+    "created_at": "2026-08-10T20:17:02.085Z",
+    "updated_at": "2026-08-11T01:57:42.614Z",
+    "name": "Minimal",
+    "slug": "minimal",
+    "generation_mode": "INSTAGRAM",
+    "category": "ANKLET",
+    "preview_image": "",
+    "prompt_template": "A clean premium minimal jewelry scene, restrained props, soft studio light, elegant neutral surface, product in clear focus.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "b5c926f5-2ab5-447b-a61e-97c672d817e5",
+  "fields": {
+    "created_at": "2026-08-10T20:17:03.444Z",
+    "updated_at": "2026-08-11T01:57:43.793Z",
+    "name": "Editorial",
+    "slug": "editorial",
+    "generation_mode": "INSTAGRAM",
+    "category": "BRACELET",
+    "preview_image": "",
+    "prompt_template": "A sophisticated editorial jewelry composition with modern art direction, commercial lighting and strong product readability.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "b888e477-98a0-4d37-b73b-dd1233f167ae",
+  "fields": {
+    "created_at": "2026-08-10T20:17:03.341Z",
+    "updated_at": "2026-08-11T01:57:43.718Z",
+    "name": "Editorial",
+    "slug": "editorial",
+    "generation_mode": "INSTAGRAM",
+    "category": "RING",
+    "preview_image": "",
+    "prompt_template": "A sophisticated editorial jewelry composition with modern art direction, commercial lighting and strong product readability.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "b93c5436-5f71-4b27-ac5e-3ba87bc8acc1",
+  "fields": {
+    "created_at": "2026-08-10T20:17:05.123Z",
+    "updated_at": "2026-08-11T01:57:45.311Z",
+    "name": "Casual Chic",
+    "slug": "casual-chic",
+    "generation_mode": "MODEL",
+    "category": "NECKLACE",
+    "preview_image": "",
+    "prompt_template": "A polished casual-chic model composition with natural wardrobe and realistic commercial photography.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "bcff5e79-a21c-4037-a05c-9555a9c526d4",
+  "fields": {
+    "created_at": "2026-08-10T20:17:06.925Z",
+    "updated_at": "2026-08-11T01:57:47.091Z",
+    "name": "Luxo",
+    "slug": "body-luxury",
+    "generation_mode": "BODY_DETAIL",
+    "category": "NECKLACE",
+    "preview_image": "",
+    "prompt_template": "Luxury jewelry close-up on the relevant body area, controlled premium light, realistic skin and product as absolute protagonist.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "bed4dd5b-22c7-45d8-879c-db4f7edecdbb",
+  "fields": {
+    "created_at": "2026-08-10T20:17:02.831Z",
+    "updated_at": "2026-08-11T01:57:43.209Z",
+    "name": "Veludo",
+    "slug": "velvet",
+    "generation_mode": "INSTAGRAM",
+    "category": "NECKLACE",
+    "preview_image": "",
+    "prompt_template": "A premium velvet jewelry setting with restrained composition, rich tactile background and controlled luxury lighting.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "c221da3a-1640-4bc5-8e2d-07d5156a0fd3",
+  "fields": {
+    "created_at": "2026-08-10T20:17:02.996Z",
+    "updated_at": "2026-08-11T01:57:43.379Z",
+    "name": "Veludo",
+    "slug": "velvet",
+    "generation_mode": "INSTAGRAM",
+    "category": "BRACELET",
+    "preview_image": "",
+    "prompt_template": "A premium velvet jewelry setting with restrained composition, rich tactile background and controlled luxury lighting.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "c29140d2-31fb-4319-a51b-017161f2f8df",
+  "fields": {
+    "created_at": "2026-08-10T20:17:03.704Z",
+    "updated_at": "2026-08-11T01:57:44.036Z",
+    "name": "Lifestyle",
+    "slug": "lifestyle",
+    "generation_mode": "INSTAGRAM",
+    "category": "NECKLACE",
+    "preview_image": "",
+    "prompt_template": "A realistic elegant lifestyle setting with natural premium light and subtle contextual elements, keeping the jewelry as protagonist.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "c45acf28-8926-449b-b8f1-bd6dd50e17fb",
+  "fields": {
+    "created_at": "2026-08-10T20:17:06.838Z",
+    "updated_at": "2026-08-11T01:57:47.010Z",
+    "name": "Luxo",
+    "slug": "body-luxury",
+    "generation_mode": "BODY_DETAIL",
+    "category": "EARRING",
+    "preview_image": "",
+    "prompt_template": "Luxury jewelry close-up on the relevant body area, controlled premium light, realistic skin and product as absolute protagonist.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "c79e85eb-7dcc-4574-89c7-684662d0a867",
+  "fields": {
+    "created_at": "2026-08-10T20:17:05.210Z",
+    "updated_at": "2026-08-11T01:57:45.397Z",
+    "name": "Casual Chic",
+    "slug": "casual-chic",
+    "generation_mode": "MODEL",
+    "category": "RING",
+    "preview_image": "",
+    "prompt_template": "A polished casual-chic model composition with natural wardrobe and realistic commercial photography.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "ca7a341a-84bb-40d2-81b8-5dd40f512ea2",
+  "fields": {
+    "created_at": "2026-08-10T20:17:04.777Z",
+    "updated_at": "2026-08-11T01:57:44.971Z",
+    "name": "Elegante",
+    "slug": "elegant",
+    "generation_mode": "MODEL",
+    "category": "RING",
+    "preview_image": "",
+    "prompt_template": "An elegant commercial fashion model composition with refined styling; jewelry remains clearly visible and correctly applied.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "ce644789-d82d-4591-b1b5-aa04b0093044",
+  "fields": {
+    "created_at": "2026-08-10T20:17:02.619Z",
+    "updated_at": "2026-08-11T01:57:43.050Z",
+    "name": "Mármore Claro",
+    "slug": "light-marble",
+    "generation_mode": "INSTAGRAM",
+    "category": "ANKLET",
+    "preview_image": "",
+    "prompt_template": "A refined light warm marble jewelry scene, soft diffused commercial lighting, controlled reflections and natural contact shadow.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "d27a1027-98e7-4724-86b9-5bb04abbae09",
+  "fields": {
+    "created_at": "2026-08-10T20:17:02.911Z",
+    "updated_at": "2026-08-11T01:57:43.294Z",
+    "name": "Veludo",
+    "slug": "velvet",
+    "generation_mode": "INSTAGRAM",
+    "category": "RING",
+    "preview_image": "",
+    "prompt_template": "A premium velvet jewelry setting with restrained composition, rich tactile background and controlled luxury lighting.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "d6ef51ac-e41d-4025-86a1-87a99b75576e",
+  "fields": {
+    "created_at": "2026-08-10T20:17:01.718Z",
+    "updated_at": "2026-08-11T01:57:42.239Z",
+    "name": "Minimal",
+    "slug": "minimal",
+    "generation_mode": "INSTAGRAM",
+    "category": "EARRING",
+    "preview_image": "",
+    "prompt_template": "A clean premium minimal jewelry scene, restrained props, soft studio light, elegant neutral surface, product in clear focus.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "dda6fb47-df25-4118-bd29-44e5eceaa6ee",
+  "fields": {
+    "created_at": "2026-08-10T20:17:07.449Z",
+    "updated_at": "2026-08-11T01:57:47.525Z",
+    "name": "Editorial",
+    "slug": "body-editorial",
+    "generation_mode": "BODY_DETAIL",
+    "category": "NECKLACE",
+    "preview_image": "",
+    "prompt_template": "Editorial close-up emphasizing jewelry detail on the relevant body area with refined art direction and realistic anatomy.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "e044dc4b-c30e-488a-a87f-3caed97c8019",
+  "fields": {
+    "created_at": "2026-08-10T20:17:01.818Z",
+    "updated_at": "2026-08-11T01:57:42.334Z",
+    "name": "Minimal",
+    "slug": "minimal",
+    "generation_mode": "INSTAGRAM",
+    "category": "NECKLACE",
+    "preview_image": "",
+    "prompt_template": "A clean premium minimal jewelry scene, restrained props, soft studio light, elegant neutral surface, product in clear focus.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "e253f5f0-5732-411a-ae2f-95efe8ef2b46",
+  "fields": {
+    "created_at": "2026-08-10T20:17:04.862Z",
+    "updated_at": "2026-08-11T01:57:45.044Z",
+    "name": "Elegante",
+    "slug": "elegant",
+    "generation_mode": "MODEL",
+    "category": "BRACELET",
+    "preview_image": "",
+    "prompt_template": "An elegant commercial fashion model composition with refined styling; jewelry remains clearly visible and correctly applied.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "e3ed1c20-8199-4012-9f99-c2570dc671c4",
+  "fields": {
+    "created_at": "2026-08-10T20:17:06.209Z",
+    "updated_at": "2026-08-11T01:57:46.410Z",
+    "name": "Natural",
+    "slug": "body-natural",
+    "generation_mode": "BODY_DETAIL",
+    "category": "BRACELET",
+    "preview_image": "",
+    "prompt_template": "Natural skin texture, realistic anatomy, soft commercial light and minimal distraction; body acts as context for the jewelry close-up.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "e43d19b7-a5ab-4260-9851-f4bcb6bbc27d",
+  "fields": {
+    "created_at": "2026-08-10T20:17:07.620Z",
+    "updated_at": "2026-08-11T01:57:47.697Z",
+    "name": "Editorial",
+    "slug": "body-editorial",
+    "generation_mode": "BODY_DETAIL",
+    "category": "BRACELET",
+    "preview_image": "",
+    "prompt_template": "Editorial close-up emphasizing jewelry detail on the relevant body area with refined art direction and realistic anatomy.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "e52ae6e6-d207-43bd-a6fb-c3fbec76c4e2",
+  "fields": {
+    "created_at": "2026-08-10T20:17:07.885Z",
+    "updated_at": "2026-08-11T01:57:47.941Z",
+    "name": "Still Profissional",
+    "slug": "still-professional",
+    "generation_mode": "STILL",
+    "category": "NECKLACE",
+    "preview_image": "",
+    "prompt_template": "Professional catalog still: clean white background, centered isolated product, soft studio light, minimal natural contact shadow, no decorative elements.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "e5f52ddd-a240-413d-91f5-5f40f0c362f0",
+  "fields": {
+    "created_at": "2026-08-10T20:17:02.426Z",
+    "updated_at": "2026-08-11T01:57:42.870Z",
+    "name": "Mármore Claro",
+    "slug": "light-marble",
+    "generation_mode": "INSTAGRAM",
+    "category": "RING",
+    "preview_image": "",
+    "prompt_template": "A refined light warm marble jewelry scene, soft diffused commercial lighting, controlled reflections and natural contact shadow.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "f0602b43-60f2-4031-883e-4139ec259868",
+  "fields": {
+    "created_at": "2026-08-10T20:17:01.989Z",
+    "updated_at": "2026-08-11T01:57:42.526Z",
+    "name": "Minimal",
+    "slug": "minimal",
+    "generation_mode": "INSTAGRAM",
+    "category": "BRACELET",
+    "preview_image": "",
+    "prompt_template": "A clean premium minimal jewelry scene, restrained props, soft studio light, elegant neutral surface, product in clear focus.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "f2a7b815-1e84-4fc5-83c9-38f8c8e35563",
+  "fields": {
+    "created_at": "2026-08-10T20:17:05.622Z",
+    "updated_at": "2026-08-11T01:57:45.829Z",
+    "name": "Editorial",
+    "slug": "model-editorial",
+    "generation_mode": "MODEL",
+    "category": "RING",
+    "preview_image": "",
+    "prompt_template": "A fashion editorial model composition with premium art direction while preserving clear jewelry visibility.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "faa075ea-f467-493c-a088-ae77cdf3d83b",
+  "fields": {
+    "created_at": "2026-08-10T20:17:04.055Z",
+    "updated_at": "2026-08-11T01:57:44.363Z",
+    "name": "Luxo",
+    "slug": "luxury",
+    "generation_mode": "INSTAGRAM",
+    "category": "EARRING",
+    "preview_image": "",
+    "prompt_template": "A refined luxury jewelry campaign environment with premium materials, elegant lighting and restrained styling.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "fb77da4b-0ec5-43a3-9f15-15326aef4ae4",
+  "fields": {
+    "created_at": "2026-08-10T20:17:05.870Z",
+    "updated_at": "2026-08-11T01:57:46.003Z",
+    "name": "Editorial",
+    "slug": "model-editorial",
+    "generation_mode": "MODEL",
+    "category": "ANKLET",
+    "preview_image": "",
+    "prompt_template": "A fashion editorial model composition with premium art direction while preserving clear jewelry visibility.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "fdfbb623-3186-452f-bb87-7764bc7f92c3",
+  "fields": {
+    "created_at": "2026-08-10T20:17:07.192Z",
+    "updated_at": "2026-08-11T01:57:47.271Z",
+    "name": "Luxo",
+    "slug": "body-luxury",
+    "generation_mode": "BODY_DETAIL",
+    "category": "BRACELET",
+    "preview_image": "",
+    "prompt_template": "Luxury jewelry close-up on the relevant body area, controlled premium light, realistic skin and product as absolute protagonist.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.scenetemplate",
+  "pk": "ff953968-13f6-4a26-bdc4-495be9cbdad9",
+  "fields": {
+    "created_at": "2026-08-10T20:17:05.462Z",
+    "updated_at": "2026-08-11T01:57:45.650Z",
+    "name": "Editorial",
+    "slug": "model-editorial",
+    "generation_mode": "MODEL",
+    "category": "EARRING",
+    "preview_image": "",
+    "prompt_template": "A fashion editorial model composition with premium art direction while preserving clear jewelry visibility.",
+    "version": 1,
+    "is_active": true,
+    "sort_order": 0
+  }
+},
+{
+  "model": "studio.generationrule",
+  "pk": "01a839b6-7ed2-48aa-89fe-8e9fc8b2c79c",
+  "fields": {
+    "created_at": "2026-08-10T20:17:01.009Z",
+    "updated_at": "2026-08-11T01:57:41.468Z",
+    "category": "BRACELET",
+    "generation_mode": "INSTAGRAM",
+    "body_area": "",
+    "framing": "PRODUCT_CLOSE_UP",
+    "product_priority": "MAXIMUM",
+    "body_priority": "LOW",
+    "background_priority": "LOW",
+    "product_visibility": "FULL",
+    "detail_level": "MAXIMUM",
+    "placement_instruction": "Create a commercial composition with the bracelet completely readable.",
+    "additional_rules": [],
+    "is_active": true
+  }
+},
+{
+  "model": "studio.generationrule",
+  "pk": "03ac5238-c578-4da6-9f2e-778b13e32cea",
+  "fields": {
+    "created_at": "2026-08-10T20:17:01.519Z",
+    "updated_at": "2026-08-11T01:57:42.054Z",
+    "category": "ANKLET",
+    "generation_mode": "BODY_DETAIL",
+    "body_area": "ankle and lower leg",
+    "framing": "CLOSE_UP",
+    "product_priority": "MAXIMUM",
+    "body_priority": "MEDIUM",
+    "background_priority": "LOW",
+    "product_visibility": "FULL",
+    "detail_level": "MAXIMUM",
+    "placement_instruction": "Focus on the anklet applied to the ankle with realistic scale, drape and clear component details.",
+    "additional_rules": [],
+    "is_active": true
+  }
+},
+{
+  "model": "studio.generationrule",
+  "pk": "14275226-2683-44ac-9018-2f9ff52f9afd",
+  "fields": {
+    "created_at": "2026-08-10T20:17:00.826Z",
+    "updated_at": "2026-08-11T01:57:41.291Z",
+    "category": "RING",
+    "generation_mode": "BODY_DETAIL",
+    "body_area": "hand and fingers",
+    "framing": "MACRO_HAND",
+    "product_priority": "MAXIMUM",
+    "body_priority": "MEDIUM",
+    "background_priority": "LOW",
+    "product_visibility": "FULL",
+    "detail_level": "MAXIMUM",
+    "placement_instruction": "Use anatomically natural hands and fingers. Show the ring sharply on one finger at realistic scale.",
+    "additional_rules": [],
+    "is_active": true
+  }
+},
+{
+  "model": "studio.generationrule",
+  "pk": "23434e2b-7121-4174-81bd-1299591ef6d0",
+  "fields": {
+    "created_at": "2026-08-10T20:17:00.232Z",
+    "updated_at": "2026-08-11T01:57:40.709Z",
+    "category": "EARRING",
+    "generation_mode": "STILL",
+    "body_area": "",
+    "framing": "CATALOG_PRODUCT",
+    "product_priority": "MAXIMUM",
+    "body_priority": "LOW",
+    "background_priority": "LOW",
+    "product_visibility": "FULL",
+    "detail_level": "MAXIMUM",
+    "placement_instruction": "Isolate the product and preserve exact geometry, components and proportions.",
+    "additional_rules": [],
+    "is_active": true
+  }
+},
+{
+  "model": "studio.generationrule",
+  "pk": "2a9bb9b1-d2f6-4bc5-882f-ea3736f5ce49",
+  "fields": {
+    "created_at": "2026-08-10T20:17:01.434Z",
+    "updated_at": "2026-08-11T01:57:41.972Z",
+    "category": "ANKLET",
+    "generation_mode": "MODEL",
+    "body_area": "ankle and lower leg",
+    "framing": "LIFESTYLE_MODEL",
+    "product_priority": "MAXIMUM",
+    "body_priority": "MEDIUM",
+    "background_priority": "LOW",
+    "product_visibility": "FULL",
+    "detail_level": "MAXIMUM",
+    "placement_instruction": "Show natural use of the anklet within a lifestyle/model composition.",
+    "additional_rules": [],
+    "is_active": true
+  }
+},
+{
+  "model": "studio.generationrule",
+  "pk": "2d24b278-81bb-453f-99c9-f95a203d968a",
+  "fields": {
+    "created_at": "2026-08-10T20:17:00.078Z",
+    "updated_at": "2026-08-11T01:57:40.624Z",
+    "category": "EARRING",
+    "generation_mode": "BODY_DETAIL",
+    "body_area": "ear and side of face",
+    "framing": "CLOSE_UP",
+    "product_priority": "MAXIMUM",
+    "body_priority": "MEDIUM",
+    "background_priority": "LOW",
+    "product_visibility": "FULL",
+    "detail_level": "MAXIMUM",
+    "placement_instruction": "Hair must not cover the jewelry; preserve natural scale relative to the ear.",
+    "additional_rules": [],
+    "is_active": true
+  }
+},
+{
+  "model": "studio.generationrule",
+  "pk": "42d39f15-ba0c-4de5-9257-eb8fe2fcbb33",
+  "fields": {
+    "created_at": "2026-08-10T20:17:00.311Z",
+    "updated_at": "2026-08-11T01:57:40.795Z",
+    "category": "NECKLACE",
+    "generation_mode": "INSTAGRAM",
+    "body_area": "",
+    "framing": "PRODUCT_CLOSE_UP",
+    "product_priority": "MAXIMUM",
+    "body_priority": "LOW",
+    "background_priority": "LOW",
+    "product_visibility": "FULL",
+    "detail_level": "MAXIMUM",
+    "placement_instruction": "Show the complete necklace with chain and pendant clearly visible.",
+    "additional_rules": [],
+    "is_active": true
+  }
+},
+{
+  "model": "studio.generationrule",
+  "pk": "43a10e6e-593c-490d-83c0-5775c06884c5",
+  "fields": {
+    "created_at": "2026-08-10T20:17:00.576Z",
+    "updated_at": "2026-08-11T01:57:41.047Z",
+    "category": "NECKLACE",
+    "generation_mode": "STILL",
+    "body_area": "",
+    "framing": "CATALOG_PRODUCT",
+    "product_priority": "MAXIMUM",
+    "body_priority": "LOW",
+    "background_priority": "LOW",
+    "product_visibility": "FULL",
+    "detail_level": "MAXIMUM",
+    "placement_instruction": "Show the complete necklace isolated, preserving chain-to-pendant proportions.",
+    "additional_rules": [],
+    "is_active": true
+  }
+},
+{
+  "model": "studio.generationrule",
+  "pk": "4fb69c8d-c918-4ff3-92c0-a52ff5713c31",
+  "fields": {
+    "created_at": "2026-08-10T20:17:01.616Z",
+    "updated_at": "2026-08-11T01:57:42.145Z",
+    "category": "ANKLET",
+    "generation_mode": "STILL",
+    "body_area": "",
+    "framing": "CATALOG_PRODUCT",
+    "product_priority": "MAXIMUM",
+    "body_priority": "LOW",
+    "background_priority": "LOW",
+    "product_visibility": "FULL",
+    "detail_level": "MAXIMUM",
+    "placement_instruction": "Isolate the anklet and preserve full length ratio, clasp, charms and construction.",
+    "additional_rules": [],
+    "is_active": true
+  }
+},
+{
+  "model": "studio.generationrule",
+  "pk": "716f72b3-c5b6-4de6-ad43-f9d81618ab61",
+  "fields": {
+    "created_at": "2026-08-10T20:17:00.924Z",
+    "updated_at": "2026-08-11T01:57:41.387Z",
+    "category": "RING",
+    "generation_mode": "STILL",
+    "body_area": "",
+    "framing": "CATALOG_PRODUCT",
+    "product_priority": "MAXIMUM",
+    "body_priority": "LOW",
+    "background_priority": "LOW",
+    "product_visibility": "FULL",
+    "detail_level": "MAXIMUM",
+    "placement_instruction": "Isolate the ring and preserve exact setting, stones, band geometry and proportions.",
+    "additional_rules": [],
+    "is_active": true
+  }
+},
+{
+  "model": "studio.generationrule",
+  "pk": "7841395a-5b53-49df-adcd-be6c9c144cae",
+  "fields": {
+    "created_at": "2026-08-10T20:17:01.094Z",
+    "updated_at": "2026-08-11T01:57:41.550Z",
+    "category": "BRACELET",
+    "generation_mode": "MODEL",
+    "body_area": "wrist and upper body",
+    "framing": "LIFESTYLE_MODEL",
+    "product_priority": "MAXIMUM",
+    "body_priority": "MEDIUM",
+    "background_priority": "LOW",
+    "product_visibility": "FULL",
+    "detail_level": "MAXIMUM",
+    "placement_instruction": "Place the bracelet naturally on the wrist within a lifestyle/model composition.",
+    "additional_rules": [],
+    "is_active": true
+  }
+},
+{
+  "model": "studio.generationrule",
+  "pk": "7b22ae3b-953f-46cc-8918-90b58e9b3b47",
+  "fields": {
+    "created_at": "2026-08-10T20:17:01.263Z",
+    "updated_at": "2026-08-11T01:57:41.726Z",
+    "category": "BRACELET",
+    "generation_mode": "STILL",
+    "body_area": "",
+    "framing": "CATALOG_PRODUCT",
+    "product_priority": "MAXIMUM",
+    "body_priority": "LOW",
+    "background_priority": "LOW",
+    "product_visibility": "FULL",
+    "detail_level": "MAXIMUM",
+    "placement_instruction": "Isolate the bracelet and preserve its shape, clasp, components and proportions.",
+    "additional_rules": [],
+    "is_active": true
+  }
+},
+{
+  "model": "studio.generationrule",
+  "pk": "8b6d6c52-ee7c-4a8e-a2bf-b20114a5c8b5",
+  "fields": {
+    "created_at": "2026-08-10T20:16:59.994Z",
+    "updated_at": "2026-08-11T01:57:40.551Z",
+    "category": "EARRING",
+    "generation_mode": "MODEL",
+    "body_area": "ears and face",
+    "framing": "PORTRAIT_BUST",
+    "product_priority": "MAXIMUM",
+    "body_priority": "MEDIUM",
+    "background_priority": "LOW",
+    "product_visibility": "FULL",
+    "detail_level": "MAXIMUM",
+    "placement_instruction": "Place the earrings naturally on the model's ears and keep them clearly visible.",
+    "additional_rules": [],
+    "is_active": true
+  }
+},
+{
+  "model": "studio.generationrule",
+  "pk": "9822a7a1-db09-473c-a83a-33b78748fe40",
+  "fields": {
+    "created_at": "2026-08-10T20:16:59.898Z",
+    "updated_at": "2026-08-11T01:57:40.466Z",
+    "category": "EARRING",
+    "generation_mode": "INSTAGRAM",
+    "body_area": "",
+    "framing": "PRODUCT_CLOSE_UP",
+    "product_priority": "MAXIMUM",
+    "body_priority": "LOW",
+    "background_priority": "LOW",
+    "product_visibility": "FULL",
+    "detail_level": "MAXIMUM",
+    "placement_instruction": "Keep the earrings fully visible in a commercial jewelry composition.",
+    "additional_rules": [],
+    "is_active": true
+  }
+},
+{
+  "model": "studio.generationrule",
+  "pk": "9917ca3b-7e64-4b9e-8fa1-a36dccadc770",
+  "fields": {
+    "created_at": "2026-08-10T20:17:00.742Z",
+    "updated_at": "2026-08-11T01:57:41.210Z",
+    "category": "RING",
+    "generation_mode": "MODEL",
+    "body_area": "hand and model",
+    "framing": "LIFESTYLE_MODEL",
+    "product_priority": "MAXIMUM",
+    "body_priority": "MEDIUM",
+    "background_priority": "LOW",
+    "product_visibility": "FULL",
+    "detail_level": "MAXIMUM",
+    "placement_instruction": "The ring must be perceptible and naturally worn as part of the model composition.",
+    "additional_rules": [],
+    "is_active": true
+  }
+},
+{
+  "model": "studio.generationrule",
+  "pk": "b337ec65-ad29-4231-9c48-2759567152df",
+  "fields": {
+    "created_at": "2026-08-10T20:17:01.178Z",
+    "updated_at": "2026-08-11T01:57:41.644Z",
+    "category": "BRACELET",
+    "generation_mode": "BODY_DETAIL",
+    "body_area": "wrist and forearm",
+    "framing": "CLOSE_UP",
+    "product_priority": "MAXIMUM",
+    "body_priority": "MEDIUM",
+    "background_priority": "LOW",
+    "product_visibility": "FULL",
+    "detail_level": "MAXIMUM",
+    "placement_instruction": "Keep the bracelet fully visible, sharply focused and naturally fitted around the wrist.",
+    "additional_rules": [],
+    "is_active": true
+  }
+},
+{
+  "model": "studio.generationrule",
+  "pk": "b7104dc0-391a-4887-8795-fed3a7f9e808",
+  "fields": {
+    "created_at": "2026-08-10T20:17:00.659Z",
+    "updated_at": "2026-08-11T01:57:41.129Z",
+    "category": "RING",
+    "generation_mode": "INSTAGRAM",
+    "body_area": "",
+    "framing": "MACRO_PRODUCT",
+    "product_priority": "MAXIMUM",
+    "body_priority": "LOW",
+    "background_priority": "LOW",
+    "product_visibility": "FULL",
+    "detail_level": "MAXIMUM",
+    "placement_instruction": "Create a premium macro product composition with the ring as the protagonist.",
+    "additional_rules": [],
+    "is_active": true
+  }
+},
+{
+  "model": "studio.generationrule",
+  "pk": "c4a8eeb6-e7d8-4c43-943c-8b313db614a4",
+  "fields": {
+    "created_at": "2026-08-10T20:17:01.348Z",
+    "updated_at": "2026-08-11T01:57:41.807Z",
+    "category": "ANKLET",
+    "generation_mode": "INSTAGRAM",
+    "body_area": "",
+    "framing": "PRODUCT_CLOSE_UP",
+    "product_priority": "MAXIMUM",
+    "body_priority": "LOW",
+    "background_priority": "LOW",
+    "product_visibility": "FULL",
+    "detail_level": "MAXIMUM",
+    "placement_instruction": "Create a refined commercial product composition keeping the anklet recognizable.",
+    "additional_rules": [],
+    "is_active": true
+  }
+},
+{
+  "model": "studio.generationrule",
+  "pk": "ce880b0e-e352-46e7-be8b-075de3015421",
+  "fields": {
+    "created_at": "2026-08-10T20:17:00.495Z",
+    "updated_at": "2026-08-11T01:57:40.965Z",
+    "category": "NECKLACE",
+    "generation_mode": "BODY_DETAIL",
+    "body_area": "neck, clavicle and upper chest",
+    "framing": "CLOSE_UP",
+    "product_priority": "MAXIMUM",
+    "body_priority": "MEDIUM",
+    "background_priority": "LOW",
+    "product_visibility": "FULL",
+    "detail_level": "MAXIMUM",
+    "placement_instruction": "The necklace must be the visual protagonist; show pendant, chain, finish and realistic drape.",
+    "additional_rules": [],
+    "is_active": true
+  }
+},
+{
+  "model": "studio.generationrule",
+  "pk": "e4f4c586-47b1-43cb-902b-e9cf124209d1",
+  "fields": {
+    "created_at": "2026-08-10T20:17:00.409Z",
+    "updated_at": "2026-08-11T01:57:40.880Z",
+    "category": "NECKLACE",
+    "generation_mode": "MODEL",
+    "body_area": "neck and upper torso",
+    "framing": "UPPER_BODY",
+    "product_priority": "MAXIMUM",
+    "body_priority": "MEDIUM",
+    "background_priority": "LOW",
+    "product_visibility": "FULL",
+    "detail_level": "MAXIMUM",
+    "placement_instruction": "Place the necklace naturally around the neck as part of a complete styled look.",
+    "additional_rules": [],
+    "is_active": true
+  }
+},
+{
+  "model": "studio.preservationrule",
+  "pk": "295928f5-c7b9-499e-93eb-d112db530801",
+  "fields": {
+    "created_at": "2026-08-10T20:16:59.546Z",
+    "updated_at": "2026-08-11T01:57:40.127Z",
+    "category": "",
+    "rule_type": "PRESERVE_STONES",
+    "instruction": "Preserve the exact number, position, shape and colors of stones.",
+    "priority": 30,
+    "is_active": true
+  }
+},
+{
+  "model": "studio.preservationrule",
+  "pk": "4a77cf62-cf77-42e3-9736-80c39c206b92",
+  "fields": {
+    "created_at": "2026-08-10T20:16:59.461Z",
+    "updated_at": "2026-08-11T01:57:40.046Z",
+    "category": "",
+    "rule_type": "PRESERVE_METAL_COLOR",
+    "instruction": "Preserve the original metal color and finish; do not turn gold into silver or silver into gold.",
+    "priority": 20,
+    "is_active": true
+  }
+},
+{
+  "model": "studio.preservationrule",
+  "pk": "7d9d2d98-c2c2-45cc-a1d7-aa56fbf87b3b",
+  "fields": {
+    "created_at": "2026-08-10T20:16:59.276Z",
+    "updated_at": "2026-08-11T01:57:39.511Z",
+    "category": "",
+    "rule_type": "PRESERVE_GEOMETRY",
+    "instruction": "Preserve the exact geometry and design of the uploaded jewelry.",
+    "priority": 10,
+    "is_active": true
+  }
+},
+{
+  "model": "studio.preservationrule",
+  "pk": "9b2640fd-43cc-4314-933e-6cd2a68ef17d",
+  "fields": {
+    "created_at": "2026-08-10T20:16:59.801Z",
+    "updated_at": "2026-08-11T01:57:40.378Z",
+    "category": "",
+    "rule_type": "NO_TEXT",
+    "instruction": "Do not add text, labels, logos, watermarks or invented branding.",
+    "priority": 60,
+    "is_active": true
+  }
+},
+{
+  "model": "studio.preservationrule",
+  "pk": "9c6de062-afe4-425c-b7ac-419e1f55a761",
+  "fields": {
+    "created_at": "2026-08-10T20:16:59.716Z",
+    "updated_at": "2026-08-11T01:57:40.306Z",
+    "category": "",
+    "rule_type": "PRESERVE_PROPORTIONS",
+    "instruction": "Preserve the product's relative proportions and realistic scale.",
+    "priority": 50,
+    "is_active": true
+  }
+},
+{
+  "model": "studio.preservationrule",
+  "pk": "b66f4702-f37b-4380-8679-a89bc1bd55fc",
+  "fields": {
+    "created_at": "2026-08-10T20:16:59.632Z",
+    "updated_at": "2026-08-11T01:57:40.222Z",
+    "category": "",
+    "rule_type": "NO_EXTRA_COMPONENTS",
+    "instruction": "Do not add, remove, duplicate or invent jewelry components.",
+    "priority": 40,
+    "is_active": true
+  }
+},
+{
+  "model": "studio.generation",
+  "pk": "111b096a-0d5d-4858-b083-eb9d069bdd8b",
+  "fields": {
+    "created_at": "2026-08-13T20:40:58.031Z",
+    "updated_at": "2026-08-13T20:41:39.531Z",
+    "organization": "be1f81c0-45d6-486b-b3c7-79c37e39c0b2",
+    "user": 1,
+    "product": "c815c788-982c-42dd-8056-63a2cbcb47a9",
+    "mode": "STILL",
+    "scene_template": "39af0edd-2271-45ce-9a9e-fae804558862",
+    "generation_rule": "23434e2b-7121-4174-81bd-1299591ef6d0",
+    "status": "COMPLETED",
+    "failure_type": "",
+    "provider": "OPENAI",
+    "model": "gpt-image-2",
+    "final_prompt": "Use the uploaded product image as the mandatory and authoritative product reference. The jewelry item in the reference image is the exact product that must appear in the final image. Preserve its identity, geometry, proportions, materials, colors, stones, settings, textures, finishes, closures, pendants, decorative elements and all visible design details. Create exactly one final commercial image.\n\nPRODUCT CATEGORY: EARRING\n\nGENERATION MODE: STILL\n\nMODE REQUIREMENTS:\nCreate a professional catalog still-life photograph of the jewelry. The jewelry must be the only product and the absolute visual focus. Use a pure, uniform and clean white background. Center the product and keep it completely visible without cropping. Use professional soft studio lighting with controlled reflections and a subtle natural contact shadow when appropriate. Maintain realistic material appearance and accurate metal and stone colors. Do not include people, hands, body parts, props, decorative objects, scenery or environmental elements.\n\nFRAMING: CATALOG_PRODUCT\n\nPLACEMENT: Isolate the product and preserve exact geometry, components and proportions.\n\nSCENE REQUIREMENTS:\nProfessional catalog still: clean white background, centered isolated product, soft studio light, minimal natural contact shadow, no decorative elements.\n\nPRESERVATION RULES:\n- Preserve the exact geometry and design of the uploaded jewelry.\n- Preserve the original metal color and finish; do not turn gold into silver or silver into gold.\n- Preserve the exact number, position, shape and colors of stones.\n- Do not add, remove, duplicate or invent jewelry components.\n- Preserve the product's relative proportions and realistic scale.\n- Do not add text, labels, logos, watermarks or invented branding.\n\nFINAL RESTRICTIONS:\n- Return exactly one finished image.\n- Do not add text.\n- Do not add logos.\n- Do not add watermarks.\n- Do not duplicate the jewelry.\n- Do not invent additional jewelry components.\n- Do not remove existing jewelry components.\n- Do not redesign the referenced product.",
+    "configuration_snapshot": {
+      "category": "EARRING",
+      "mode": "STILL",
+      "template_id": "39af0edd-2271-45ce-9a9e-fae804558862",
+      "template_version": 1,
+      "framing": "CATALOG_PRODUCT",
+      "body_area": "",
+      "provider": "OPENAI",
+      "model": "gpt-image-2"
+    },
+    "input_tokens": null,
+    "output_tokens": null,
+    "api_cost_usd": null,
+    "credit_cost": 1,
+    "retry_count": 0,
+    "idempotency_key": "eec7ab49-9df4-4a0e-9a1a-a9da507c0dd6",
+    "started_at": "2026-08-13T20:41:18.449Z",
+    "completed_at": "2026-08-13T20:41:39.531Z",
+    "error_code": "",
+    "error_message": ""
+  }
+},
+{
+  "model": "studio.generation",
+  "pk": "18f987fd-6e79-4c2e-a997-cc6bc5ae073d",
+  "fields": {
+    "created_at": "2026-08-13T20:14:59.964Z",
+    "updated_at": "2026-08-13T20:15:41.061Z",
+    "organization": "be1f81c0-45d6-486b-b3c7-79c37e39c0b2",
+    "user": 1,
+    "product": "c815c788-982c-42dd-8056-63a2cbcb47a9",
+    "mode": "STILL",
+    "scene_template": "39af0edd-2271-45ce-9a9e-fae804558862",
+    "generation_rule": "23434e2b-7121-4174-81bd-1299591ef6d0",
+    "status": "FAILED",
+    "failure_type": "TECHNICAL",
+    "provider": "OPENAI",
+    "model": "gpt-image-2",
+    "final_prompt": "Use the uploaded product image as the mandatory and authoritative product reference. The jewelry item in the reference image is the exact product that must appear in the final image. Preserve its identity, geometry, proportions, materials, colors, stones, settings, textures, finishes, closures, pendants, decorative elements and all visible design details. Create exactly one final commercial image.\n\nPRODUCT CATEGORY: EARRING\n\nGENERATION MODE: STILL\n\nMODE REQUIREMENTS:\nCreate a professional catalog still-life photograph of the jewelry. The jewelry must be the only product and the absolute visual focus. Use a pure, uniform and clean white background. Center the product and keep it completely visible without cropping. Use professional soft studio lighting with controlled reflections and a subtle natural contact shadow when appropriate. Maintain realistic material appearance and accurate metal and stone colors. Do not include people, hands, body parts, props, decorative objects, scenery or environmental elements.\n\nFRAMING: CATALOG_PRODUCT\n\nPLACEMENT: Isolate the product and preserve exact geometry, components and proportions.\n\nSCENE REQUIREMENTS:\nProfessional catalog still: clean white background, centered isolated product, soft studio light, minimal natural contact shadow, no decorative elements.\n\nPRESERVATION RULES:\n- Preserve the exact geometry and design of the uploaded jewelry.\n- Preserve the original metal color and finish; do not turn gold into silver or silver into gold.\n- Preserve the exact number, position, shape and colors of stones.\n- Do not add, remove, duplicate or invent jewelry components.\n- Preserve the product's relative proportions and realistic scale.\n- Do not add text, labels, logos, watermarks or invented branding.\n\nFINAL RESTRICTIONS:\n- Return exactly one finished image.\n- Do not add text.\n- Do not add logos.\n- Do not add watermarks.\n- Do not duplicate the jewelry.\n- Do not invent additional jewelry components.\n- Do not remove existing jewelry components.\n- Do not redesign the referenced product.",
+    "configuration_snapshot": {
+      "category": "EARRING",
+      "mode": "STILL",
+      "template_id": "39af0edd-2271-45ce-9a9e-fae804558862",
+      "template_version": 1,
+      "framing": "CATALOG_PRODUCT",
+      "body_area": "",
+      "provider": "OPENAI",
+      "model": "gpt-image-2"
+    },
+    "input_tokens": null,
+    "output_tokens": null,
+    "api_cost_usd": null,
+    "credit_cost": 1,
+    "retry_count": 0,
+    "idempotency_key": "4a38b3ce-3914-40d6-b92d-b0226ce0fbc7",
+    "started_at": "2026-08-13T20:15:36.949Z",
+    "completed_at": "2026-08-13T20:15:41.060Z",
+    "error_code": "BadRequestError",
+    "error_message": "Error code: 400 - {'error': {'message': \"Invalid file 'image': unsupported mimetype ('application/octet-stream'). Supported file formats are 'image/jpeg', 'image/png', and 'image/webp'.\", 'type': 'invalid_request_error', 'param': 'image', 'code': 'unsupported_file_mimetype'}}"
+  }
+},
+{
+  "model": "studio.generation",
+  "pk": "58f3a3bd-0940-48d5-ab96-c36f0dcf4ad2",
+  "fields": {
+    "created_at": "2026-08-13T22:48:27.135Z",
+    "updated_at": "2026-08-13T22:48:54.120Z",
+    "organization": "be1f81c0-45d6-486b-b3c7-79c37e39c0b2",
+    "user": 1,
+    "product": "c815c788-982c-42dd-8056-63a2cbcb47a9",
+    "mode": "BODY_DETAIL",
+    "scene_template": "34a8b747-c1a1-4fbb-8e64-e8af8bf0dcc9",
+    "generation_rule": "2d24b278-81bb-453f-99c9-f95a203d968a",
+    "status": "COMPLETED",
+    "failure_type": "",
+    "provider": "OPENAI",
+    "model": "gpt-image-2",
+    "final_prompt": "Use the uploaded original jewelry image as the mandatory, absolute and authoritative product reference. The jewelry shown in the reference is the exact physical product that must appear in the final image. Preserve its identity, geometry, proportions, materials, colors, stones, settings, textures, finishes, closures, pendants, decorative elements and all visible manufacturing details. Create exactly one final commercial image.\n\nPRODUCT CATEGORY: EARRING\n\nGENERATION MODE: BODY_DETAIL\n\nMODE REQUIREMENTS:\nCreate a professional close-up jewelry photograph showing the exact referenced product correctly applied to the appropriate body area. The jewelry is the absolute visual protagonist. Use the body only to demonstrate realistic scale, placement and fit. The product and immediate body area must be sharply focused. Do not reinterpret the jewelry while applying it to the body.\n\nCATEGORY + MODE REQUIREMENTS:\nEARRING BODY-DETAIL MASTER REQUIREMENTS:\n\nABSOLUTE FIDELITY:\nUse exclusively the uploaded original earring as the absolute and authoritative visual reference. The earring must remain exactly the same physical product.\n\nTreat the referenced earring as immutable visual geometry. Do not recreate, reinterpret, redesign, beautify, simplify, symmetrize or reconstruct the jewelry itself.\n\nDO NOT MODIFY:\n- shape\n- actual size\n- thickness\n- width\n- height\n- proportions\n- design\n- curves\n- openings and negative spaces\n- texture\n- finish\n- metal plating color\n- gold tone intensity\n- original shine characteristics\n- stones\n- pearls\n- zirconia\n- stone cuts\n- quantity of stones\n- stone positions\n- prongs\n- settings\n- closures\n- relief\n- polish\n- manufacturing details\n\nDo not make the metal thicker or thinner. Do not make the product more symmetrical. Do not smooth or simplify structural contours. Do not create stones. Do not remove stones. Do not reposition stones. Do not create a cleaner or idealized version of the earring. Preserve natural manufacturing characteristics and imperfections.\n\nREAL SCALE AND PLACEMENT:\nPlace the exact referenced earring naturally on the model's ear using realistic physical scale. Do not enlarge, shrink, stretch, compress or deform the product. Respect the true relationship between the earring and the earlobe. The placement must follow natural ear anatomy and look physically wearable.\n\nGenerate the model, ear, skin, hair, lighting and environment around the referenced jewelry. Do not generate a new jewelry design inspired by the reference.\n\nMODEL:\nUse an extremely photogenic Brazilian woman approximately 25 to 35 years old with sophisticated, elegant and natural beauty. Use realistic healthy skin texture, very light makeup and a delicate natural expression. Avoid artificial or plastic AI-looking skin.\n\nHAIR:\nUse well-groomed medium-brown straight or slightly wavy hair. Keep the hair behind the ear so that no part of the jewelry is hidden.\n\nCOMPOSITION:\nUse a professional close-up showing only the relevant part of the face, jawline, ear, neck and hair. The earring must be the absolute visual protagonist.\n\nLIGHTING:\nUse premium luxury-jewelry campaign photography with soft diffused light, extremely delicate shadows, controlled highlights and realistic reflections. Do not create blown highlights or artificial reflections on the jewelry.\n\nBACKGROUND:\nUse a neutral light beige, off-white or cream background with natural depth-of-field blur. No objects or visual distractions.\n\nFINAL QUALITY:\nThe result must look like a real professional luxury-jewelry advertising photograph, not a render or illustration. Preserve realistic skin, metal and stone microdetails. The jewelry must remain faithful to the exact product that would be delivered to the customer.\n\nFRAMING: CLOSE_UP\n\nBODY AREA: ear and side of face\n\nPLACEMENT: Hair must not cover the jewelry; preserve natural scale relative to the ear.\n\nSCENE REQUIREMENTS:\nElegant close-up commercial jewelry photography on the relevant body area, with clean styling and maximum product detail.\n\nPRESERVATION RULES:\n- Preserve the exact geometry and design of the uploaded jewelry.\n- Preserve the original metal color and finish; do not turn gold into silver or silver into gold.\n- Preserve the exact number, position, shape and colors of stones.\n- Do not add, remove, duplicate or invent jewelry components.\n- Preserve the product's relative proportions and realistic scale.\n- Do not add text, labels, logos, watermarks or invented branding.\n\nFINAL RESTRICTIONS:\n- Return exactly one finished image.\n- Do not add text.\n- Do not add logos.\n- Do not add watermarks.\n- Do not duplicate the jewelry.\n- Do not invent additional jewelry components.\n- Do not remove existing jewelry components.\n- Do not redesign the referenced product.",
+    "configuration_snapshot": {
+      "category": "EARRING",
+      "mode": "BODY_DETAIL",
+      "template_id": "34a8b747-c1a1-4fbb-8e64-e8af8bf0dcc9",
+      "template_version": 1,
+      "framing": "CLOSE_UP",
+      "body_area": "ear and side of face",
+      "provider": "OPENAI",
+      "model": "gpt-image-2"
+    },
+    "input_tokens": null,
+    "output_tokens": null,
+    "api_cost_usd": null,
+    "credit_cost": 1,
+    "retry_count": 0,
+    "idempotency_key": "api-body-detail-v2-001",
+    "started_at": "2026-08-13T22:48:27.755Z",
+    "completed_at": "2026-08-13T22:48:54.120Z",
+    "error_code": "",
+    "error_message": ""
+  }
+},
+{
+  "model": "studio.generation",
+  "pk": "78b50bcf-3b6d-4317-9c5d-c1f7ead15e51",
+  "fields": {
+    "created_at": "2026-08-13T12:04:16.683Z",
+    "updated_at": "2026-08-13T19:45:08.772Z",
+    "organization": "be1f81c0-45d6-486b-b3c7-79c37e39c0b2",
+    "user": 1,
+    "product": "c815c788-982c-42dd-8056-63a2cbcb47a9",
+    "mode": "STILL",
+    "scene_template": "39af0edd-2271-45ce-9a9e-fae804558862",
+    "generation_rule": "23434e2b-7121-4174-81bd-1299591ef6d0",
+    "status": "FAILED",
+    "failure_type": "TECHNICAL",
+    "provider": "OPENAI",
+    "model": "",
+    "final_prompt": "Use the uploaded product image as the mandatory and authoritative product reference. The jewelry item in the reference image is the exact product that must appear in the final image. Preserve its identity, geometry, proportions, materials, colors, stones, settings, textures, finishes, closures, pendants, decorative elements and all visible design details. Create exactly one final commercial image.\n\nPRODUCT CATEGORY: EARRING\n\nGENERATION MODE: STILL\n\nMODE REQUIREMENTS:\nCreate a professional catalog still-life photograph of the jewelry. The jewelry must be the only product and the absolute visual focus. Use a pure, uniform and clean white background. Center the product and keep it completely visible without cropping. Use professional soft studio lighting with controlled reflections and a subtle natural contact shadow when appropriate. Maintain realistic material appearance and accurate metal and stone colors. Do not include people, hands, body parts, props, decorative objects, scenery or environmental elements.\n\nFRAMING: CATALOG_PRODUCT\n\nPLACEMENT: Isolate the product and preserve exact geometry, components and proportions.\n\nSCENE REQUIREMENTS:\nProfessional catalog still: clean white background, centered isolated product, soft studio light, minimal natural contact shadow, no decorative elements.\n\nPRESERVATION RULES:\n- Preserve the exact geometry and design of the uploaded jewelry.\n- Preserve the original metal color and finish; do not turn gold into silver or silver into gold.\n- Preserve the exact number, position, shape and colors of stones.\n- Do not add, remove, duplicate or invent jewelry components.\n- Preserve the product's relative proportions and realistic scale.\n- Do not add text, labels, logos, watermarks or invented branding.\n\nFINAL RESTRICTIONS:\n- Return exactly one finished image.\n- Do not add text.\n- Do not add logos.\n- Do not add watermarks.\n- Do not duplicate the jewelry.\n- Do not invent additional jewelry components.\n- Do not remove existing jewelry components.\n- Do not redesign the referenced product.",
+    "configuration_snapshot": {
+      "category": "EARRING",
+      "mode": "STILL",
+      "template_id": "39af0edd-2271-45ce-9a9e-fae804558862",
+      "template_version": 1,
+      "framing": "CATALOG_PRODUCT",
+      "body_area": ""
+    },
+    "input_tokens": null,
+    "output_tokens": null,
+    "api_cost_usd": null,
+    "credit_cost": 1,
+    "retry_count": 0,
+    "idempotency_key": "b2c33b0c-d986-4d13-ad0f-59c5979b3daa",
+    "started_at": "2026-08-13T19:45:01.454Z",
+    "completed_at": "2026-08-13T19:45:08.772Z",
+    "error_code": "RuntimeError",
+    "error_message": "Expected entry at `image` to be bytes, an io.IOBase instance, PathLike or a tuple but received <class 'django.db.models.fields.files.ImageFieldFile'> instead. See https://github.com/openai/openai-python/tree/main#file-uploads"
+  }
+},
+{
+  "model": "studio.generation",
+  "pk": "7e95cabc-bf7f-4503-9487-81eef576df5e",
+  "fields": {
+    "created_at": "2026-08-13T19:56:07.501Z",
+    "updated_at": "2026-08-13T19:56:50.601Z",
+    "organization": "be1f81c0-45d6-486b-b3c7-79c37e39c0b2",
+    "user": 1,
+    "product": "c815c788-982c-42dd-8056-63a2cbcb47a9",
+    "mode": "STILL",
+    "scene_template": "39af0edd-2271-45ce-9a9e-fae804558862",
+    "generation_rule": "23434e2b-7121-4174-81bd-1299591ef6d0",
+    "status": "FAILED",
+    "failure_type": "TECHNICAL",
+    "provider": "OPENAI",
+    "model": "",
+    "final_prompt": "Use the uploaded product image as the mandatory and authoritative product reference. The jewelry item in the reference image is the exact product that must appear in the final image. Preserve its identity, geometry, proportions, materials, colors, stones, settings, textures, finishes, closures, pendants, decorative elements and all visible design details. Create exactly one final commercial image.\n\nPRODUCT CATEGORY: EARRING\n\nGENERATION MODE: STILL\n\nMODE REQUIREMENTS:\nCreate a professional catalog still-life photograph of the jewelry. The jewelry must be the only product and the absolute visual focus. Use a pure, uniform and clean white background. Center the product and keep it completely visible without cropping. Use professional soft studio lighting with controlled reflections and a subtle natural contact shadow when appropriate. Maintain realistic material appearance and accurate metal and stone colors. Do not include people, hands, body parts, props, decorative objects, scenery or environmental elements.\n\nFRAMING: CATALOG_PRODUCT\n\nPLACEMENT: Isolate the product and preserve exact geometry, components and proportions.\n\nSCENE REQUIREMENTS:\nProfessional catalog still: clean white background, centered isolated product, soft studio light, minimal natural contact shadow, no decorative elements.\n\nPRESERVATION RULES:\n- Preserve the exact geometry and design of the uploaded jewelry.\n- Preserve the original metal color and finish; do not turn gold into silver or silver into gold.\n- Preserve the exact number, position, shape and colors of stones.\n- Do not add, remove, duplicate or invent jewelry components.\n- Preserve the product's relative proportions and realistic scale.\n- Do not add text, labels, logos, watermarks or invented branding.\n\nFINAL RESTRICTIONS:\n- Return exactly one finished image.\n- Do not add text.\n- Do not add logos.\n- Do not add watermarks.\n- Do not duplicate the jewelry.\n- Do not invent additional jewelry components.\n- Do not remove existing jewelry components.\n- Do not redesign the referenced product.",
+    "configuration_snapshot": {
+      "category": "EARRING",
+      "mode": "STILL",
+      "template_id": "39af0edd-2271-45ce-9a9e-fae804558862",
+      "template_version": 1,
+      "framing": "CATALOG_PRODUCT",
+      "body_area": ""
+    },
+    "input_tokens": null,
+    "output_tokens": null,
+    "api_cost_usd": null,
+    "credit_cost": 1,
+    "retry_count": 0,
+    "idempotency_key": "82174a79-09a1-49a6-b447-4173ae5789a5",
+    "started_at": "2026-08-13T19:56:48.391Z",
+    "completed_at": "2026-08-13T19:56:50.601Z",
+    "error_code": "RuntimeError",
+    "error_message": "Expected entry at `image` to be bytes, an io.IOBase instance, PathLike or a tuple but received <class 'django.db.models.fields.files.ImageFieldFile'> instead. See https://github.com/openai/openai-python/tree/main#file-uploads"
+  }
+},
+{
+  "model": "studio.generation",
+  "pk": "8f0b687c-9beb-4257-87e7-8395d088dda1",
+  "fields": {
+    "created_at": "2026-08-13T21:01:23.987Z",
+    "updated_at": "2026-08-13T21:02:25.177Z",
+    "organization": "be1f81c0-45d6-486b-b3c7-79c37e39c0b2",
+    "user": 1,
+    "product": "c815c788-982c-42dd-8056-63a2cbcb47a9",
+    "mode": "BODY_DETAIL",
+    "scene_template": "34a8b747-c1a1-4fbb-8e64-e8af8bf0dcc9",
+    "generation_rule": "2d24b278-81bb-453f-99c9-f95a203d968a",
+    "status": "COMPLETED",
+    "failure_type": "",
+    "provider": "OPENAI",
+    "model": "gpt-image-2",
+    "final_prompt": "Use the uploaded product image as the mandatory and authoritative product reference. The jewelry item in the reference image is the exact product that must appear in the final image. Preserve its identity, geometry, proportions, materials, colors, stones, settings, textures, finishes, closures, pendants, decorative elements and all visible design details. Create exactly one final commercial image.\n\nPRODUCT CATEGORY: EARRING\n\nGENERATION MODE: BODY_DETAIL\n\nMODE REQUIREMENTS:\nCreate a professional close-up jewelry photograph showing the exact referenced product correctly applied to the appropriate body area. The jewelry is the absolute protagonist of the image. Show its design, stones, texture, finish and construction details clearly and sharply. Use the body only to demonstrate realistic scale, placement and fit. The relevant jewelry and immediate body area must be in sharp focus, with secondary visual elements kept discreet.\n\nFRAMING: CLOSE_UP\n\nBODY AREA: ear and side of face\n\nPLACEMENT: Hair must not cover the jewelry; preserve natural scale relative to the ear.\n\nSCENE REQUIREMENTS:\nElegant close-up commercial jewelry photography on the relevant body area, with clean styling and maximum product detail.\n\nPRESERVATION RULES:\n- Preserve the exact geometry and design of the uploaded jewelry.\n- Preserve the original metal color and finish; do not turn gold into silver or silver into gold.\n- Preserve the exact number, position, shape and colors of stones.\n- Do not add, remove, duplicate or invent jewelry components.\n- Preserve the product's relative proportions and realistic scale.\n- Do not add text, labels, logos, watermarks or invented branding.\n\nFINAL RESTRICTIONS:\n- Return exactly one finished image.\n- Do not add text.\n- Do not add logos.\n- Do not add watermarks.\n- Do not duplicate the jewelry.\n- Do not invent additional jewelry components.\n- Do not remove existing jewelry components.\n- Do not redesign the referenced product.",
+    "configuration_snapshot": {
+      "category": "EARRING",
+      "mode": "BODY_DETAIL",
+      "template_id": "34a8b747-c1a1-4fbb-8e64-e8af8bf0dcc9",
+      "template_version": 1,
+      "framing": "CLOSE_UP",
+      "body_area": "ear and side of face",
+      "provider": "OPENAI",
+      "model": "gpt-image-2"
+    },
+    "input_tokens": null,
+    "output_tokens": null,
+    "api_cost_usd": null,
+    "credit_cost": 1,
+    "retry_count": 0,
+    "idempotency_key": "5fba7007-1a48-44be-b3d0-40b63019a443",
+    "started_at": "2026-08-13T21:01:59.518Z",
+    "completed_at": "2026-08-13T21:02:25.177Z",
+    "error_code": "",
+    "error_message": ""
+  }
+},
+{
+  "model": "studio.generation",
+  "pk": "c4d10cec-bc08-4996-a6ae-811196e13db5",
+  "fields": {
+    "created_at": "2026-08-13T21:48:58.292Z",
+    "updated_at": "2026-08-13T21:49:57.593Z",
+    "organization": "be1f81c0-45d6-486b-b3c7-79c37e39c0b2",
+    "user": 1,
+    "product": "c815c788-982c-42dd-8056-63a2cbcb47a9",
+    "mode": "BODY_DETAIL",
+    "scene_template": "34a8b747-c1a1-4fbb-8e64-e8af8bf0dcc9",
+    "generation_rule": "2d24b278-81bb-453f-99c9-f95a203d968a",
+    "status": "COMPLETED",
+    "failure_type": "",
+    "provider": "OPENAI",
+    "model": "gpt-image-2",
+    "final_prompt": "Use the uploaded original jewelry image as the mandatory, absolute and authoritative product reference. The jewelry shown in the reference is the exact physical product that must appear in the final image. Preserve its identity, geometry, proportions, materials, colors, stones, settings, textures, finishes, closures, pendants, decorative elements and all visible manufacturing details. Create exactly one final commercial image.\n\nPRODUCT CATEGORY: EARRING\n\nGENERATION MODE: BODY_DETAIL\n\nMODE REQUIREMENTS:\nCreate a professional close-up jewelry photograph showing the exact referenced product correctly applied to the appropriate body area. The jewelry is the absolute visual protagonist. Use the body only to demonstrate realistic scale, placement and fit. The product and immediate body area must be sharply focused. Do not reinterpret the jewelry while applying it to the body.\n\nCATEGORY + MODE REQUIREMENTS:\nEARRING BODY-DETAIL MASTER REQUIREMENTS:\n\nABSOLUTE FIDELITY:\nUse exclusively the uploaded original earring as the absolute and authoritative visual reference. The earring must remain exactly the same physical product.\n\nTreat the referenced earring as immutable visual geometry. Do not recreate, reinterpret, redesign, beautify, simplify, symmetrize or reconstruct the jewelry itself.\n\nDO NOT MODIFY:\n- shape\n- actual size\n- thickness\n- width\n- height\n- proportions\n- design\n- curves\n- openings and negative spaces\n- texture\n- finish\n- metal plating color\n- gold tone intensity\n- original shine characteristics\n- stones\n- pearls\n- zirconia\n- stone cuts\n- quantity of stones\n- stone positions\n- prongs\n- settings\n- closures\n- relief\n- polish\n- manufacturing details\n\nDo not make the metal thicker or thinner. Do not make the product more symmetrical. Do not smooth or simplify structural contours. Do not create stones. Do not remove stones. Do not reposition stones. Do not create a cleaner or idealized version of the earring. Preserve natural manufacturing characteristics and imperfections.\n\nREAL SCALE AND PLACEMENT:\nPlace the exact referenced earring naturally on the model's ear using realistic physical scale. Do not enlarge, shrink, stretch, compress or deform the product. Respect the true relationship between the earring and the earlobe. The placement must follow natural ear anatomy and look physically wearable.\n\nGenerate the model, ear, skin, hair, lighting and environment around the referenced jewelry. Do not generate a new jewelry design inspired by the reference.\n\nMODEL:\nUse an extremely photogenic Brazilian woman approximately 25 to 35 years old with sophisticated, elegant and natural beauty. Use realistic healthy skin texture, very light makeup and a delicate natural expression. Avoid artificial or plastic AI-looking skin.\n\nHAIR:\nUse well-groomed medium-brown straight or slightly wavy hair. Keep the hair behind the ear so that no part of the jewelry is hidden.\n\nCOMPOSITION:\nUse a professional close-up showing only the relevant part of the face, jawline, ear, neck and hair. The earring must be the absolute visual protagonist.\n\nLIGHTING:\nUse premium luxury-jewelry campaign photography with soft diffused light, extremely delicate shadows, controlled highlights and realistic reflections. Do not create blown highlights or artificial reflections on the jewelry.\n\nBACKGROUND:\nUse a neutral light beige, off-white or cream background with natural depth-of-field blur. No objects or visual distractions.\n\nFINAL QUALITY:\nThe result must look like a real professional luxury-jewelry advertising photograph, not a render or illustration. Preserve realistic skin, metal and stone microdetails. The jewelry must remain faithful to the exact product that would be delivered to the customer.\n\nFRAMING: CLOSE_UP\n\nBODY AREA: ear and side of face\n\nPLACEMENT: Hair must not cover the jewelry; preserve natural scale relative to the ear.\n\nSCENE REQUIREMENTS:\nElegant close-up commercial jewelry photography on the relevant body area, with clean styling and maximum product detail.\n\nPRESERVATION RULES:\n- Preserve the exact geometry and design of the uploaded jewelry.\n- Preserve the original metal color and finish; do not turn gold into silver or silver into gold.\n- Preserve the exact number, position, shape and colors of stones.\n- Do not add, remove, duplicate or invent jewelry components.\n- Preserve the product's relative proportions and realistic scale.\n- Do not add text, labels, logos, watermarks or invented branding.\n\nFINAL RESTRICTIONS:\n- Return exactly one finished image.\n- Do not add text.\n- Do not add logos.\n- Do not add watermarks.\n- Do not duplicate the jewelry.\n- Do not invent additional jewelry components.\n- Do not remove existing jewelry components.\n- Do not redesign the referenced product.",
+    "configuration_snapshot": {
+      "category": "EARRING",
+      "mode": "BODY_DETAIL",
+      "template_id": "34a8b747-c1a1-4fbb-8e64-e8af8bf0dcc9",
+      "template_version": 1,
+      "framing": "CLOSE_UP",
+      "body_area": "ear and side of face",
+      "provider": "OPENAI",
+      "model": "gpt-image-2"
+    },
+    "input_tokens": null,
+    "output_tokens": null,
+    "api_cost_usd": null,
+    "credit_cost": 1,
+    "retry_count": 0,
+    "idempotency_key": "261faa39-23ab-4164-b0fb-8d05bf172a41",
+    "started_at": "2026-08-13T21:49:31.437Z",
+    "completed_at": "2026-08-13T21:49:57.593Z",
+    "error_code": "",
+    "error_message": ""
+  }
+},
+{
+  "model": "studio.generation",
+  "pk": "c807c0ef-eab4-489c-88aa-c4faeea78d11",
+  "fields": {
+    "created_at": "2026-08-13T23:18:43.876Z",
+    "updated_at": "2026-08-13T23:19:06.673Z",
+    "organization": "be1f81c0-45d6-486b-b3c7-79c37e39c0b2",
+    "user": 1,
+    "product": "f3989761-d4fe-4d9c-8ca7-fd64f50687ed",
+    "mode": "STILL",
+    "scene_template": null,
+    "generation_rule": "23434e2b-7121-4174-81bd-1299591ef6d0",
+    "status": "COMPLETED",
+    "failure_type": "",
+    "provider": "OPENAI",
+    "model": "gpt-image-2",
+    "final_prompt": "Use the uploaded original jewelry image as the mandatory, absolute and authoritative product reference. The jewelry shown in the reference is the exact physical product that must appear in the final image. Preserve its identity, geometry, proportions, materials, colors, stones, settings, textures, finishes, closures, pendants, decorative elements and all visible manufacturing details. Create exactly one final commercial image.\n\nPRODUCT CATEGORY: EARRING\n\nGENERATION MODE: STILL\n\nMODE REQUIREMENTS:\nCreate a premium professional still-life product photograph for luxury jewelry e-commerce.\n\nABSOLUTE PRODUCT FIDELITY:\nUse exclusively the uploaded original jewelry as the absolute reference. Preserve 100% of the physical product. The editing must consist only of professional photographic improvements. The jewelry itself must not be redesigned.\n\nDO NOT MODIFY:\n- shape\n- design\n- thickness\n- actual size\n- proportions\n- chain\n- closures\n- pendants\n- stone settings\n- quantity of stones\n- stone cuts\n- metal texture\n- plating color\n- finish\n- position of components\n- original structural details\n- manufacturing details\n\nPHOTOGRAPHIC OBJECTIVE:\nTransform the source photograph into a high-end professional still image suitable for premium jewelry e-commerce. Improve only photography, lighting, exposure, clarity, background and presentation.\n\nDETAIL AND SHARPNESS:\nProduce professional sharpness and preserve microdetails. Every visible stone setting, prong, contour, opening, edge and manufacturing detail must remain clearly defined. Maintain a realistic photographic appearance without plastic, illustrated or artificial AI-rendered surfaces.\n\nLIGHTING:\nCorrect and improve the lighting using uniform professional studio illumination. Use soft natural shadows, elegant contrast and controlled highlights. Avoid blown highlights and excessively dark areas. Enhance the natural three-dimensional volume of the piece without changing its geometry.\n\nSTONES:\nPreserve the exact stones from the reference image. Use delicate brilliance, natural reflections, realistic transparency, clear contours and subtle studio-light sparkle. Never exaggerate brilliance or invent reflections that alter the appearance of the stones.\n\nMETAL:\nPreserve the exact original metal and plating color. For gold-tone jewelry, maintain sophisticated realistic metallic reflections without excessive saturation, orange coloration or artificial shine. Do not beautify or reconstruct the metal.\n\nBACKGROUND:\nUse a pure white #FFFFFF background. No texture. No objects. No decoration. No unwanted reflections. No environmental elements.\n\nPRODUCT ISOLATION:\nRemove completely any mannequin, holder, pedestal, hand, body, fabric, decorative object or support visible around the jewelry. Keep only the jewelry itself.\n\nCUTOUT QUALITY:\nUse an extremely clean product cutout with natural precise edges. No jagged edges, halos or artificial borders.\n\nPHOTOGRAPHIC CORRECTIONS:\nCorrect white balance, exposure, contrast, color temperature, sharpness, noise, microcontrast and stone definition while preserving the exact appearance of the physical product.\n\nFINAL RESULT:\nThe final image must look like authentic premium studio jewelry photography for e-commerce: sophisticated, elegant, highly detailed and realistic. The jewelry must remain the exact same product shown in the uploaded reference.\n\nFRAMING: CATALOG_PRODUCT\n\nPLACEMENT: Isolate the product and preserve exact geometry, components and proportions.\n\nUse a clean professional commercial composition.\n\nPRESERVATION RULES:\n- Preserve the exact geometry and design of the uploaded jewelry.\n- Preserve the original metal color and finish; do not turn gold into silver or silver into gold.\n- Preserve the exact number, position, shape and colors of stones.\n- Do not add, remove, duplicate or invent jewelry components.\n- Preserve the product's relative proportions and realistic scale.\n- Do not add text, labels, logos, watermarks or invented branding.\n\nFINAL RESTRICTIONS:\n- Return exactly one finished image.\n- Do not add text.\n- Do not add logos.\n- Do not add watermarks.\n- Do not duplicate the jewelry.\n- Do not invent additional jewelry components.\n- Do not remove existing jewelry components.\n- Do not redesign the referenced product.",
+    "configuration_snapshot": {
+      "category": "EARRING",
+      "mode": "STILL",
+      "template_id": null,
+      "template_version": null,
+      "framing": "CATALOG_PRODUCT",
+      "body_area": "",
+      "provider": "OPENAI",
+      "model": "gpt-image-2"
+    },
+    "input_tokens": null,
+    "output_tokens": null,
+    "api_cost_usd": null,
+    "credit_cost": 1,
+    "retry_count": 0,
+    "idempotency_key": "brinco-api-teste-002-still-001",
+    "started_at": "2026-08-13T23:18:44.501Z",
+    "completed_at": "2026-08-13T23:19:06.673Z",
+    "error_code": "",
+    "error_message": ""
+  }
+},
+{
+  "model": "studio.generatedimage",
+  "pk": "3c294a11-fce1-44fa-9c6b-f4747ea98869",
+  "fields": {
+    "created_at": "2026-08-13T23:19:06.329Z",
+    "updated_at": "2026-08-13T23:19:06.329Z",
+    "generation": "c807c0ef-eab4-489c-88aa-c4faeea78d11",
+    "file": "generations/2026/08/c807c0ef-eab4-489c-88aa-c4faeea78d11.png",
+    "mime_type": "image/png",
+    "width": null,
+    "height": null,
+    "file_size": null
+  }
+},
+{
+  "model": "studio.generatedimage",
+  "pk": "56641c32-f033-494a-8112-7b249fa2ad07",
+  "fields": {
+    "created_at": "2026-08-13T20:41:39.244Z",
+    "updated_at": "2026-08-13T20:41:39.244Z",
+    "generation": "111b096a-0d5d-4858-b083-eb9d069bdd8b",
+    "file": "generations/2026/08/111b096a-0d5d-4858-b083-eb9d069bdd8b.png",
+    "mime_type": "image/png",
+    "width": null,
+    "height": null,
+    "file_size": null
+  }
+},
+{
+  "model": "studio.generatedimage",
+  "pk": "5f6008d9-0be9-4819-8a83-f0bb223748f7",
+  "fields": {
+    "created_at": "2026-08-13T21:02:24.948Z",
+    "updated_at": "2026-08-13T21:02:24.948Z",
+    "generation": "8f0b687c-9beb-4257-87e7-8395d088dda1",
+    "file": "generations/2026/08/8f0b687c-9beb-4257-87e7-8395d088dda1.png",
+    "mime_type": "image/png",
+    "width": null,
+    "height": null,
+    "file_size": null
+  }
+},
+{
+  "model": "studio.generatedimage",
+  "pk": "799520e2-ddfe-4b08-8b14-aaff683da6e9",
+  "fields": {
+    "created_at": "2026-08-13T22:48:53.947Z",
+    "updated_at": "2026-08-13T22:48:53.947Z",
+    "generation": "58f3a3bd-0940-48d5-ab96-c36f0dcf4ad2",
+    "file": "generations/2026/08/58f3a3bd-0940-48d5-ab96-c36f0dcf4ad2.png",
+    "mime_type": "image/png",
+    "width": null,
+    "height": null,
+    "file_size": null
+  }
+},
+{
+  "model": "studio.generatedimage",
+  "pk": "bc206fcd-b7ec-43f4-822f-c9452d9d1b25",
+  "fields": {
+    "created_at": "2026-08-13T21:49:57.312Z",
+    "updated_at": "2026-08-13T21:49:57.312Z",
+    "generation": "c4d10cec-bc08-4996-a6ae-811196e13db5",
+    "file": "generations/2026/08/c4d10cec-bc08-4996-a6ae-811196e13db5.png",
+    "mime_type": "image/png",
+    "width": null,
+    "height": null,
+    "file_size": null
+  }
+}
+]

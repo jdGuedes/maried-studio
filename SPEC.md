@@ -1,0 +1,363 @@
+# SPEC.md - MARIED STUDIO
+
+## Escopo técnico
+
+Este documento define o contrato técnico para implementação dos modos de geração do MARIED STUDIO.
+
+O código real deve ser inspecionado antes de qualquer alteração. A documentação registra a direção oficial, mas não substitui a leitura da implementação existente.
+
+## Arquitetura de geração
+
+O `PromptEngine` atual já contém os modos:
+
+- `STILL`
+- `BODY_DETAIL`
+- `INSTAGRAM`
+- `MODEL`
+
+Esses valores internos devem ser preservados.
+
+Mapeamento de exibição:
+
+| Valor interno | Label |
+| --- | --- |
+| `STILL` | Still |
+| `BODY_DETAIL` | Detalhe no Corpo |
+| `INSTAGRAM` | Instagramável |
+| `MODEL` | Na Modelo |
+
+## Contrato por modo
+
+### STILL
+
+Entrada adicional: nenhuma.
+
+Saída esperada:
+
+- produto isolado;
+- fundo branco;
+- alta fidelidade;
+- sem corpo;
+- sem modelo;
+- sem cenário.
+
+Prompt validado: preservar sem reescrita.
+
+### BODY_DETAIL
+
+Entrada adicional:
+
+- `model_reference_id`
+
+Entrada derivada:
+
+- `body_area`, calculada pela categoria.
+
+Não usar `SceneTemplate` para `BODY_DETAIL`.
+
+Mapeamento:
+
+| Categoria | `body_area` |
+| --- | --- |
+| `EARRING` | `EAR_SIDE_FACE` |
+| `NECKLACE` | `NECK_CHEST` |
+| `RING` | `HAND_FINGERS` |
+| `BRACELET` | `WRIST_ARM` |
+| `ANKLET` | `ANKLE_FOOT_LEG` |
+
+Regra especializada `("EARRING", "BODY_DETAIL")`: preservar integralmente.
+
+### INSTAGRAM
+
+Entrada adicional:
+
+- `scene_template_id`
+
+Usa:
+
+- `SceneTemplate`
+
+Não usar `ModelReference` para `INSTAGRAM` na V1.
+
+### MODEL
+
+Entrada adicional:
+
+- `model_reference_id`
+
+Enquadramento:
+
+- corpo inteiro ou 3/4;
+- escolha automática conforme categoria e legibilidade da peça.
+
+Usa:
+
+- `ModelReference`
+
+Não usar `SceneTemplate` como recurso principal do modo Na Modelo na V1.
+
+## Entidades
+
+### SceneTemplate
+
+Entidade existente ou compatível com a arquitetura atual.
+
+Uso oficial:
+
+- cenários do modo Instagramável.
+
+Campos esperados:
+
+- `id`
+- `name`
+- `slug`
+- `prompt_template`
+- `preview_image`
+- `mode`
+- `is_active`
+- `sort_order`
+- `version`
+
+O SuperAdmin deve conseguir cadastrar, editar, ativar, desativar e ordenar cenários.
+
+### ModelReference
+
+Nova entidade planejada.
+
+Uso oficial:
+
+- Detalhe no Corpo;
+- Na Modelo.
+
+Campos sugeridos:
+
+- `id`
+- `name`
+- `slug`
+- `description`
+- `prompt_instruction`
+- `preview_image`
+- `skin_tone`
+- `hair_color`
+- `age_range`
+- `is_active`
+- `sort_order`
+- `created_at`
+- `updated_at`
+
+Dados seed iniciais:
+
+| Slug | Descrição |
+| --- | --- |
+| `light-skin-blonde` | Mulher de 25 a 28 anos, pele clara, cabelo loiro |
+| `light-skin-black-hair` | Mulher de 25 a 28 anos, pele clara, cabelo preto |
+| `light-skin-red-hair` | Mulher de 25 a 28 anos, pele clara, cabelo ruivo |
+| `black-skin-dark-hair` | Mulher de 25 a 28 anos, pele negra, cabelo escuro |
+
+## PromptEngine
+
+Regra de montagem planejada:
+
+```text
+if mode == STILL:
+    usar prompt Still validado
+    não exigir escolha adicional
+
+if mode == BODY_DETAIL:
+    usar prompt Body Detail
+    usar regra especializada por categoria
+    usar ModelReference
+    calcular área corporal automaticamente
+
+if mode == INSTAGRAM:
+    usar SceneTemplate
+
+if mode == MODEL:
+    usar ModelReference
+    aplicar regra de enquadramento por categoria
+```
+
+## Proteções obrigatórias
+
+Não reescrever ou otimizar sem autorização:
+
+- prompt `STILL`;
+- prompt especializado `("EARRING", "BODY_DETAIL")`.
+
+Ao adaptar `BODY_DETAIL` para `ModelReference`, remover apenas a parte hardcoded de descrição da modelo quando ela existir, preservando regras de anatomia, escala, fidelidade e composição.
+
+## API
+
+O endpoint de criação deve aceitar os campos necessários ao modo escolhido.
+
+Campos conceituais:
+
+- `product_id`
+- `category`
+- `mode`
+- `scene_template_id`
+- `model_reference_id`
+
+Validações:
+
+- `STILL`: rejeitar `scene_template_id` e `model_reference_id` se não forem necessários.
+- `BODY_DETAIL`: exigir `model_reference_id`.
+- `INSTAGRAM`: exigir `scene_template_id`.
+- `MODEL`: exigir `model_reference_id`.
+- rejeitar combinações inválidas.
+
+## Frontend
+
+Labels:
+
+- Still
+- Detalhe no Corpo
+- Instagramável
+- Na Modelo
+
+Fluxo:
+
+- Still: seleção direta.
+- Detalhe no Corpo: seleção de modelo.
+- Instagramável: seleção de cenário.
+- Na Modelo: seleção de modelo.
+
+O frontend não deve expor ao usuário a escolha manual da área corporal em `BODY_DETAIL`; isso é regra do sistema.
+
+## Créditos
+
+Regra V1:
+
+```text
+1 geração = 1 crédito
+```
+
+Aplicar igualmente a todos os modos. Não criar multiplicadores por modo na V1.
+
+## Testes mínimos
+
+- Validação de payload por modo.
+- Cálculo de área corporal por categoria no `BODY_DETAIL`.
+- Uso de `ModelReference` em `BODY_DETAIL`.
+- Uso de `SceneTemplate` em `INSTAGRAM`.
+- Uso de `ModelReference` em `MODEL`.
+- Still sem escolha adicional.
+- Consumo de 1 crédito por geração.
+- Proteção contra combinações inválidas.
+- Regressão do prompt `EARRING + BODY_DETAIL`.
+
+## Modelo técnico de concorrência entre agentes
+
+O desenvolvimento pode ser executado por múltiplos agentes, mas o repositório deve ser tratado como sistema concorrente com boundaries explícitos.
+
+### Workstreams
+
+```text
+FOUNDATION
+BILLING
+BODY_DETAIL
+INSTAGRAMABLE
+ON_MODEL
+FRONTEND_INTEGRATION
+SUPERADMIN
+TESTS_QA
+```
+
+### Boundaries por domínio
+
+#### BILLING
+Responsabilidade principal:
+```text
+apps/billing/**
+apps/credits/** somente quando a tarefa exigir integração de crédito
+```
+Não alterar IA ou prompts.
+
+#### BODY_DETAIL
+Responsabilidade:
+- regras de Detalhe no Corpo;
+- integração ModelReference;
+- mapeamento corporal;
+- testes relacionados.
+
+Shared file provável:
+`apps/ai/services/prompt_engine.py`
+
+#### INSTAGRAMABLE
+Responsabilidade:
+- SceneTemplate;
+- cenários;
+- API/listagem;
+- integração de `INSTAGRAM`.
+
+Não alterar ModelReference sem dependência explícita.
+
+#### ON_MODEL
+Responsabilidade:
+- modo interno `MODEL`;
+- ModelReference;
+- regras por categoria;
+- enquadramento 3/4/corpo inteiro.
+
+Shared file provável:
+`apps/ai/services/prompt_engine.py`
+
+#### FRONTEND_INTEGRATION
+Responsabilidade:
+`frontend/**`
+
+Não inventar payloads ou contratos. Consumir APIs estabilizadas.
+
+### Shared files
+
+Arquivos de integração exigem coordenação:
+```text
+apps/ai/services/prompt_engine.py
+apps/studio/models.py
+config/settings.py
+config/urls.py
+frontend/src/app/layout.tsx
+frontend/src/components/layout/app-shell.tsx
+```
+
+O caminho real deve ser confirmado no repositório.
+
+### Lock
+
+Tarefa que edita shared file deve declarar:
+`LOCK_REQUIRED: true`
+
+Se outro workstream estiver modificando o mesmo arquivo, a tarefa deve aguardar ou virar uma tarefa específica de integração.
+
+### Dependências técnicas
+
+```text
+AI-001 ModelReference
+    ├── AI-002 BODY_DETAIL
+    └── AI-004 ON_MODEL
+```
+
+`AI-003 INSTAGRAMABLE` não depende de ModelReference.
+
+`FRONT-001` depende dos contratos backend dos modos que pretende integrar.
+
+### Contratos antes da UI
+
+Antes da integração frontend:
+- endpoint conhecido;
+- campos conhecidos;
+- validações conhecidas;
+- resposta conhecida;
+- estados de erro conhecidos.
+
+### Integração final
+
+Quando dois workstreams exigirem o mesmo shared file:
+1. concluir um;
+2. validar;
+3. integrar;
+4. aplicar o segundo patch;
+
+ou criar tarefa específica de integração.
+
+Evitar merge automático de regras de domínio sensíveis.
