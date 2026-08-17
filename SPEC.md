@@ -96,6 +96,18 @@ Usa:
 
 Não usar `SceneTemplate` como recurso principal do modo Na Modelo na V1.
 
+Contrato estrutural implementado:
+
+- `MODEL` rejeita `scene_template_id`;
+- `MODEL` preserva `model_reference` na geração;
+- `PromptEngine` recebe a instrução da `ModelReference`;
+- `seed_studio` cria `GenerationRule` ativa para `MODEL` por categoria.
+
+Ainda exige validação humana:
+
+- enquadramento final corpo inteiro ou 3/4 por categoria;
+- poses, composição e legibilidade visual da peça.
+
 ## Entidades
 
 ### SceneTemplate

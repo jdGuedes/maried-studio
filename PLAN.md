@@ -127,7 +127,7 @@ Implementado em `AI-003`:
 
 ## Fase 5 - MODEL / Na Modelo
 
-Status: planejada.
+Status: parcialmente implementada.
 
 Tarefas:
 
@@ -144,6 +144,19 @@ Critério de aceite:
 - sistema gera composição de modelo com joia;
 - peça continua legível;
 - geração consome 1 crédito.
+
+Implementado em `AI-004`:
+
+- `MODEL` é exibido como `Na Modelo`;
+- `MODEL` exige `model_reference_id` e rejeita `scene_template_id`;
+- `Generation` preserva vínculo com `ModelReference`;
+- `PromptEngine` recebe instrução da `ModelReference`;
+- `seed_studio` cria `GenerationRule` ativa para `MODEL` em todas as categorias.
+
+Pendências de produto:
+
+- validar enquadramento final corpo inteiro ou 3/4 por categoria;
+- aprovar composição, poses e legibilidade visual antes de produção.
 
 ## Fase 6 - Frontend
 
@@ -379,7 +392,7 @@ Pendências de produto:
 
 ### AI-004 - Na Modelo
 
-Status inicial: `BLOCKED`.
+Status: `AUTO_VALIDATED`.
 
 `DEPENDS_ON: AI-001`
 
@@ -389,6 +402,10 @@ Escopo:
 - corpo inteiro ou 3/4;
 - escala/anatomia;
 - testes.
+
+Pendências de produto:
+- validação visual por categoria;
+- prompts finais específicos, se necessários.
 
 ## Workstream FRONTEND_INTEGRATION
 

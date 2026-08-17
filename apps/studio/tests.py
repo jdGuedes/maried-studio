@@ -149,6 +149,33 @@ class GenerationCreateSerializerTests(
             serializer.errors,
         )
 
+    def test_model_rejects_scene_template(
+        self,
+    ):
+        serializer = GenerationCreateSerializer(
+            data={
+                "product_id": (
+                    "11111111-1111-1111-1111-111111111111"
+                ),
+                "mode": GenerationMode.MODEL,
+                "scene_template_id": (
+                    "22222222-2222-2222-2222-222222222222"
+                ),
+                "model_reference_id": (
+                    "33333333-3333-3333-3333-333333333333"
+                ),
+            }
+        )
+
+        self.assertFalse(
+            serializer.is_valid()
+        )
+
+        self.assertIn(
+            "scene_template_id",
+            serializer.errors,
+        )
+
 
 class GenerationServiceModelReferenceTests(
     TestCase
@@ -214,6 +241,19 @@ class GenerationServiceModelReferenceTests(
             )
         )
 
+        self.model_rule = (
+            GenerationRule.objects.create(
+                category=ProductCategory.EARRING,
+                generation_mode=GenerationMode.MODEL,
+                framing="PORTRAIT_BUST",
+                body_area="ears and face",
+                placement_instruction=(
+                    "Place the earrings naturally "
+                    "on the model's ears."
+                ),
+            )
+        )
+
     def test_body_detail_request_stores_model_reference_and_reserves_credit(
         self,
     ):
@@ -271,6 +311,66 @@ class GenerationServiceModelReferenceTests(
 
         self.assertNotIn(
             "medium-brown",
+            prompt,
+        )
+
+    def test_model_request_stores_model_reference_and_reserves_credit(
+        self,
+    ):
+        generation, created = (
+            GenerationService.create_request(
+                user=self.user,
+                product=self.product,
+                mode=GenerationMode.MODEL,
+                scene_template_id=None,
+                model_reference_id=(
+                    self.model_reference.id
+                ),
+                idempotency_key=(
+                    "on-model-model-reference"
+                ),
+            )
+        )
+
+        self.assertTrue(
+            created
+        )
+
+        self.assertEqual(
+            generation.model_reference,
+            self.model_reference,
+        )
+
+        self.assertEqual(
+            generation.generation_rule,
+            self.model_rule,
+        )
+
+        self.wallet.refresh_from_db()
+
+        self.assertEqual(
+            self.wallet.reserved_balance,
+            1,
+        )
+
+    def test_model_prompt_uses_selected_model_reference_instruction(
+        self,
+    ):
+        prompt = PromptEngine.build(
+            product=self.product,
+            mode=GenerationMode.MODEL,
+            scene_template=None,
+            model_reference=self.model_reference,
+            generation_rule=self.model_rule,
+        )
+
+        self.assertIn(
+            "GENERATION MODE: MODEL",
+            prompt,
+        )
+
+        self.assertIn(
+            "Use a controlled test model reference.",
             prompt,
         )
 
@@ -397,3 +497,31 @@ class SeedStudioCommandTests(
             )
             .exists()
         )
+
+    def test_seed_studio_creates_model_generation_rules_for_all_categories(
+        self,
+    ):
+        call_command(
+            "seed_studio",
+        )
+
+        categories = [
+            value
+            for value, _label in ProductCategory.choices
+        ]
+
+        for category in categories:
+            with self.subTest(
+                category=category
+            ):
+                self.assertTrue(
+                    GenerationRule.objects.filter(
+                        category=category,
+                        generation_mode=GenerationMode.MODEL,
+                        is_active=True,
+                    )
+                    .exclude(
+                        framing=""
+                    )
+                    .exists()
+                )

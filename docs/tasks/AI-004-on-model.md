@@ -1,7 +1,7 @@
 # AI-004 - Implementar Na Modelo com ModelReference
 
 ## Status
-`BLOCKED`
+`AUTO_VALIDATED`
 
 ## Owner / Workstream
 `ON_MODEL`
@@ -16,19 +16,73 @@ Executar somente esta entrega, respeitando `AGENTS.md` e `PLAN.md`.
 Consultar `PLAN.md`.
 
 ## Arquivos permitidos
-Confirmar após auditoria do código real.
+- `apps/studio/tests.py`
+- `docs/tasks/AI-004-on-model.md`
+- `PROJECT_STATE.md`
+- `PLAN.md`
+- `SPEC.md`
 
 ## Arquivos proibidos
-Tudo que não estiver diretamente relacionado à tarefa.
+- prompts finais do modo `MODEL / Na Modelo`.
+- biblioteca visual final de poses, roupas, fundos ou estilos.
+- regras de crédito, billing ou gateway.
+- `SceneTemplate` como recurso principal do modo `MODEL`.
+- UI final do frontend.
 
 ## Shared files / lock required
-Confirmar durante auditoria. Se houver `prompt_engine.py`, models centrais, settings, urls ou contratos compartilhados, usar lock/coordenação.
+`LOCK_REQUIRED: false`
 
 ## Critérios de aceite
-Usar os critérios correspondentes do `PLAN.md`.
+- `MODEL` é exibido como `Na Modelo`.
+- `MODEL` exige `model_reference_id`.
+- `MODEL` rejeita `scene_template_id`.
+- `MODEL` reutiliza `ModelReference`.
+- `Generation` preserva vínculo com `ModelReference`.
+- `PromptEngine` recebe instrução da `ModelReference`.
+- Seed estrutural possui `GenerationRule` ativa para `MODEL` em todas as categorias.
 
 ## Testes obrigatórios
-Definir após inspeção do código real e executar os checks do projeto.
+```bash
+python manage.py check
+python manage.py makemigrations --check --dry-run
+python manage.py test apps.studio --keepdb
+python manage.py test --keepdb
+npm run lint
+npm run build
+```
 
 ## Relatório final
-Usar o formato obrigatório de `AGENTS.md`.
+### Arquivos alterados
+
+- `apps/studio/tests.py`
+- `docs/tasks/AI-004-on-model.md`
+- `PROJECT_STATE.md`
+- `PLAN.md`
+- `SPEC.md`
+
+### Validações executadas
+
+- `python manage.py check`: passou.
+- `python manage.py makemigrations --check --dry-run`: passou.
+- `python manage.py test apps.studio --keepdb`: passou, 15 testes.
+- `python manage.py test --keepdb`: passou, 40 testes.
+- `npm run lint`: passou.
+- `npm run build`: passou.
+
+### Resultado
+
+- Contrato estrutural do modo `MODEL / Na Modelo` validado.
+- `MODEL` usa `ModelReference`, rejeita `SceneTemplate` e reserva 1 crédito por geração.
+- `PromptEngine` recebe a instrução da `ModelReference`.
+- `seed_studio` garante `GenerationRule` ativa para `MODEL` em todas as categorias.
+
+### Riscos ou pendências
+
+- Enquadramento visual final corpo inteiro ou 3/4 ainda precisa de validação humana por categoria.
+- Prompts finais específicos do modo `MODEL` não foram inventados nem alterados.
+- Frontend final de seleção de modelo permanece em `FRONT-001`.
+
+### Decisões que exigem validação humana
+
+- Aprovação visual do modo `MODEL / Na Modelo` por categoria.
+- Definição final de poses, composição e critérios de legibilidade visual.

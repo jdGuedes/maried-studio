@@ -121,6 +121,14 @@ Não reescrever, resumir ou otimizar EARRING + BODY_DETAIL sem autorização exp
 - Seed: `seed_studio` não cria `SceneTemplate` para `MODEL`, `BODY_DETAIL` ou `STILL`.
 - Pendência: biblioteca oficial de cenários e prompts finais dependem de validação humana de produto.
 
+### AI-004 - MODEL / Na Modelo com ModelReference
+
+- Status: `AUTO_VALIDATED`.
+- Branch: `agent/STRUCTURAL-READY`.
+- Implementado/validado: label `Na Modelo`, exigência de `model_reference_id`, rejeição de `scene_template_id`, vínculo da geração com `ModelReference`, instrução da `ModelReference` no `PromptEngine` e regras estruturais `MODEL` por categoria no seed.
+- Créditos: segue regra V1 `1 geração = 1 crédito`.
+- Pendência: enquadramento visual final corpo inteiro ou 3/4, poses, composição e legibilidade por categoria exigem validação humana de produto.
+
 ### PromptEngine com quatro modos
 
 O `PromptEngine` atual já contém os modos:
@@ -146,8 +154,9 @@ Ainda falta definir biblioteca oficial, prompts finais, previews e fluxo complet
 
 - `python manage.py check`: passou.
 - `python manage.py makemigrations --check --dry-run`: passou.
+- `python manage.py test apps.studio --keepdb`: passou, 15 testes.
 - `python manage.py test apps.studio apps.superadmin --keepdb`: passou, 19 testes.
-- `python manage.py test --keepdb`: passou, 36 testes.
+- `python manage.py test --keepdb`: passou, 40 testes.
 - `npm run lint`: passou.
 - `npm run build`: passou.
 
@@ -209,8 +218,7 @@ Planejado:
 
 - exibir `MODEL` como Na Modelo;
 - usar `ModelReference`;
-- gerar corpo inteiro ou 3/4 conforme legibilidade da peça;
-- criar regras por categoria;
+- validar visualmente corpo inteiro ou 3/4 conforme legibilidade da peça;
 - validar visualmente antes de produção.
 
 ### Frontend
