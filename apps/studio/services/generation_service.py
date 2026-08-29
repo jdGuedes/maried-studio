@@ -9,6 +9,7 @@ from django.utils import timezone
 from apps.ai.models import ModelReference
 from apps.ai.providers.openai import OpenAIImageProvider
 from apps.ai.services.prompt_engine import PromptEngine
+from apps.billing.services import BillingAccessService
 from apps.credits.services import CreditService
 from apps.products.models import AssetType
 from apps.studio.models import (
@@ -38,10 +39,44 @@ class GenerationService:
         idempotency_key,
     ):
         # -----------------------------------------------------
+        # 0. ISOLAMENTO MULTI-TENANT
+        # -----------------------------------------------------
+
+        if not user.is_active:
+            raise PermissionError(
+                "Usuário inativo."
+            )
+
+        if not user.organization_id:
+            raise PermissionError(
+                "Usuário não pertence a uma organização."
+            )
+
+        if not product.organization_id:
+            raise PermissionError(
+                "Produto não pertence a uma organização."
+            )
+
+        if (
+            user.organization_id
+            != product.organization_id
+        ):
+            raise PermissionError(
+                "O produto não pertence à organização "
+                "do usuário."
+            )
+
+        if not product.organization.is_active:
+            raise PermissionError(
+                "Organização inativa."
+            )
+
+        BillingAccessService.ensure_operational_access(
+            product.organization
+        )
+
+        # -----------------------------------------------------
         # 1. IDEMPOTÊNCIA
-        #
-        # Se a mesma solicitação já existir dentro da
-        # organização, retornamos a Generation existente.
         # -----------------------------------------------------
 
         existing = Generation.objects.filter(
@@ -189,29 +224,6 @@ class GenerationService:
     def process(
         generation: Generation
     ):
-        # -----------------------------------------------------
-        # 1. TRAVA DE PROCESSAMENTO
-        #
-        # IMPORTANTE:
-        #
-        # Bloqueamos SOMENTE a linha da tabela Generation.
-        #
-        # scene_template pode ser NULL, principalmente no STILL.
-        # select_related() cria LEFT OUTER JOIN nesse cenário.
-        #
-        # Um select_for_update() genérico faria o PostgreSQL
-        # tentar aplicar FOR UPDATE também no lado nullable
-        # desse JOIN.
-        #
-        # Isso causava:
-        #
-        # FOR UPDATE cannot be applied to the nullable side
-        # of an outer join
-        #
-        # of=("self",) mantém a proteção contra concorrência
-        # sem tentar bloquear as relações opcionais.
-        # -----------------------------------------------------
-
         with transaction.atomic():
             locked_generation = (
                 Generation.objects
@@ -220,6 +232,7 @@ class GenerationService:
                 )
                 .select_related(
                     "organization",
+                    "user",
                     "product",
                     "scene_template",
                     "model_reference",
@@ -231,18 +244,42 @@ class GenerationService:
             )
 
             # -------------------------------------------------
-            # JÁ CONCLUÍDA
+            # CONSISTÊNCIA MULTI-TENANT
             # -------------------------------------------------
+
+            if (
+                locked_generation.user.organization_id
+                != locked_generation.organization_id
+            ):
+                raise PermissionError(
+                    "Usuário e geração pertencem a "
+                    "organizações diferentes."
+                )
+
+            if (
+                locked_generation.product.organization_id
+                != locked_generation.organization_id
+            ):
+                raise PermissionError(
+                    "Produto e geração pertencem a "
+                    "organizações diferentes."
+                )
+
+            if not locked_generation.organization.is_active:
+                raise PermissionError(
+                    "Organização inativa."
+                )
+
+            if not locked_generation.user.is_active:
+                raise PermissionError(
+                    "Usuário inativo."
+                )
 
             if (
                 locked_generation.status
                 == GenerationStatus.COMPLETED
             ):
                 return locked_generation
-
-            # -------------------------------------------------
-            # STATUS INVÁLIDO
-            # -------------------------------------------------
 
             if (
                 locked_generation.status
@@ -252,10 +289,6 @@ class GenerationService:
                     "Geração não pode ser processada "
                     f"no status {locked_generation.status}."
                 )
-
-            # -------------------------------------------------
-            # MARCA COMO PROCESSANDO
-            # -------------------------------------------------
 
             locked_generation.status = (
                 GenerationStatus.PROCESSING
@@ -283,10 +316,6 @@ class GenerationService:
                 ]
             )
 
-        # =====================================================
-        # DAQUI PARA FRENTE A GENERATION ESTÁ EM PROCESSING
-        # =====================================================
-
         generation = locked_generation
 
         wallet = (
@@ -294,10 +323,6 @@ class GenerationService:
         )
 
         try:
-            # -------------------------------------------------
-            # 2. MONTA O PROMPT
-            # -------------------------------------------------
-
             prompt = PromptEngine.build(
                 product=generation.product,
                 mode=generation.mode,
@@ -313,13 +338,6 @@ class GenerationService:
             )
 
             generation.final_prompt = prompt
-
-            # -------------------------------------------------
-            # SNAPSHOT
-            #
-            # Guarda as configurações usadas naquela geração.
-            # Isso é importante para auditoria e reprodução.
-            # -------------------------------------------------
 
             generation.configuration_snapshot = {
                 "category": (
@@ -374,10 +392,6 @@ class GenerationService:
                 ]
             )
 
-            # -------------------------------------------------
-            # 3. LOCALIZA A IMAGEM ORIGINAL
-            # -------------------------------------------------
-
             source = (
                 generation.product.assets
                 .filter(
@@ -400,10 +414,6 @@ class GenerationService:
                     "não está disponível."
                 )
 
-            # -------------------------------------------------
-            # 4. PREPARA O PROVIDER OPENAI
-            # -------------------------------------------------
-
             provider = (
                 OpenAIImageProvider()
             )
@@ -413,10 +423,6 @@ class GenerationService:
             )
 
             try:
-                # ---------------------------------------------
-                # LÊ O ARQUIVO
-                # ---------------------------------------------
-
                 reference_bytes = (
                     source.file.read()
                 )
@@ -424,10 +430,6 @@ class GenerationService:
                 filename = Path(
                     source.file.name
                 ).name
-
-                # ---------------------------------------------
-                # MIME TYPE
-                # ---------------------------------------------
 
                 mime_type = (
                     source.mime_type
@@ -452,19 +454,11 @@ class GenerationService:
                         "Use JPEG, PNG ou WEBP."
                     )
 
-                # ---------------------------------------------
-                # ARQUIVO DE REFERÊNCIA PARA OPENAI
-                # ---------------------------------------------
-
                 reference_upload = (
                     filename,
                     reference_bytes,
                     mime_type,
                 )
-
-                # ---------------------------------------------
-                # CHAMADA REAL À OPENAI
-                # ---------------------------------------------
 
                 asset = provider.generate(
                     prompt=prompt,
@@ -475,10 +469,6 @@ class GenerationService:
 
             finally:
                 source.file.close()
-
-            # -------------------------------------------------
-            # 5. SALVA A IMAGEM GERADA
-            # -------------------------------------------------
 
             result = GeneratedImage(
                 generation=generation,
@@ -493,22 +483,11 @@ class GenerationService:
                 save=True,
             )
 
-            # -------------------------------------------------
-            # 6. CONSOME O CRÉDITO
-            #
-            # A reserva só é consumida depois de a imagem
-            # ter sido efetivamente gerada e salva.
-            # -------------------------------------------------
-
             CreditService.consume(
                 wallet,
                 generation,
                 1,
             )
-
-            # -------------------------------------------------
-            # 7. MARCA COMO CONCLUÍDA
-            # -------------------------------------------------
 
             generation.status = (
                 GenerationStatus.COMPLETED
@@ -529,17 +508,6 @@ class GenerationService:
             return generation
 
         except Exception as exc:
-            # -------------------------------------------------
-            # 8. FALHA
-            #
-            # Se alguma etapa falhar:
-            #
-            # - devolvemos a reserva;
-            # - marcamos FAILED;
-            # - registramos tipo e mensagem;
-            # - propagamos a exceção para a camada superior.
-            # -------------------------------------------------
-
             try:
                 CreditService.refund_reservation(
                     wallet,
@@ -548,9 +516,6 @@ class GenerationService:
                 )
 
             except Exception as refund_exc:
-                # Não escondemos o erro original da geração
-                # caso o estorno também tenha algum problema.
-
                 print(
                     "ERRO AO DEVOLVER RESERVA "
                     "DE CRÉDITO:",

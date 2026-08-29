@@ -7,6 +7,10 @@ import type {
   SceneTemplate,
 } from "@/types/api";
 
+import type {
+  UserProfile,
+} from "@/lib/profile";
+
 
 // ==========================================================
 // CONFIGURAÇÃO DA API
@@ -68,6 +72,31 @@ function getCsrfHeaders():
 }
 
 
+export async function ensureCsrfCookie():
+  Promise<void> {
+  const response =
+    await fetch(
+      `${API_URL}/api/accounts/csrf/`,
+      {
+        method:
+          "GET",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+      }
+    );
+
+  await parseResponse<{
+    detail: string;
+  }>(
+    response
+  );
+}
+
+
 // ==========================================================
 // ERROS
 // ==========================================================
@@ -108,6 +137,18 @@ export class ApiError
       data;
   }
 }
+
+
+export type LoginInput = {
+  email: string;
+
+  password: string;
+};
+
+
+export type LoginResponse = {
+  user: UserProfile;
+};
 
 
 // ==========================================================
@@ -179,6 +220,91 @@ async function parseResponse<T>(
 
   return data as T;
 }
+
+
+// ==========================================================
+// AUTENTICAÇÃO
+// ==========================================================
+
+export async function loginUser({
+  email,
+  password,
+}: LoginInput):
+  Promise<LoginResponse> {
+
+  await ensureCsrfCookie();
+
+  const response =
+    await fetch(
+      `${API_URL}/api/accounts/login/`,
+      {
+        method:
+          "POST",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+
+        headers: {
+          "Content-Type":
+            "application/json",
+
+          ...getCsrfHeaders(),
+        },
+
+        body:
+          JSON.stringify({
+            email,
+            password,
+          }),
+      }
+    );
+
+  return parseResponse<LoginResponse>(
+    response
+  );
+}
+
+
+export async function logoutUser():
+  Promise<void> {
+
+  await ensureCsrfCookie();
+
+  const response =
+    await fetch(
+      `${API_URL}/api/accounts/logout/`,
+      {
+        method:
+          "POST",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+
+        headers: {
+          "Content-Type":
+            "application/json",
+
+          ...getCsrfHeaders(),
+        },
+
+        body:
+          JSON.stringify({}),
+      }
+    );
+
+  await parseResponse<{
+    detail: string;
+  }>(
+    response
+  );
+}
+
 
 // ==========================================================
 // PRODUTOS

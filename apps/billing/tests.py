@@ -1,13 +1,23 @@
 from decimal import Decimal
 from unittest.mock import patch
 
+from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.db.models.deletion import ProtectedError
 from django.test import TestCase
+from django.urls import reverse
 from django.utils import timezone
 
+from rest_framework.test import APITestCase
+
 from apps.billing.models import BillingCycle, Plan, Subscription, SubscriptionStatus
-from apps.billing.services import InactivePlanError, SubscriptionService
+from apps.billing.services import (
+    BillingAccessService,
+    InactivePlanError,
+    SubscriptionAccessStatus,
+    SubscriptionRequiredError,
+    SubscriptionService,
+)
 from apps.credits.models import CreditTransaction, CreditTransactionType, CreditWallet
 from apps.credits.services import CreditService
 from apps.organizations.models import Organization
@@ -407,4 +417,430 @@ class SubscriptionServiceTests(TestCase):
                 wallet=wallet,
                 type=CreditTransactionType.PLAN_EXPIRE,
             ).exists()
+        )
+
+
+class BillingAccessServiceTests(TestCase):
+    def setUp(self):
+        self.organization = Organization.objects.create(
+            name="Organização Access",
+            slug="org-access-billing",
+        )
+
+        self.plan = Plan.objects.create(
+            name="Plano Access",
+            slug="plano-access-billing",
+            description="Plano usado em testes de acesso.",
+            price=Decimal("99.90"),
+            billing_cycle=BillingCycle.MONTHLY,
+            credits_per_cycle=50,
+            is_active=True,
+        )
+
+    def at(self, year, month, day):
+        return timezone.make_aware(
+            timezone.datetime(
+                year,
+                month,
+                day,
+                10,
+                0,
+                0,
+            )
+        )
+
+    def create_subscription(
+        self,
+        *,
+        status=SubscriptionStatus.ACTIVE,
+        period_end=None,
+    ):
+        period_start = self.at(
+            2026,
+            7,
+            25,
+        )
+
+        period_end = period_end or self.at(
+            2026,
+            8,
+            25,
+        )
+
+        return Subscription.objects.create(
+            organization=self.organization,
+            plan=self.plan,
+            status=status,
+            price_snapshot=self.plan.price,
+            credits_snapshot=self.plan.credits_per_cycle,
+            started_at=period_start,
+            current_period_start=period_start,
+            current_period_end=period_end,
+            next_billing_at=period_end,
+        )
+
+    def evaluate(self, subscription, year, month, day):
+        return BillingAccessService.evaluate_subscription(
+            subscription,
+            now=self.at(
+                year,
+                month,
+                day,
+            ),
+        )
+
+    def test_active_subscription_before_due_date_is_allowed(self):
+        subscription = self.create_subscription()
+
+        access = self.evaluate(
+            subscription,
+            2026,
+            8,
+            24,
+        )
+
+        self.assertEqual(
+            access.status,
+            SubscriptionAccessStatus.ACTIVE,
+        )
+
+        self.assertTrue(
+            access.allowed
+        )
+
+    def test_due_date_is_still_active(self):
+        subscription = self.create_subscription()
+
+        access = self.evaluate(
+            subscription,
+            2026,
+            8,
+            25,
+        )
+
+        self.assertEqual(
+            access.status,
+            SubscriptionAccessStatus.ACTIVE,
+        )
+
+    def test_three_calendar_grace_days_are_allowed(self):
+        subscription = self.create_subscription(
+            status=SubscriptionStatus.PAST_DUE,
+        )
+
+        for day in (
+            26,
+            27,
+            28,
+        ):
+            with self.subTest(day=day):
+                access = self.evaluate(
+                    subscription,
+                    2026,
+                    8,
+                    day,
+                )
+
+                self.assertEqual(
+                    access.status,
+                    SubscriptionAccessStatus.GRACE,
+                )
+
+                self.assertTrue(
+                    access.allowed
+                )
+
+    def test_fourth_day_after_due_date_is_blocked(self):
+        subscription = self.create_subscription(
+            status=SubscriptionStatus.PAST_DUE,
+        )
+
+        access = self.evaluate(
+            subscription,
+            2026,
+            8,
+            29,
+        )
+
+        self.assertEqual(
+            access.status,
+            SubscriptionAccessStatus.BLOCKED,
+        )
+
+        self.assertFalse(
+            access.allowed
+        )
+
+    def test_grace_crossing_month_boundary(self):
+        subscription = self.create_subscription(
+            status=SubscriptionStatus.PAST_DUE,
+            period_end=self.at(
+                2026,
+                8,
+                30,
+            ),
+        )
+
+        for year, month, day in (
+            (2026, 8, 31),
+            (2026, 9, 1),
+            (2026, 9, 2),
+        ):
+            with self.subTest(day=day):
+                access = self.evaluate(
+                    subscription,
+                    year,
+                    month,
+                    day,
+                )
+
+                self.assertEqual(
+                    access.status,
+                    SubscriptionAccessStatus.GRACE,
+                )
+
+        blocked = self.evaluate(
+            subscription,
+            2026,
+            9,
+            3,
+        )
+
+        self.assertEqual(
+            blocked.status,
+            SubscriptionAccessStatus.BLOCKED,
+        )
+
+    def test_grace_crossing_year_boundary(self):
+        subscription = self.create_subscription(
+            status=SubscriptionStatus.PAST_DUE,
+            period_end=self.at(
+                2026,
+                12,
+                30,
+            ),
+        )
+
+        for year, month, day in (
+            (2026, 12, 31),
+            (2027, 1, 1),
+            (2027, 1, 2),
+        ):
+            with self.subTest(day=day):
+                access = self.evaluate(
+                    subscription,
+                    year,
+                    month,
+                    day,
+                )
+
+                self.assertEqual(
+                    access.status,
+                    SubscriptionAccessStatus.GRACE,
+                )
+
+        blocked = self.evaluate(
+            subscription,
+            2027,
+            1,
+            3,
+        )
+
+        self.assertEqual(
+            blocked.status,
+            SubscriptionAccessStatus.BLOCKED,
+        )
+
+    def test_missing_subscription_is_blocked(self):
+        access = BillingAccessService.evaluate_subscription(
+            None,
+            now=self.at(
+                2026,
+                8,
+                25,
+            ),
+        )
+
+        self.assertEqual(
+            access.status,
+            SubscriptionAccessStatus.BLOCKED,
+        )
+
+    def test_non_operational_statuses_are_blocked(self):
+        for subscription_status in (
+            SubscriptionStatus.PENDING,
+            SubscriptionStatus.SUSPENDED,
+            SubscriptionStatus.CANCELED,
+        ):
+            with self.subTest(status=subscription_status):
+                subscription = self.create_subscription(
+                    status=subscription_status,
+                    period_end=self.at(
+                        2026,
+                        9,
+                        25,
+                    ),
+                )
+
+                access = self.evaluate(
+                    subscription,
+                    2026,
+                    8,
+                    25,
+                )
+
+                self.assertEqual(
+                    access.status,
+                    SubscriptionAccessStatus.BLOCKED,
+                )
+
+                subscription.delete()
+
+    def test_ensure_operational_access_raises_for_blocked_subscription(self):
+        self.create_subscription(
+            status=SubscriptionStatus.PAST_DUE,
+        )
+
+        with self.assertRaises(
+            SubscriptionRequiredError
+        ):
+            BillingAccessService.ensure_operational_access(
+                self.organization,
+                now=self.at(
+                    2026,
+                    8,
+                    29,
+                ),
+            )
+
+    def test_renewal_restores_active_access_and_preserves_purchased_credits(self):
+        subscription = self.create_subscription(
+            status=SubscriptionStatus.ACTIVE,
+        )
+
+        wallet = CreditWallet.objects.create(
+            organization=self.organization,
+            plan_balance=8,
+            purchased_balance=17,
+            balance=25,
+        )
+
+        renewed = SubscriptionService.renew_current_cycle(
+            subscription=subscription,
+        )
+
+        wallet.refresh_from_db()
+
+        access = BillingAccessService.evaluate_subscription(
+            renewed,
+            now=self.at(
+                2026,
+                8,
+                29,
+            ),
+        )
+
+        self.assertEqual(
+            access.status,
+            SubscriptionAccessStatus.ACTIVE,
+        )
+
+        self.assertEqual(
+            wallet.plan_balance,
+            50,
+        )
+
+        self.assertEqual(
+            wallet.purchased_balance,
+            17,
+        )
+
+
+class CurrentSubscriptionApiTests(APITestCase):
+    def setUp(self):
+        User = get_user_model()
+
+        self.organization = Organization.objects.create(
+            name="Organização Assinatura",
+            slug="org-assinatura-api",
+        )
+
+        self.user = User.objects.create_user(
+            email="assinatura-api@example.com",
+            password="senha-teste",
+            name="Cliente Assinatura",
+            organization=self.organization,
+            role="OWNER",
+        )
+
+        self.plan = Plan.objects.create(
+            name="Plano API",
+            slug="plano-api-billing",
+            description="Plano usado em teste de API.",
+            price=Decimal("99.90"),
+            billing_cycle=BillingCycle.MONTHLY,
+            credits_per_cycle=50,
+            is_active=True,
+        )
+
+        self.period_end = timezone.make_aware(
+            timezone.datetime(
+                2026,
+                8,
+                25,
+                10,
+                0,
+                0,
+            )
+        )
+
+        Subscription.objects.create(
+            organization=self.organization,
+            plan=self.plan,
+            status=SubscriptionStatus.PAST_DUE,
+            price_snapshot=self.plan.price,
+            credits_snapshot=self.plan.credits_per_cycle,
+            started_at=self.period_end - timezone.timedelta(days=30),
+            current_period_start=self.period_end - timezone.timedelta(days=30),
+            current_period_end=self.period_end,
+            next_billing_at=self.period_end,
+        )
+
+    def test_current_subscription_returns_operational_status(self):
+        self.client.force_authenticate(
+            self.user
+        )
+
+        with patch(
+            "apps.billing.services.timezone.now",
+            return_value=timezone.make_aware(
+                timezone.datetime(
+                    2026,
+                    8,
+                    28,
+                    10,
+                    0,
+                    0,
+                )
+            ),
+        ):
+            response = self.client.get(
+                reverse(
+                    "billing:current-subscription"
+                )
+            )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+        )
+
+        self.assertEqual(
+            response.data["operational_status"],
+            SubscriptionAccessStatus.GRACE,
+        )
+
+        self.assertEqual(
+            response.data["grace_until"],
+            "2026-08-28",
         )

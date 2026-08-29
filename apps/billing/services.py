@@ -1,4 +1,6 @@
 import calendar
+from dataclasses import dataclass
+from datetime import date
 
 from django.db import transaction
 from django.utils import timezone
@@ -27,6 +29,159 @@ class SubscriptionAlreadyActiveError(BillingError):
 
 class SubscriptionNotActiveError(BillingError):
     pass
+
+
+class SubscriptionAccessStatus:
+    ACTIVE = "ACTIVE"
+    GRACE = "GRACE"
+    BLOCKED = "BLOCKED"
+
+
+class SubscriptionRequiredError(BillingError):
+    code = "SUBSCRIPTION_REQUIRED"
+    detail = (
+        "Regularize sua assinatura para continuar usando o Studio."
+    )
+
+    def __init__(self, detail=None):
+        super().__init__(
+            detail or self.detail
+        )
+
+
+@dataclass(frozen=True)
+class SubscriptionAccess:
+    status: str
+    subscription: Subscription | None = None
+    grace_until: date | None = None
+    days_remaining_in_grace: int | None = None
+
+    @property
+    def allowed(self):
+        return self.status in {
+            SubscriptionAccessStatus.ACTIVE,
+            SubscriptionAccessStatus.GRACE,
+        }
+
+
+class BillingAccessService:
+    GRACE_DAYS = 3
+
+    @staticmethod
+    def _local_date(value):
+        if value is None:
+            return None
+
+        if timezone.is_naive(value):
+            value = timezone.make_aware(value)
+
+        return timezone.localtime(value).date()
+
+    @staticmethod
+    def evaluate_subscription(
+        subscription,
+        *,
+        now=None,
+    ):
+        now = now or timezone.now()
+        today = BillingAccessService._local_date(
+            now
+        )
+
+        if subscription is None:
+            return SubscriptionAccess(
+                status=SubscriptionAccessStatus.BLOCKED,
+                subscription=None,
+            )
+
+        period_end = BillingAccessService._local_date(
+            subscription.current_period_end
+        )
+
+        if period_end is None:
+            return SubscriptionAccess(
+                status=SubscriptionAccessStatus.BLOCKED,
+                subscription=subscription,
+            )
+
+        grace_until = (
+            period_end
+            +
+            timezone.timedelta(
+                days=BillingAccessService.GRACE_DAYS
+            )
+        )
+
+        status = subscription.status
+
+        if (
+            status == SubscriptionStatus.ACTIVE
+            and today <= period_end
+        ):
+            return SubscriptionAccess(
+                status=SubscriptionAccessStatus.ACTIVE,
+                subscription=subscription,
+                grace_until=grace_until,
+            )
+
+        if status in {
+            SubscriptionStatus.ACTIVE,
+            SubscriptionStatus.PAST_DUE,
+        }:
+            if period_end < today <= grace_until:
+                return SubscriptionAccess(
+                    status=SubscriptionAccessStatus.GRACE,
+                    subscription=subscription,
+                    grace_until=grace_until,
+                    days_remaining_in_grace=(
+                        grace_until - today
+                    ).days,
+                )
+
+        return SubscriptionAccess(
+            status=SubscriptionAccessStatus.BLOCKED,
+            subscription=subscription,
+            grace_until=grace_until,
+        )
+
+    @staticmethod
+    def evaluate_organization(
+        organization,
+        *,
+        now=None,
+    ):
+        subscription = (
+            Subscription.objects
+            .select_related(
+                "plan",
+                "organization",
+            )
+            .filter(
+                organization=organization,
+            )
+            .first()
+        )
+
+        return BillingAccessService.evaluate_subscription(
+            subscription,
+            now=now,
+        )
+
+    @staticmethod
+    def ensure_operational_access(
+        organization,
+        *,
+        now=None,
+    ):
+        access = BillingAccessService.evaluate_organization(
+            organization,
+            now=now,
+        )
+
+        if not access.allowed:
+            raise SubscriptionRequiredError()
+
+        return access
 
 
 class SubscriptionService:

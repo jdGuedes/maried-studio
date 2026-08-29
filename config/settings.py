@@ -2,14 +2,135 @@ from pathlib import Path
 import os
 
 import dj_database_url
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-load_dotenv(BASE_DIR / ".env")
 
-SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "dev-only-secret-key")
-DEBUG = os.getenv("DJANGO_DEBUG", "true").lower() == "true"
-ALLOWED_HOSTS = [h.strip() for h in os.getenv("DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost").split(",") if h.strip()]
+# ============================================================
+# BASE
+# ============================================================
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+load_dotenv(
+    BASE_DIR / ".env"
+)
+
+
+def env_bool(name, default=False):
+    value = os.getenv(name)
+
+    if value is None:
+        return default
+
+    return value.strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def env_int(name, default):
+    value = os.getenv(name)
+
+    if value is None or value.strip() == "":
+        return default
+
+    try:
+        return int(value)
+
+    except ValueError as exc:
+        raise ImproperlyConfigured(
+            f"{name} deve ser um número inteiro."
+        ) from exc
+
+
+def env_list(name, default=None):
+    value = os.getenv(name)
+
+    if value is None:
+        return list(default or [])
+
+    return [
+        item.strip()
+        for item in value.split(",")
+        if item.strip()
+    ]
+
+
+def require_env(name):
+    value = os.getenv(name)
+
+    if value is None or value.strip() == "":
+        raise ImproperlyConfigured(
+            f"{name} precisa estar configurado."
+        )
+
+    return value
+
+
+# ============================================================
+# SEGURANÇA / AMBIENTE
+# ============================================================
+
+DJANGO_ENV = os.getenv(
+    "DJANGO_ENV",
+    "development",
+).strip().lower()
+
+IS_PRODUCTION = (
+    DJANGO_ENV == "production"
+)
+
+SECRET_KEY = os.getenv(
+    "DJANGO_SECRET_KEY",
+    "",
+)
+
+if not SECRET_KEY:
+    if IS_PRODUCTION:
+        raise ImproperlyConfigured(
+            "DJANGO_SECRET_KEY precisa estar configurado em produção."
+        )
+
+    SECRET_KEY = "dev-only-secret-key"
+
+if (
+    IS_PRODUCTION
+    and SECRET_KEY == "dev-only-secret-key"
+):
+    raise ImproperlyConfigured(
+        "DJANGO_SECRET_KEY de desenvolvimento não pode ser usada em produção."
+    )
+
+DEBUG = env_bool(
+    "DJANGO_DEBUG",
+    default=not IS_PRODUCTION,
+)
+
+if IS_PRODUCTION and DEBUG:
+    raise ImproperlyConfigured(
+        "DJANGO_DEBUG deve ser false em produção."
+    )
+
+ALLOWED_HOSTS = env_list(
+    "DJANGO_ALLOWED_HOSTS",
+    default=[
+        "127.0.0.1",
+        "localhost",
+    ],
+)
+
+if IS_PRODUCTION and not ALLOWED_HOSTS:
+    raise ImproperlyConfigured(
+        "DJANGO_ALLOWED_HOSTS precisa estar configurado em produção."
+    )
+
+
+# ============================================================
+# APLICAÇÕES
+# ============================================================
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -18,8 +139,11 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+
     "rest_framework",
     "django_filters",
+    "corsheaders",
+
     "apps.accounts",
     "apps.organizations",
     "apps.credits",
@@ -29,73 +153,410 @@ INSTALLED_APPS = [
     "apps.ai",
     "apps.audit",
     "apps.superadmin",
-    "corsheaders",
 ]
+
+
+# ============================================================
+# MIDDLEWARE
+# ============================================================
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+
     "django.contrib.sessions.middleware.SessionMiddleware",
+
     "corsheaders.middleware.CorsMiddleware",
+
     "django.middleware.common.CommonMiddleware",
+
     "django.middleware.csrf.CsrfViewMiddleware",
+
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+
     "django.contrib.messages.middleware.MessageMiddleware",
+
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
+
+# ============================================================
+# URLS
+# ============================================================
+
 ROOT_URLCONF = "config.urls"
-TEMPLATES = [{
-    "BACKEND": "django.template.backends.django.DjangoTemplates",
-    "DIRS": [],
-    "APP_DIRS": True,
-    "OPTIONS": {"context_processors": [
-        "django.template.context_processors.request",
-        "django.contrib.auth.context_processors.auth",
-        "django.contrib.messages.context_processors.messages",
-    ]},
-}]
-WSGI_APPLICATION = "config.wsgi.application"
-ASGI_APPLICATION = "config.asgi.application"
+
+
+# ============================================================
+# TEMPLATES
+# ============================================================
+
+TEMPLATES = [
+    {
+        "BACKEND": (
+            "django.template.backends."
+            "django.DjangoTemplates"
+        ),
+
+        "DIRS": [],
+
+        "APP_DIRS": True,
+
+        "OPTIONS": {
+            "context_processors": [
+                (
+                    "django.template.context_processors."
+                    "request"
+                ),
+
+                (
+                    "django.contrib.auth."
+                    "context_processors.auth"
+                ),
+
+                (
+                    "django.contrib.messages."
+                    "context_processors.messages"
+                ),
+            ],
+        },
+    },
+]
+
+
+# ============================================================
+# WSGI / ASGI
+# ============================================================
+
+WSGI_APPLICATION = (
+    "config.wsgi.application"
+)
+
+ASGI_APPLICATION = (
+    "config.asgi.application"
+)
+
+
+# ============================================================
+# DATABASE
+# ============================================================
+#
+# IMPORTANTE:
+#
+# Mantemos a configuração original que já estava funcionando
+# com PostgreSQL / Supabase.
+#
+# NÃO aplicamos aqui nenhuma alteração específica para testes.
+#
+# O problema observado anteriormente acontecia somente durante
+# a destruição do banco temporário test_postgres, depois dos
+# testes já terem terminado com OK.
+#
+# Portanto não devemos alterar a conexão principal para tentar
+# resolver aquele problema.
+# ============================================================
 
 DATABASES = {
     "default": dj_database_url.config(
-        default=os.getenv("DATABASE_URL", f"sqlite:///{BASE_DIR / 'db.sqlite3'}"),
-        conn_max_age=600,
+        default=(
+            require_env("DATABASE_URL")
+            if IS_PRODUCTION
+            else os.getenv(
+                "DATABASE_URL",
+                f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
+            )
+        ),
+        conn_max_age=env_int(
+            "DATABASE_CONN_MAX_AGE",
+            600,
+        ),
+        ssl_require=env_bool(
+            "DATABASE_SSL_REQUIRE",
+            default=IS_PRODUCTION,
+        ),
     )
 }
 
-AUTH_USER_MODEL = "accounts.User"
-LANGUAGE_CODE = "pt-br"
-TIME_ZONE = "America/Fortaleza"
+
+# ============================================================
+# USUÁRIO CUSTOMIZADO
+# ============================================================
+
+AUTH_USER_MODEL = (
+    "accounts.User"
+)
+
+
+# ============================================================
+# INTERNACIONALIZAÇÃO
+# ============================================================
+
+LANGUAGE_CODE = (
+    "pt-br"
+)
+
+TIME_ZONE = (
+    "America/Fortaleza"
+)
+
 USE_I18N = True
+
 USE_TZ = True
-STATIC_URL = "static/"
-MEDIA_URL = "media/"
-MEDIA_ROOT = BASE_DIR / "media"
-DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+
+# ============================================================
+# ARQUIVOS ESTÁTICOS
+# ============================================================
+
+STATIC_URL = (
+    os.getenv(
+        "DJANGO_STATIC_URL",
+        "static/",
+    )
+)
+
+STATIC_ROOT = (
+    BASE_DIR
+    / os.getenv(
+        "DJANGO_STATIC_ROOT",
+        "staticfiles",
+    )
+)
+
+
+# ============================================================
+# MEDIA
+# ============================================================
+
+MEDIA_URL = (
+    os.getenv(
+        "DJANGO_MEDIA_URL",
+        "media/",
+    )
+)
+
+MEDIA_ROOT = (
+    Path(
+        os.getenv(
+            "DJANGO_MEDIA_ROOT",
+            str(BASE_DIR / "media"),
+        )
+    )
+)
+
+PRIVATE_MEDIA_BY_DEFAULT = env_bool(
+    "DJANGO_PRIVATE_MEDIA_BY_DEFAULT",
+    default=True,
+)
+
+
+# ============================================================
+# DEFAULT PRIMARY KEY
+# ============================================================
+
+DEFAULT_AUTO_FIELD = (
+    "django.db.models.BigAutoField"
+)
+
+
+# ============================================================
+# DJANGO REST FRAMEWORK
+# ============================================================
 
 REST_FRAMEWORK = {
-    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
-    "DEFAULT_FILTER_BACKENDS": ["django_filters.rest_framework.DjangoFilterBackend"],
-    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        (
+            "rest_framework.authentication."
+            "SessionAuthentication"
+        ),
+    ],
+
+    "DEFAULT_PERMISSION_CLASSES": [
+        (
+            "rest_framework.permissions."
+            "IsAuthenticated"
+        ),
+    ],
+
+    "DEFAULT_FILTER_BACKENDS": [
+        (
+            "django_filters.rest_framework."
+            "DjangoFilterBackend"
+        ),
+    ],
+
+    "DEFAULT_PAGINATION_CLASS": (
+        "rest_framework.pagination."
+        "PageNumberPagination"
+    ),
+
     "PAGE_SIZE": 20,
 }
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-OPENAI_IMAGE_MODEL = os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-2")
-OPENAI_IMAGE_SIZE = os.getenv("OPENAI_IMAGE_SIZE", "1024x1024")
+
+# ============================================================
+# OPENAI
+# ============================================================
+
+OPENAI_API_KEY = (
+    require_env("OPENAI_API_KEY")
+    if IS_PRODUCTION
+    else os.getenv(
+        "OPENAI_API_KEY",
+        "",
+    )
+)
+
+OPENAI_IMAGE_MODEL = os.getenv(
+    "OPENAI_IMAGE_MODEL",
+    "gpt-image-2",
+)
+
+OPENAI_IMAGE_SIZE = os.getenv(
+    "OPENAI_IMAGE_SIZE",
+    "1024x1024",
+)
+
+
 # ============================================================
 # FRONTEND LOCAL - NEXT.JS
 # ============================================================
 
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-]
+CORS_ALLOWED_ORIGINS = env_list(
+    "DJANGO_CORS_ALLOWED_ORIGINS",
+    default=[] if IS_PRODUCTION else [
+        "http://localhost:3000",
+    ],
+)
+
+if IS_PRODUCTION and not CORS_ALLOWED_ORIGINS:
+    raise ImproperlyConfigured(
+        "DJANGO_CORS_ALLOWED_ORIGINS precisa estar configurado em produção."
+    )
 
 CORS_ALLOW_CREDENTIALS = True
 
-CSRF_TRUSTED_ORIGINS = [
-    "http://localhost:3000",
-]
 
-CORS_URLS_REGEX = r"^/api/.*$"
+# ============================================================
+# CSRF
+# ============================================================
+
+CSRF_TRUSTED_ORIGINS = env_list(
+    "DJANGO_CSRF_TRUSTED_ORIGINS",
+    default=[] if IS_PRODUCTION else [
+        "http://localhost:3000",
+    ],
+)
+
+if IS_PRODUCTION and not CSRF_TRUSTED_ORIGINS:
+    raise ImproperlyConfigured(
+        "DJANGO_CSRF_TRUSTED_ORIGINS precisa estar configurado em produção."
+    )
+
+
+# ============================================================
+# COOKIES / HTTPS
+# ============================================================
+
+SESSION_COOKIE_SECURE = env_bool(
+    "DJANGO_SESSION_COOKIE_SECURE",
+    default=IS_PRODUCTION,
+)
+
+CSRF_COOKIE_SECURE = env_bool(
+    "DJANGO_CSRF_COOKIE_SECURE",
+    default=IS_PRODUCTION,
+)
+
+SESSION_COOKIE_HTTPONLY = True
+
+CSRF_COOKIE_HTTPONLY = False
+
+SESSION_COOKIE_SAMESITE = os.getenv(
+    "DJANGO_SESSION_COOKIE_SAMESITE",
+    "Lax",
+)
+
+CSRF_COOKIE_SAMESITE = os.getenv(
+    "DJANGO_CSRF_COOKIE_SAMESITE",
+    "Lax",
+)
+
+SECURE_SSL_REDIRECT = env_bool(
+    "DJANGO_SECURE_SSL_REDIRECT",
+    default=IS_PRODUCTION,
+)
+
+SECURE_HSTS_SECONDS = env_int(
+    "DJANGO_SECURE_HSTS_SECONDS",
+    3600 if IS_PRODUCTION else 0,
+)
+
+SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool(
+    "DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS",
+    default=False,
+)
+
+SECURE_HSTS_PRELOAD = env_bool(
+    "DJANGO_SECURE_HSTS_PRELOAD",
+    default=False,
+)
+
+SECURE_CONTENT_TYPE_NOSNIFF = True
+
+SECURE_REFERRER_POLICY = os.getenv(
+    "DJANGO_SECURE_REFERRER_POLICY",
+    "same-origin",
+)
+
+if env_bool(
+    "DJANGO_USE_X_FORWARDED_PROTO",
+    default=IS_PRODUCTION,
+):
+    SECURE_PROXY_SSL_HEADER = (
+        "HTTP_X_FORWARDED_PROTO",
+        "https",
+    )
+
+
+# ============================================================
+# CORS — SOMENTE API=
+
+CORS_URLS_REGEX = (
+    r"^/api/.*$"
+)
+
+
+# ============================================================
+# LOGGING
+# ============================================================
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "console": {
+            "format": (
+                "%(levelname)s "
+                "%(name)s "
+                "%(message)s"
+            ),
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": (
+                "logging.StreamHandler"
+            ),
+            "formatter": "console",
+        },
+    },
+    "root": {
+        "handlers": [
+            "console",
+        ],
+        "level": os.getenv(
+            "DJANGO_LOG_LEVEL",
+            "INFO",
+        ),
+    },
+}

@@ -3,13 +3,18 @@ from django.urls import path
 from .views import (
     CreditAdjustmentView,
     SuperAdminCreditWalletListView,
+    SuperAdminGenerationDetailView,
     SuperAdminGenerationListView,
+    SuperAdminOrganizationDetailView,
     SuperAdminOrganizationListView,
+    SuperAdminPlanDetailView,
     SuperAdminPlanListView,
     SuperAdminSceneTemplateDetailView,
     SuperAdminSceneTemplateListCreateView,
+    SuperAdminSubscriptionDetailView,
     SuperAdminSubscriptionListView,
     SuperAdminSummaryView,
+    SuperAdminUserDetailView,
     SuperAdminUserListView,
 )
 
@@ -29,9 +34,19 @@ urlpatterns = [
         name="organizations",
     ),
     path(
+        "organizations/<uuid:pk>/",
+        SuperAdminOrganizationDetailView.as_view(),
+        name="organization-detail",
+    ),
+    path(
         "accounts/",
         SuperAdminUserListView.as_view(),
         name="accounts",
+    ),
+    path(
+        "accounts/<int:pk>/",
+        SuperAdminUserDetailView.as_view(),
+        name="account-detail",
     ),
     path(
         "plans/",
@@ -39,9 +54,19 @@ urlpatterns = [
         name="plans",
     ),
     path(
+        "plans/<uuid:pk>/",
+        SuperAdminPlanDetailView.as_view(),
+        name="plan-detail",
+    ),
+    path(
         "subscriptions/",
         SuperAdminSubscriptionListView.as_view(),
         name="subscriptions",
+    ),
+    path(
+        "subscriptions/<uuid:pk>/",
+        SuperAdminSubscriptionDetailView.as_view(),
+        name="subscription-detail",
     ),
     path(
         "credit-wallets/",
@@ -52,6 +77,11 @@ urlpatterns = [
         "generations/",
         SuperAdminGenerationListView.as_view(),
         name="generations",
+    ),
+    path(
+        "generations/<uuid:pk>/",
+        SuperAdminGenerationDetailView.as_view(),
+        name="generation-detail",
     ),
     path(
         "scene-templates/",

@@ -1,8 +1,8 @@
-import mimetypes
-
 from PIL import Image
 
 from rest_framework import serializers
+
+from apps.common.private_media import build_private_media_url
 
 from apps.studio.models import (
     GenerationStatus,
@@ -107,6 +107,11 @@ def inspect_uploaded_image(uploaded):
 class ProductAssetSerializer(
     serializers.ModelSerializer
 ):
+    file = serializers.ImageField(
+        write_only=True,
+        required=False,
+    )
+
     file_url = (
         serializers.SerializerMethodField()
     )
@@ -148,17 +153,11 @@ class ProductAssetSerializer(
             )
         )
 
-        url = obj.file.url
-
-        if request:
-            return (
-                request
-                .build_absolute_uri(
-                    url
-                )
-            )
-
-        return url
+        return build_private_media_url(
+            request,
+            "product-asset-download",
+            pk=obj.pk,
+        )
 
     def validate_file(
         self,
@@ -220,6 +219,10 @@ class ProductGenerationSerializer(
         serializers.SerializerMethodField()
     )
 
+    generated_image_id = (
+        serializers.SerializerMethodField()
+    )
+
     created_at = (
         serializers.DateTimeField()
     )
@@ -274,19 +277,30 @@ class ProductGenerationSerializer(
             )
         )
 
-        url = (
-            result.file.url
+        return build_private_media_url(
+            request,
+            "generated-image-download",
+            pk=result.pk,
         )
 
-        if request:
-            return (
-                request
-                .build_absolute_uri(
-                    url
-                )
+    def get_generated_image_id(
+        self,
+        obj,
+    ):
+        try:
+            result = (
+                obj.result_image
             )
 
-        return url
+        except Exception:
+            return None
+
+        if not result:
+            return None
+
+        return str(
+            result.pk
+        )
 
 
 # ==========================================================
@@ -404,19 +418,11 @@ class ProductSerializer(
             )
         )
 
-        url = (
-            asset.file.url
+        return build_private_media_url(
+            request,
+            "product-asset-download",
+            pk=asset.pk,
         )
-
-        if request:
-            return (
-                request
-                .build_absolute_uri(
-                    url
-                )
-            )
-
-        return url
 
     # ======================================================
     # CONTAGEM DE RESULTADOS

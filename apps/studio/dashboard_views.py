@@ -11,6 +11,8 @@ from rest_framework import (
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.common.private_media import build_private_media_url
+
 from apps.products.models import (
     Product,
     ProductStatus,
@@ -405,11 +407,10 @@ class DashboardView(
                     and result_image.file
                 ):
                     image_url = (
-                        request
-                        .build_absolute_uri(
-                            result_image
-                            .file
-                            .url
+                        build_private_media_url(
+                            request,
+                            "generated-image-download",
+                            pk=result_image.pk,
                         )
                     )
 

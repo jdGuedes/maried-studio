@@ -46,6 +46,7 @@ class OpenAIImageProvider:
             "image": reference_file,
             "prompt": prompt,
             "size": settings.OPENAI_IMAGE_SIZE,
+            "quality": "high",
             "n": 1,
         }
 

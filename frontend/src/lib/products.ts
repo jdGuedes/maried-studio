@@ -18,6 +18,8 @@ export type ProductGeneration = {
 
   image_url: string | null;
 
+  generated_image_id: string | null;
+
   created_at: string;
 
   completed_at: string | null;
@@ -29,7 +31,7 @@ export type ProductAsset = {
 
   asset_type: string;
 
-  file: string;
+  file?: string;
 
   file_url: string | null;
 
@@ -88,15 +90,6 @@ export type ProductFilters = {
   startDate?: string;
 
   endDate?: string;
-};
-
-
-type ArchiveProductResponse = {
-  detail: string;
-
-  id: string;
-
-  status: string;
 };
 
 
@@ -452,12 +445,12 @@ export async function renameProduct(
 
 
 // ==========================================================
-// ARQUIVAR / EXCLUIR
+// EXCLUIR
 // ==========================================================
 
-export async function archiveProduct(
+export async function deleteProduct(
   productId: string
-): Promise<ArchiveProductResponse> {
+): Promise<void> {
 
   const csrfToken =
     getCsrfToken();
@@ -509,9 +502,7 @@ export async function archiveProduct(
     );
 
 
-  return parseResponse<
-    ArchiveProductResponse
-  >(
+  await parseResponse<void>(
     response
   );
 }

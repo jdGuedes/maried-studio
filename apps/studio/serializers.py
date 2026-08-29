@@ -2,6 +2,8 @@ import uuid
 
 from rest_framework import serializers
 
+from apps.common.private_media import build_private_media_url
+
 from .models import (
     Generation,
     GenerationMode,
@@ -9,9 +11,14 @@ from .models import (
 )
 
 
+# ==========================================================
+# SCENE TEMPLATE
+# ==========================================================
+
 class SceneTemplateSerializer(serializers.ModelSerializer):
     class Meta:
         model = SceneTemplate
+
         fields = [
             "id",
             "name",
@@ -23,6 +30,10 @@ class SceneTemplateSerializer(serializers.ModelSerializer):
             "sort_order",
         ]
 
+
+# ==========================================================
+# CRIAR GERAÇÃO
+# ==========================================================
 
 class GenerationCreateSerializer(serializers.Serializer):
     product_id = serializers.UUIDField()
@@ -53,8 +64,18 @@ class GenerationCreateSerializer(serializers.Serializer):
         )
 
         mode = attrs["mode"]
-        scene_template_id = attrs.get("scene_template_id")
-        model_reference_id = attrs.get("model_reference_id")
+
+        scene_template_id = attrs.get(
+            "scene_template_id"
+        )
+
+        model_reference_id = attrs.get(
+            "model_reference_id"
+        )
+
+        # --------------------------------------------------
+        # STILL
+        # --------------------------------------------------
 
         if mode == GenerationMode.STILL:
             if scene_template_id:
@@ -74,6 +95,10 @@ class GenerationCreateSerializer(serializers.Serializer):
                         )
                     }
                 )
+
+        # --------------------------------------------------
+        # BODY DETAIL
+        # --------------------------------------------------
 
         if mode == GenerationMode.BODY_DETAIL:
             if scene_template_id:
@@ -96,6 +121,10 @@ class GenerationCreateSerializer(serializers.Serializer):
                     }
                 )
 
+        # --------------------------------------------------
+        # INSTAGRAM
+        # --------------------------------------------------
+
         if mode == GenerationMode.INSTAGRAM:
             if not scene_template_id:
                 raise serializers.ValidationError(
@@ -115,6 +144,10 @@ class GenerationCreateSerializer(serializers.Serializer):
                         )
                     }
                 )
+
+        # --------------------------------------------------
+        # MODEL
+        # --------------------------------------------------
 
         if mode == GenerationMode.MODEL:
             if scene_template_id:
@@ -140,11 +173,157 @@ class GenerationCreateSerializer(serializers.Serializer):
         return attrs
 
 
+# ==========================================================
+# LISTAGEM — MINHAS CRIAÇÕES
+# ==========================================================
+
+class GenerationListSerializer(
+    serializers.ModelSerializer
+):
+    product_id = serializers.UUIDField(
+        source="product.id",
+        read_only=True,
+    )
+
+    product_name = serializers.CharField(
+        source="product.name",
+        read_only=True,
+    )
+
+    category = serializers.CharField(
+        source="product.category",
+        read_only=True,
+    )
+
+    category_label = serializers.SerializerMethodField()
+
+    mode_label = serializers.SerializerMethodField()
+
+    image_url = serializers.SerializerMethodField()
+
+    generated_image_id = serializers.SerializerMethodField()
+
+    scene_template_name = serializers.SerializerMethodField()
+
+    model_reference_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Generation
+
+        fields = [
+            "id",
+
+            "product_id",
+            "product_name",
+
+            "category",
+            "category_label",
+
+            "mode",
+            "mode_label",
+
+            "status",
+
+            "scene_template",
+            "scene_template_name",
+
+            "model_reference",
+            "model_reference_name",
+
+            "image_url",
+            "generated_image_id",
+
+            "created_at",
+            "started_at",
+            "completed_at",
+        ]
+
+    def get_category_label(self, obj):
+        product = obj.product
+
+        get_display = getattr(
+            product,
+            "get_category_display",
+            None,
+        )
+
+        if callable(get_display):
+            return get_display()
+
+        return product.category
+
+    def get_mode_label(self, obj):
+        get_display = getattr(
+            obj,
+            "get_mode_display",
+            None,
+        )
+
+        if callable(get_display):
+            return get_display()
+
+        return obj.mode
+
+    def get_scene_template_name(self, obj):
+        if not obj.scene_template:
+            return None
+
+        return obj.scene_template.name
+
+    def get_model_reference_name(self, obj):
+        if not obj.model_reference:
+            return None
+
+        return obj.model_reference.name
+
+    def get_image_url(self, obj):
+        try:
+            result_image = obj.result_image
+
+            request = self.context.get(
+                "request"
+            )
+
+            if not result_image.file:
+                return None
+
+            return build_private_media_url(
+                request,
+                "generated-image-download",
+                pk=result_image.pk,
+            )
+
+        except Exception:
+            return None
+
+    def get_generated_image_id(self, obj):
+        try:
+            result_image = obj.result_image
+
+            if not result_image.file:
+                return None
+
+            return str(
+                result_image.pk
+            )
+
+        except Exception:
+            return None
+
+
+# ==========================================================
+# DETALHE / RESPOSTA DA GERAÇÃO
+# ==========================================================
+
 class GenerationSerializer(serializers.ModelSerializer):
     image_url = serializers.SerializerMethodField()
 
+    generated_image_id = serializers.SerializerMethodField()
+
     wallet_balance = serializers.SerializerMethodField()
+
     reserved_credits = serializers.SerializerMethodField()
+
     available_credits = serializers.SerializerMethodField()
 
     class Meta:
@@ -170,6 +349,7 @@ class GenerationSerializer(serializers.ModelSerializer):
             "retry_count",
 
             "image_url",
+            "generated_image_id",
 
             "error_code",
             "error_message",
@@ -181,14 +361,34 @@ class GenerationSerializer(serializers.ModelSerializer):
 
     def get_image_url(self, obj):
         try:
-            url = obj.result_image.file.url
+            result_image = obj.result_image
 
-            request = self.context.get("request")
+            request = self.context.get(
+                "request"
+            )
 
-            if request:
-                return request.build_absolute_uri(url)
+            if not result_image.file:
+                return None
 
-            return url
+            return build_private_media_url(
+                request,
+                "generated-image-download",
+                pk=result_image.pk,
+            )
+
+        except Exception:
+            return None
+
+    def get_generated_image_id(self, obj):
+        try:
+            result_image = obj.result_image
+
+            if not result_image.file:
+                return None
+
+            return str(
+                result_image.pk
+            )
 
         except Exception:
             return None
@@ -200,11 +400,14 @@ class GenerationSerializer(serializers.ModelSerializer):
             return CreditWallet.objects.get(
                 organization_id=obj.organization_id
             )
+
         except CreditWallet.DoesNotExist:
             return None
 
     def get_wallet_balance(self, obj):
-        wallet = self._get_wallet(obj)
+        wallet = self._get_wallet(
+            obj
+        )
 
         if not wallet:
             return None
@@ -212,7 +415,9 @@ class GenerationSerializer(serializers.ModelSerializer):
         return wallet.balance
 
     def get_reserved_credits(self, obj):
-        wallet = self._get_wallet(obj)
+        wallet = self._get_wallet(
+            obj
+        )
 
         if not wallet:
             return None
@@ -220,7 +425,9 @@ class GenerationSerializer(serializers.ModelSerializer):
         return wallet.reserved_balance
 
     def get_available_credits(self, obj):
-        wallet = self._get_wallet(obj)
+        wallet = self._get_wallet(
+            obj
+        )
 
         if not wallet:
             return None

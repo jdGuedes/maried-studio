@@ -1,7 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import {
+  usePathname,
+  useRouter,
+} from "next/navigation";
 
 import {
   CreditCard,
@@ -25,12 +28,20 @@ import type {
 } from "react";
 
 import {
+  useState,
+} from "react";
+
+import {
   useCreditWallet,
 } from "@/providers/credit-wallet-provider";
 
 import {
   useProfile,
 } from "@/providers/profile-provider";
+
+import {
+  logoutUser,
+} from "@/lib/api";
 
 
 type AppShellProps = {
@@ -115,6 +126,16 @@ export function AppShell({
   const pathname =
     usePathname();
 
+  const router =
+    useRouter();
+
+  const [
+    loggingOut,
+    setLoggingOut,
+  ] = useState(
+    false
+  );
+
 
   // ========================================================
   // PERFIL REAL
@@ -130,6 +151,8 @@ export function AppShell({
       profileError,
 
     refreshProfile,
+
+    setAuthenticatedProfile,
 
     organizationName,
 
@@ -180,6 +203,70 @@ export function AppShell({
       ? "Carregando..."
       : profile?.role_label ??
         "Usuário";
+
+
+  async function handleLogout() {
+    if (
+      loggingOut
+    ) {
+      return;
+    }
+
+    setLoggingOut(
+      true
+    );
+
+    try {
+      await logoutUser();
+
+    } catch (error) {
+      console.error(
+        "Erro ao encerrar sessão:",
+        error
+      );
+
+    } finally {
+      setAuthenticatedProfile(
+        null
+      );
+
+      router.replace(
+        "/login"
+      );
+    }
+  }
+
+
+  if (
+    loadingProfile
+  ) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[var(--maried-ivory)] px-6">
+        <div className="flex items-center gap-3 text-sm text-[var(--maried-cocoa)]">
+          <LoaderCircle
+            size={
+              18
+            }
+            className="animate-spin text-[var(--maried-gold)]"
+          />
+          Carregando sessão...
+        </div>
+      </main>
+    );
+  }
+
+
+  if (
+    !profile
+  ) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[var(--maried-ivory)] px-6">
+        <div className="text-sm text-[var(--maried-cocoa)]">
+          Redirecionando para login...
+        </div>
+      </main>
+    );
+  }
 
 
   return (
@@ -558,20 +645,44 @@ export function AppShell({
             <button
               type="button"
 
+              disabled={
+                loggingOut
+              }
+
+              onClick={() => {
+                void handleLogout();
+              }}
+
               className="flex h-11 w-full items-center gap-3 rounded-xl px-3 text-sm text-[var(--maried-cocoa)] transition-colors hover:bg-[var(--maried-cream)]"
             >
 
-              <LogOut
-                size={
-                  18
-                }
+              {loggingOut ? (
 
-                strokeWidth={
-                  1.7
-                }
-              />
+                <LoaderCircle
+                  size={
+                    18
+                  }
 
-              Sair
+                  className="animate-spin"
+                />
+
+              ) : (
+
+                <LogOut
+                  size={
+                    18
+                  }
+
+                  strokeWidth={
+                    1.7
+                  }
+                />
+
+              )}
+
+              {loggingOut
+                ? "Saindo..."
+                : "Sair"}
 
             </button>
 

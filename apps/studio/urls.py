@@ -4,6 +4,8 @@ from .dashboard_views import DashboardView
 from .views import (
     GenerationCreateView,
     GenerationDetailView,
+    GeneratedImageDeleteView,
+    GeneratedImageDownloadView,
     SceneTemplateListView,
 )
 
@@ -31,5 +33,17 @@ urlpatterns = [
         "generations/<uuid:pk>/",
         GenerationDetailView.as_view(),
         name="generation-detail",
+    ),
+
+    path(
+        "images/<uuid:pk>/download/",
+        GeneratedImageDownloadView.as_view(),
+        name="generated-image-download",
+    ),
+
+    path(
+        "images/<uuid:pk>/",
+        GeneratedImageDeleteView.as_view(),
+        name="generated-image-delete",
     ),
 ]

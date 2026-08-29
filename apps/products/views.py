@@ -1,5 +1,7 @@
 from datetime import date
 
+from django.shortcuts import get_object_or_404
+
 from rest_framework import (
     permissions,
     status,
@@ -15,13 +17,26 @@ from rest_framework.parsers import (
 )
 
 from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from apps.billing.services import (
+    BillingAccessService,
+    SubscriptionRequiredError,
+)
+
+from apps.common.private_media import (
+    build_private_image_response,
+    build_private_media_url,
+)
 
 from apps.studio.models import (
     GenerationStatus,
 )
 
 from .models import (
+    AssetType,
     Product,
+    ProductAsset,
     ProductStatus,
 )
 
@@ -30,6 +45,57 @@ from .serializers import (
     ProductAssetSerializer,
     ProductSerializer,
 )
+
+from .services import VisualDataDeletionService
+
+
+class ProductAssetDownloadView(
+    APIView
+):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def get(
+        self,
+        request,
+        pk,
+    ):
+        queryset = (
+            ProductAsset.objects
+            .filter(
+                asset_type=(
+                    AssetType.ORIGINAL
+                )
+            )
+            .select_related(
+                "product__organization"
+            )
+        )
+
+        if not request.user.is_superuser:
+            organization = getattr(
+                request.user,
+                "organization",
+                None,
+            )
+
+            queryset = queryset.filter(
+                product__organization=organization
+            )
+
+        asset = get_object_or_404(
+            queryset,
+            pk=pk,
+        )
+
+        return build_private_image_response(
+            asset.file,
+            mime_type=asset.mime_type,
+            filename_prefix=(
+                "maried-original-image"
+            ),
+        )
 
 
 class ProductViewSet(
@@ -206,6 +272,32 @@ class ProductViewSet(
     # CREATE
     # ======================================================
 
+    def create(
+        self,
+        request,
+        *args,
+        **kwargs,
+    ):
+        try:
+            BillingAccessService.ensure_operational_access(
+                request.user.organization
+            )
+
+        except SubscriptionRequiredError as exc:
+            return Response(
+                {
+                    "code": exc.code,
+                    "detail": str(exc),
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        return super().create(
+            request,
+            *args,
+            **kwargs,
+        )
+
     def perform_create(
         self,
         serializer,
@@ -228,10 +320,7 @@ class ProductViewSet(
 
 
     # ======================================================
-    # DELETE SEGURO
-    #
-    # Não removemos fisicamente.
-    # Arquivamos a peça.
+    # DELETE PERMANENTE
     # ======================================================
 
     def destroy(
@@ -244,48 +333,13 @@ class ProductViewSet(
             self.get_object()
         )
 
-        if (
-            product.status
-            == ProductStatus.ARCHIVED
-        ):
-            return Response(
-                {
-                    "detail": (
-                        "Esta peça já está arquivada."
-                    )
-                },
-                status=(
-                    status.HTTP_200_OK
-                ),
-            )
-
-        product.status = (
-            ProductStatus.ARCHIVED
-        )
-
-        product.save(
-            update_fields=[
-                "status",
-                "updated_at",
-            ]
+        VisualDataDeletionService.delete_product(
+            product
         )
 
         return Response(
-            {
-                "detail": (
-                    "Peça excluída com sucesso."
-                ),
-
-                "id": str(
-                    product.id
-                ),
-
-                "status": (
-                    product.status
-                ),
-            },
             status=(
-                status.HTTP_200_OK
+                status.HTTP_204_NO_CONTENT
             ),
         )
 
@@ -442,11 +496,10 @@ class ProductViewSet(
                     result_image.file
                 ):
                     image_url = (
-                        request
-                        .build_absolute_uri(
-                            result_image
-                            .file
-                            .url
+                        build_private_media_url(
+                            request,
+                            "generated-image-download",
+                            pk=result_image.pk,
                         )
                     )
 

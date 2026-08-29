@@ -1,6 +1,11 @@
 "use client";
 
 import {
+  usePathname,
+  useRouter,
+} from "next/navigation";
+
+import {
   createContext,
   useCallback,
   useContext,
@@ -11,6 +16,7 @@ import {
 } from "react";
 
 import {
+  ProfileApiError,
   getProfile,
   type UserProfile,
 } from "@/lib/profile";
@@ -29,6 +35,9 @@ type ProfileContextValue = {
 
   refreshProfile:
     () => Promise<UserProfile | null>;
+
+  setAuthenticatedProfile:
+    (profile: UserProfile | null) => void;
 
   isSuperAdmin: boolean;
 
@@ -72,6 +81,12 @@ type ProfileProviderProps = {
 export function ProfileProvider({
   children,
 }: ProfileProviderProps) {
+
+  const pathname =
+    usePathname();
+
+  const router =
+    useRouter();
 
   const [
     profile,
@@ -134,6 +149,33 @@ export function ProfileProvider({
             error
           );
 
+          if (
+            error instanceof
+              ProfileApiError &&
+            (
+              error.status === 401 ||
+              error.status === 403
+            )
+          ) {
+            setProfile(
+              null
+            );
+
+            if (
+              pathname !==
+              "/login"
+            ) {
+              const next =
+                encodeURIComponent(
+                  pathname || "/"
+                );
+
+              router.replace(
+                `/login?next=${next}`
+              );
+            }
+          }
+
 
           const message =
             error instanceof Error
@@ -156,6 +198,31 @@ export function ProfileProvider({
 
         }
 
+      },
+      [
+        pathname,
+        router,
+      ]
+    );
+
+
+  const setAuthenticatedProfile =
+    useCallback(
+      (
+        profile:
+          UserProfile | null
+      ) => {
+        setProfile(
+          profile
+        );
+
+        setError(
+          null
+        );
+
+        setLoading(
+          false
+        );
       },
       []
     );
@@ -266,6 +333,8 @@ export function ProfileProvider({
 
         refreshProfile,
 
+        setAuthenticatedProfile,
+
         isSuperAdmin,
 
         isOwner,
@@ -284,6 +353,7 @@ export function ProfileProvider({
         loading,
         error,
         refreshProfile,
+        setAuthenticatedProfile,
         isSuperAdmin,
         isOwner,
         displayName,

@@ -32,7 +32,7 @@ import {
 } from "react";
 
 import {
-  archiveProduct,
+  deleteProduct,
   getProduct,
   getProducts,
   renameProduct,
@@ -448,7 +448,7 @@ export default function ProductsPage() {
 
 
   // ========================================================
-  // EXCLUIR / ARQUIVAR
+  // EXCLUIR
   // ========================================================
 
   async function confirmDelete() {
@@ -467,7 +467,7 @@ export default function ProductsPage() {
 
     try {
 
-      await archiveProduct(
+      await deleteProduct(
         deleteTarget.id
       );
 
@@ -1645,9 +1645,11 @@ export default function ProductsPage() {
                 {deleteTarget.name ||
                   "sem nome"}
               </strong>{" "}
-              será removida de Minhas peças.
-              As imagens já geradas continuarão
-              preservadas no histórico.
+              será excluída permanentemente.
+              Todas as imagens e criações
+              vinculadas a ela também serão
+              removidas. Esta ação não poderá
+              ser desfeita.
             </p>
 
 

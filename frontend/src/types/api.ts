@@ -85,6 +85,7 @@ export type Generation = {
   retry_count: number;
 
   image_url: string | null;
+  generated_image_id?: string | null;
 
   error_code: string;
   error_message: string;
