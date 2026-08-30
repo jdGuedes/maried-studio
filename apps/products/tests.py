@@ -1230,3 +1230,213 @@ class ProductPermanentDeletionTests(
                 pk=asset.pk
             ).exists()
         )
+
+class ProductPaginationTests(APITestCase):
+    def setUp(self):
+        User = get_user_model()
+
+        self.organization = Organization.objects.create(
+            name="Empresa Paginação Produtos A",
+            slug="empresa-paginacao-produtos-a",
+        )
+
+        self.other_organization = Organization.objects.create(
+            name="Empresa Paginação Produtos B",
+            slug="empresa-paginacao-produtos-b",
+        )
+
+        self.user = User.objects.create_user(
+            email="produtos-paginacao-a@example.com",
+            password="senha-teste",
+            name="Cliente Paginação A",
+            organization=self.organization,
+            role="OWNER",
+        )
+
+        self.other_user = User.objects.create_user(
+            email="produtos-paginacao-b@example.com",
+            password="senha-teste",
+            name="Cliente Paginação B",
+            organization=self.other_organization,
+            role="OWNER",
+        )
+
+        self.client.force_authenticate(
+            self.user
+        )
+
+    def create_product(
+        self,
+        *,
+        organization,
+        user,
+        index,
+        category=ProductCategory.EARRING,
+    ):
+        product = Product.objects.create(
+            organization=organization,
+            created_by=user,
+            name=f"Produto Página {index:02d}",
+            category=category,
+        )
+
+        created_at = (
+            timezone.now()
+            + timezone.timedelta(
+                minutes=index
+            )
+        )
+
+        Product.objects.filter(
+            pk=product.pk
+        ).update(
+            created_at=created_at
+        )
+
+        product.refresh_from_db()
+
+        return product
+
+    def create_dataset(self):
+        for index in range(25):
+            category = (
+                ProductCategory.RING
+                if index < 13
+                else ProductCategory.EARRING
+            )
+
+            self.create_product(
+                organization=self.organization,
+                user=self.user,
+                index=index,
+                category=category,
+            )
+
+        for index in range(10):
+            self.create_product(
+                organization=self.other_organization,
+                user=self.other_user,
+                index=index,
+            )
+
+    def test_product_list_is_paginated_by_twelve_and_tenant_scoped(self):
+        self.create_dataset()
+
+        response = self.client.get(
+            reverse(
+                "product-list"
+            )
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+        )
+
+        self.assertEqual(
+            response.data["count"],
+            25,
+        )
+
+        self.assertEqual(
+            len(response.data["results"]),
+            12,
+        )
+
+        self.assertEqual(
+            response.data["results"][0]["name"],
+            "Produto Página 24",
+        )
+
+        names = {
+            product["name"]
+            for product in response.data["results"]
+        }
+
+        self.assertNotIn(
+            "Produto Página 09",
+            names,
+        )
+
+        response = self.client.get(
+            reverse(
+                "product-list"
+            ),
+            {
+                "page": 3,
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+        )
+
+        self.assertEqual(
+            len(response.data["results"]),
+            1,
+        )
+
+    def test_product_list_filters_before_count_and_pagination(self):
+        self.create_dataset()
+
+        response = self.client.get(
+            reverse(
+                "product-list"
+            ),
+            {
+                "category": ProductCategory.RING,
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+        )
+
+        self.assertEqual(
+            response.data["count"],
+            13,
+        )
+
+        self.assertEqual(
+            len(response.data["results"]),
+            12,
+        )
+
+        response = self.client.get(
+            reverse(
+                "product-list"
+            ),
+            {
+                "category": ProductCategory.RING,
+                "page": 2,
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+        )
+
+        self.assertEqual(
+            len(response.data["results"]),
+            1,
+        )
+
+    def test_invalid_product_page_returns_not_found(self):
+        self.create_dataset()
+
+        response = self.client.get(
+            reverse(
+                "product-list"
+            ),
+            {
+                "page": 999,
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            404,
+        )

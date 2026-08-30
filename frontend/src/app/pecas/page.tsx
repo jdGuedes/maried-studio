@@ -26,18 +26,35 @@ import Image from "next/image";
 import Link from "next/link";
 
 import {
+  useRouter,
+  useSearchParams,
+} from "next/navigation";
+
+import {
+  Suspense,
   useCallback,
   useEffect,
+  useRef,
   useState,
 } from "react";
+
+import {
+  Pagination,
+} from "@/components/pagination/pagination";
 
 import {
   deleteProduct,
   getProduct,
   getProducts,
+  ProductsApiError,
   renameProduct,
   type Product,
 } from "@/lib/products";
+
+import {
+  getTotalPages,
+  normalizePage,
+} from "@/lib/pagination";
 
 
 // ==========================================================
@@ -104,6 +121,70 @@ function formatDate(
 // ==========================================================
 
 export default function ProductsPage() {
+  return (
+    <Suspense
+      fallback={
+        <ProductsLoading />
+      }
+    >
+      <ProductsContent />
+    </Suspense>
+  );
+}
+
+
+function ProductsLoading() {
+  return (
+    <main className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+      <div className="mx-auto flex min-h-[420px] max-w-[1240px] items-center justify-center">
+        <LoaderCircle
+          size={32}
+          className="animate-spin text-[var(--maried-gold)]"
+        />
+      </div>
+    </main>
+  );
+}
+
+
+function ProductsContent() {
+  const router =
+    useRouter();
+
+  const searchParams =
+    useSearchParams();
+
+  const page =
+    normalizePage(
+      searchParams.get(
+        "page"
+      )
+    );
+
+  const search =
+    searchParams.get(
+      "q"
+    ) ?? "";
+
+  const category =
+    searchParams.get(
+      "category"
+    ) ?? "";
+
+  const startDate =
+    searchParams.get(
+      "start_date"
+    ) ?? "";
+
+  const endDate =
+    searchParams.get(
+      "end_date"
+    ) ?? "";
+
+  const searchTimer =
+    useRef<number | null>(
+      null
+    );
 
   const [
     products,
@@ -122,42 +203,18 @@ export default function ProductsPage() {
 
 
   const [
+    count,
+    setCount,
+  ] = useState(
+    0
+  );
+
+
+  const [
     error,
     setError,
   ] = useState<string | null>(
     null
-  );
-
-
-  const [
-    search,
-    setSearch,
-  ] = useState(
-    ""
-  );
-
-
-  const [
-    category,
-    setCategory,
-  ] = useState(
-    ""
-  );
-
-
-  const [
-    startDate,
-    setStartDate,
-  ] = useState(
-    ""
-  );
-
-
-  const [
-    endDate,
-    setEndDate,
-  ] = useState(
-    ""
   );
 
 
@@ -217,6 +274,76 @@ export default function ProductsPage() {
   );
 
 
+  const totalPages =
+    getTotalPages(
+      count
+    );
+
+
+  const updateUrl =
+    useCallback(
+      (
+        updates: Record<string, string | null>,
+        nextPage = 1
+      ) => {
+        const params =
+          new URLSearchParams(
+            searchParams.toString()
+          );
+
+        Object.entries(
+          updates
+        ).forEach(
+          ([
+            key,
+            value,
+          ]) => {
+            if (value) {
+              params.set(
+                key,
+                value
+              );
+            } else {
+              params.delete(
+                key
+              );
+            }
+          }
+        );
+
+        if (nextPage > 1) {
+          params.set(
+            "page",
+            String(
+              nextPage
+            )
+          );
+        } else {
+          params.delete(
+            "page"
+          );
+        }
+
+        const query =
+          params.toString();
+
+        router.push(
+          query
+            ? `/pecas?${query}`
+            : "/pecas",
+          {
+            scroll:
+              false,
+          }
+        );
+      },
+      [
+        router,
+        searchParams,
+      ]
+    );
+
+
   // ========================================================
   // LOAD
   // ========================================================
@@ -250,14 +377,33 @@ export default function ProductsPage() {
               endDate:
                 endDate ||
                 undefined,
+
+              page,
             });
 
 
           setProducts(
-            data
+            data.results
+          );
+
+          setCount(
+            data.count
           );
 
         } catch (error) {
+
+          if (
+            error instanceof ProductsApiError &&
+            error.status === 404 &&
+            page > 1
+          ) {
+            updateUrl(
+              {},
+              1
+            );
+
+            return;
+          }
 
           console.error(
             "Erro ao carregar peças:",
@@ -285,6 +431,8 @@ export default function ProductsPage() {
         category,
         startDate,
         endDate,
+        page,
+        updateUrl,
       ]
     );
 
@@ -313,6 +461,43 @@ export default function ProductsPage() {
   }, [
     loadProducts,
   ]);
+
+
+  useEffect(() => {
+    return () => {
+      if (searchTimer.current) {
+        window.clearTimeout(
+          searchTimer.current
+        );
+      }
+    };
+  }, []);
+
+
+  function scheduleSearch(
+    value: string
+  ) {
+    if (searchTimer.current) {
+      window.clearTimeout(
+        searchTimer.current
+      );
+    }
+
+    searchTimer.current =
+      window.setTimeout(
+        () => {
+          updateUrl(
+            {
+              q:
+                value.trim() ||
+                null,
+            },
+            1
+          );
+        },
+        350
+      );
+  }
 
 
   // ========================================================
@@ -472,20 +657,6 @@ export default function ProductsPage() {
       );
 
 
-      setProducts(
-        (
-          current
-        ) =>
-          current.filter(
-            (
-              product
-            ) =>
-              product.id !==
-              deleteTarget.id
-          )
-      );
-
-
       if (
         selectedProduct?.id ===
         deleteTarget.id
@@ -499,6 +670,19 @@ export default function ProductsPage() {
       setDeleteTarget(
         null
       );
+
+
+      if (
+        products.length === 1 &&
+        page > 1
+      ) {
+        updateUrl(
+          {},
+          page - 1
+        );
+      } else {
+        await loadProducts();
+      }
 
     } catch (error) {
 
@@ -588,14 +772,18 @@ export default function ProductsPage() {
 
 
               <input
-                value={
+                key={
+                  search
+                }
+
+                defaultValue={
                   search
                 }
 
                 onChange={(
                   event
                 ) => {
-                  setSearch(
+                  scheduleSearch(
                     event.target.value
                   );
                 }}
@@ -618,8 +806,13 @@ export default function ProductsPage() {
               onChange={(
                 event
               ) => {
-                setCategory(
-                  event.target.value
+                updateUrl(
+                  {
+                    category:
+                      event.target.value ||
+                      null,
+                  },
+                  1
                 );
               }}
 
@@ -671,11 +864,16 @@ export default function ProductsPage() {
                   startDate
                 }
 
-                onChange={(
-                  event
-                ) => {
-                  setStartDate(
-                    event.target.value
+              onChange={(
+                event
+              ) => {
+                  updateUrl(
+                    {
+                      start_date:
+                        event.target.value ||
+                        null,
+                    },
+                    1
                   );
                 }}
 
@@ -705,11 +903,16 @@ export default function ProductsPage() {
                   endDate
                 }
 
-                onChange={(
-                  event
-                ) => {
-                  setEndDate(
-                    event.target.value
+              onChange={(
+                event
+              ) => {
+                  updateUrl(
+                    {
+                      end_date:
+                        event.target.value ||
+                        null,
+                    },
+                    1
                   );
                 }}
 
@@ -730,23 +933,19 @@ export default function ProductsPage() {
               type="button"
 
               onClick={() => {
-
-                setSearch(
-                  ""
+                updateUrl(
+                  {
+                    q:
+                      null,
+                    category:
+                      null,
+                    start_date:
+                      null,
+                    end_date:
+                      null,
+                  },
+                  1
                 );
-
-                setCategory(
-                  ""
-                );
-
-                setStartDate(
-                  ""
-                );
-
-                setEndDate(
-                  ""
-                );
-
               }}
 
               className="mt-3 flex items-center gap-1 text-xs font-medium text-[var(--maried-gold)]"
@@ -803,6 +1002,7 @@ export default function ProductsPage() {
         ) : products.length >
           0 ? (
 
+          <>
           <section className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
 
             {products.map(
@@ -1111,6 +1311,31 @@ export default function ProductsPage() {
 
           </section>
 
+          <Pagination
+            page={
+              page
+            }
+
+            totalPages={
+              totalPages
+            }
+
+            loading={
+              loading
+            }
+
+            onPageChange={(
+              nextPage
+            ) => {
+              updateUrl(
+                {},
+                nextPage
+              );
+            }}
+          />
+
+          </>
+
         ) : (
 
           <div className="maried-card mt-7 flex min-h-[320px] flex-col items-center justify-center px-6 text-center">
@@ -1331,7 +1556,9 @@ export default function ProductsPage() {
 
 
                       <Link
-                        href="/criar"
+                        href={
+                          `/criar?product=${selectedProduct.id}`
+                        }
 
                         className="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[var(--maried-coffee)] text-xs font-medium text-white"
                       >

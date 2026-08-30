@@ -25,6 +25,10 @@ import {
   useProfile,
 } from "@/providers/profile-provider";
 
+import {
+  useCreditWallet,
+} from "@/providers/credit-wallet-provider";
+
 
 function resolveNextPath() {
   if (
@@ -64,6 +68,12 @@ export default function LoginPage() {
     setAuthenticatedProfile,
   } =
     useProfile();
+
+  const {
+    clearWallet,
+    refreshWallet,
+  } =
+    useCreditWallet();
 
   const [
     email,
@@ -132,6 +142,8 @@ export default function LoginPage() {
       null
     );
 
+    clearWallet();
+
     try {
       const response =
         await loginUser({
@@ -147,6 +159,8 @@ export default function LoginPage() {
       setAuthenticatedProfile(
         response.user
       );
+
+      await refreshWallet();
 
       router.replace(
         resolveNextPath()

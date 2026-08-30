@@ -17,6 +17,8 @@ import {
 
 import Image from "next/image";
 
+import Link from "next/link";
+
 import {
   useCallback,
   useEffect,
@@ -1154,13 +1156,12 @@ export function DashboardHome() {
             </div>
 
 
-            <button
-              type="button"
-
+            <Link
+              href="/criacoes"
               className="text-xs font-medium text-[var(--maried-gold)]"
             >
               Ver todas
-            </button>
+            </Link>
 
           </div>
 
@@ -1189,10 +1190,6 @@ export function DashboardHome() {
 
               {dashboard
                 .recent_generations
-                .slice(
-                  0,
-                  4
-                )
                 .map(
                   (
                     item,

@@ -1,11 +1,14 @@
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.urls import reverse
+from django.utils import timezone
 
 from rest_framework.test import APITestCase
 
 from apps.audit.models import AuditLog
+from apps.billing.services import BillingError
 from apps.billing.models import (
     BillingCycle,
     Plan,
@@ -109,9 +112,53 @@ class SuperAdminApiTests(APITestCase):
     def auth_superadmin(self):
         self.client.force_authenticate(self.superadmin)
 
+    def _client_payload(self, **overrides):
+        payload = {
+            "name": "Cliente Operacional",
+            "email": "cliente-operacional@example.com",
+            "initial_password": "senha-inicial-segura",
+            "plan_id": str(self.plan.pk),
+        }
+        payload.update(overrides)
+        return payload
+
     def test_common_user_cannot_access_superadmin(self):
         self.client.force_authenticate(self.common_user)
         response = self.client.get(reverse("superadmin:summary"))
+        self.assertEqual(response.status_code, 403)
+
+    def test_common_user_cannot_create_client(self):
+        self.client.force_authenticate(self.common_user)
+
+        response = self.client.post(
+            reverse("superadmin:clients"),
+            self._client_payload(),
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_staff_without_superuser_cannot_create_client(self):
+        User = get_user_model()
+        staff_user = User.objects.create_user(
+            email="staff@example.com",
+            password="senha-teste",
+            name="Staff",
+            organization=None,
+            is_staff=True,
+            is_superuser=False,
+        )
+
+        self.client.force_authenticate(staff_user)
+
+        response = self.client.post(
+            reverse("superadmin:clients"),
+            self._client_payload(
+                email="cliente-staff@example.com",
+            ),
+            format="json",
+        )
+
         self.assertEqual(response.status_code, 403)
 
     def test_superadmin_without_organization_can_access_summary(self):
@@ -124,6 +171,225 @@ class SuperAdminApiTests(APITestCase):
         self.assertEqual(response.data["organizations"], 1)
         self.assertEqual(response.data["subscriptions"], 1)
         self.assertEqual(response.data["credit_wallets"], 1)
+        self.assertIn(
+            "operational_active_subscriptions",
+            response.data,
+        )
+        self.assertIn(
+            "operational_grace_subscriptions",
+            response.data,
+        )
+        self.assertIn(
+            "operational_blocked_subscriptions",
+            response.data,
+        )
+
+    def test_superadmin_can_list_audit_logs_read_only(self):
+        AuditLog.objects.create(
+            organization=self.organization,
+            user=self.superadmin,
+            action="SUPERADMIN_TEST_ACTION",
+            entity_type="Organization",
+            entity_id=str(self.organization.pk),
+            metadata={
+                "reason": "Teste",
+            },
+        )
+        self.auth_superadmin()
+
+        response = self.client.get(
+            reverse("superadmin:audit-logs")
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 1)
+        item = response.data["results"][0]
+        self.assertEqual(item["action"], "SUPERADMIN_TEST_ACTION")
+        self.assertEqual(item["organization_name"], self.organization.name)
+        self.assertEqual(item["metadata"]["reason"], "Teste")
+
+    def test_common_user_cannot_list_audit_logs(self):
+        self.client.force_authenticate(self.common_user)
+
+        response = self.client.get(
+            reverse("superadmin:audit-logs")
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_superadmin_can_create_complete_client_with_active_plan(self):
+        self.auth_superadmin()
+
+        plan = Plan.objects.create(
+            name="Plano Cliente V1",
+            slug="plano-cliente-v1",
+            description="Plano operacional.",
+            price=Decimal("199.90"),
+            billing_cycle=BillingCycle.MONTHLY,
+            credits_per_cycle=50,
+            is_active=True,
+        )
+
+        response = self.client.post(
+            reverse("superadmin:clients"),
+            self._client_payload(
+                plan_id=str(plan.pk),
+            ),
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+
+        organization = Organization.objects.get(
+            name="Cliente Operacional"
+        )
+        user = organization.users.get()
+        wallet = organization.credit_wallet
+        subscription = organization.subscription
+
+        self.assertEqual(user.email, "cliente-operacional@example.com")
+        self.assertEqual(user.role, "OWNER")
+        self.assertFalse(user.is_staff)
+        self.assertFalse(user.is_superuser)
+        self.assertTrue(user.check_password("senha-inicial-segura"))
+        self.assertNotEqual(user.password, "senha-inicial-segura")
+
+        self.assertEqual(wallet.plan_balance, 50)
+        self.assertEqual(wallet.purchased_balance, 0)
+        self.assertEqual(wallet.available_balance, 50)
+
+        self.assertEqual(subscription.plan, plan)
+        self.assertEqual(subscription.status, SubscriptionStatus.ACTIVE)
+        self.assertEqual(subscription.credits_snapshot, 50)
+        self.assertIsNotNone(subscription.current_period_start)
+        self.assertIsNotNone(subscription.current_period_end)
+
+        self.assertEqual(response.data["user"]["email"], user.email)
+        self.assertEqual(response.data["wallet"]["available_balance"], 50)
+        self.assertEqual(
+            response.data["subscription"]["operational_status"],
+            "ACTIVE",
+        )
+
+        self.assertTrue(
+            CreditTransaction.objects.filter(
+                wallet=wallet,
+                type=CreditTransactionType.PLAN_GRANT,
+                actor=self.superadmin,
+            ).exists()
+        )
+        self.assertTrue(
+            AuditLog.objects.filter(
+                organization=organization,
+                user=self.superadmin,
+                action="SUPERADMIN_CLIENT_CREATED",
+            ).exists()
+        )
+
+    def test_client_creation_rejects_duplicate_email_without_orphan_org(self):
+        self.auth_superadmin()
+
+        organization_count = Organization.objects.count()
+        user_count = get_user_model().objects.count()
+
+        response = self.client.post(
+            reverse("superadmin:clients"),
+            self._client_payload(
+                email=self.common_user.email,
+            ),
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(Organization.objects.count(), organization_count)
+        self.assertEqual(get_user_model().objects.count(), user_count)
+
+    def test_client_creation_rejects_inactive_plan_without_partial_client(self):
+        self.auth_superadmin()
+
+        inactive_plan = Plan.objects.create(
+            name="Plano Inativo V1",
+            slug="plano-inativo-v1",
+            description="Plano inativo.",
+            price=Decimal("49.90"),
+            billing_cycle=BillingCycle.MONTHLY,
+            credits_per_cycle=25,
+            is_active=False,
+        )
+        organization_count = Organization.objects.count()
+        user_count = get_user_model().objects.count()
+
+        response = self.client.post(
+            reverse("superadmin:clients"),
+            self._client_payload(
+                email="plano-inativo@example.com",
+                plan_id=str(inactive_plan.pk),
+            ),
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(Organization.objects.count(), organization_count)
+        self.assertEqual(get_user_model().objects.count(), user_count)
+
+    def test_client_creation_rolls_back_subscription_activation_failure(self):
+        self.auth_superadmin()
+
+        organization_count = Organization.objects.count()
+        user_count = get_user_model().objects.count()
+
+        with patch(
+            "apps.superadmin.views.SubscriptionService.activate",
+            side_effect=BillingError("Falha operacional."),
+        ):
+            response = self.client.post(
+                reverse("superadmin:clients"),
+                self._client_payload(
+                    email="rollback@example.com",
+                ),
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(Organization.objects.count(), organization_count)
+        self.assertEqual(get_user_model().objects.count(), user_count)
+
+    def test_superadmin_can_read_client_detail_with_operational_data(self):
+        self.auth_superadmin()
+
+        now = timezone.now()
+        self.subscription.current_period_start = now
+        self.subscription.current_period_end = (
+            now + timezone.timedelta(days=30)
+        )
+        self.subscription.next_billing_at = (
+            now + timezone.timedelta(days=30)
+        )
+        self.subscription.save(
+            update_fields=[
+                "current_period_start",
+                "current_period_end",
+                "next_billing_at",
+                "updated_at",
+            ]
+        )
+
+        response = self.client.get(
+            reverse(
+                "superadmin:client-detail",
+                kwargs={"pk": self.organization.pk},
+            )
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["user"]["email"], self.common_user.email)
+        self.assertEqual(response.data["wallet"]["available_balance"], 15)
+        self.assertEqual(response.data["usage"]["products_count"], 1)
+        self.assertEqual(response.data["usage"]["generations_count"], 1)
+        self.assertEqual(
+            response.data["subscription"]["operational_status"],
+            "ACTIVE",
+        )
 
     def test_superadmin_can_list_core_resources(self):
         self.auth_superadmin()
@@ -368,6 +634,122 @@ class SuperAdminApiTests(APITestCase):
                 response = self.client.delete(url)
                 self.assertEqual(response.status_code, 405)
 
+    def test_raw_subscription_patch_is_not_available(self):
+        self.auth_superadmin()
+
+        response = self.client.patch(
+            reverse(
+                "superadmin:subscription-detail",
+                kwargs={"pk": self.subscription.pk},
+            ),
+            {
+                "status": SubscriptionStatus.CANCELED,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 405)
+
+    def test_superadmin_can_activate_subscription_for_client(self):
+        self.auth_superadmin()
+
+        organization = Organization.objects.create(
+            name="Cliente Sem Assinatura",
+            slug="cliente-sem-assinatura",
+        )
+        CreditWallet.objects.create(
+            organization=organization
+        )
+
+        response = self.client.post(
+            reverse(
+                "superadmin:client-activate-subscription",
+                kwargs={"pk": organization.pk},
+            ),
+            {
+                "plan_id": str(self.plan.pk),
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        organization.refresh_from_db()
+        self.assertEqual(
+            organization.subscription.status,
+            SubscriptionStatus.ACTIVE,
+        )
+        self.assertEqual(
+            organization.credit_wallet.plan_balance,
+            self.plan.credits_per_cycle,
+        )
+        self.assertTrue(
+            AuditLog.objects.filter(
+                organization=organization,
+                user=self.superadmin,
+                action="SUPERADMIN_SUBSCRIPTION_ACTIVATED",
+            ).exists()
+        )
+
+    def test_superadmin_can_renew_subscription_preserving_purchased_credits(self):
+        self.auth_superadmin()
+
+        now = timezone.now()
+        self.subscription.current_period_start = (
+            now - timezone.timedelta(days=30)
+        )
+        self.subscription.current_period_end = now
+        self.subscription.next_billing_at = now
+        self.subscription.save(
+            update_fields=[
+                "current_period_start",
+                "current_period_end",
+                "next_billing_at",
+                "updated_at",
+            ]
+        )
+
+        self.wallet.plan_balance = 20
+        self.wallet.purchased_balance = 12
+        self.wallet.balance = 32
+        self.wallet.save(
+            update_fields=[
+                "plan_balance",
+                "purchased_balance",
+                "balance",
+                "updated_at",
+            ]
+        )
+
+        response = self.client.post(
+            reverse(
+                "superadmin:subscription-renew",
+                kwargs={"pk": self.subscription.pk},
+            ),
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        self.wallet.refresh_from_db()
+        self.subscription.refresh_from_db()
+        self.assertEqual(
+            self.wallet.plan_balance,
+            self.subscription.credits_snapshot,
+        )
+        self.assertEqual(self.wallet.purchased_balance, 12)
+        self.assertEqual(self.wallet.balance, 112)
+        self.assertGreater(
+            self.subscription.current_period_end,
+            now,
+        )
+        self.assertTrue(
+            AuditLog.objects.filter(
+                organization=self.organization,
+                user=self.superadmin,
+                action="SUPERADMIN_SUBSCRIPTION_RENEWED",
+            ).exists()
+        )
+
     def test_superadmin_credit_adjustment_uses_service_and_audit(self):
         self.auth_superadmin()
 
@@ -409,6 +791,76 @@ class SuperAdminApiTests(APITestCase):
             ).exists()
         )
 
+    def test_superadmin_can_add_and_remove_plan_credits(self):
+        self.auth_superadmin()
+
+        response = self.client.post(
+            reverse("superadmin:credit-adjustments"),
+            {
+                "organization_id": str(self.organization.id),
+                "amount": 4,
+                "balance_type": "PLAN",
+                "reason": "Bônus operacional",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.wallet.refresh_from_db()
+        self.assertEqual(self.wallet.plan_balance, 14)
+
+        response = self.client.post(
+            reverse("superadmin:credit-adjustments"),
+            {
+                "organization_id": str(self.organization.id),
+                "amount": -3,
+                "balance_type": "PLAN",
+                "reason": "Correção operacional",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.wallet.refresh_from_db()
+        self.assertEqual(self.wallet.plan_balance, 11)
+        self.assertEqual(self.wallet.balance, 16)
+
+    def test_superadmin_can_remove_purchased_credits_when_balance_allows(self):
+        self.auth_superadmin()
+
+        response = self.client.post(
+            reverse("superadmin:credit-adjustments"),
+            {
+                "organization_id": str(self.organization.id),
+                "amount": -2,
+                "balance_type": "PURCHASED",
+                "reason": "Correção operacional",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.wallet.refresh_from_db()
+        self.assertEqual(self.wallet.purchased_balance, 3)
+        self.assertEqual(self.wallet.balance, 13)
+
+    def test_credit_adjustment_requires_reason(self):
+        self.auth_superadmin()
+
+        response = self.client.post(
+            reverse("superadmin:credit-adjustments"),
+            {
+                "organization_id": str(self.organization.id),
+                "amount": 1,
+                "balance_type": "PLAN",
+                "reason": "",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("reason", response.data)
+
     def test_credit_adjustment_rejects_negative_result(self):
         self.auth_superadmin()
 
@@ -427,6 +879,13 @@ class SuperAdminApiTests(APITestCase):
 
         self.wallet.refresh_from_db()
         self.assertEqual(self.wallet.purchased_balance, 5)
+
+    def test_members_endpoint_remains_unavailable_for_common_user(self):
+        self.client.force_authenticate(self.common_user)
+
+        response = self.client.get("/api/accounts/members/")
+
+        self.assertEqual(response.status_code, 404)
 
     def test_superadmin_can_create_instagram_scene_template(self):
         self.auth_superadmin()

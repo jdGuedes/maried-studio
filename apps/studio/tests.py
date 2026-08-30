@@ -15,13 +15,20 @@ from PIL import Image
 from rest_framework.test import APITestCase, APITransactionTestCase
 
 from apps.ai.models import ModelReference
+from apps.ai.providers.openai import GeneratedAsset
 from apps.ai.services.prompt_engine import PromptEngine
 from apps.billing.models import BillingCycle, Plan, Subscription, SubscriptionStatus
 from apps.billing.services import SubscriptionRequiredError
 from apps.credits.models import CreditTransaction, CreditTransactionType
 from apps.credits.models import CreditWallet
 from apps.organizations.models import Organization
-from apps.products.models import Product, ProductCategory
+from apps.products.models import (
+    AssetType,
+    Product,
+    ProductAsset,
+    ProductCategory,
+    ProductStatus,
+)
 from apps.studio.models import (
     Generation,
     GenerationMode,
@@ -32,6 +39,40 @@ from apps.studio.models import (
 )
 from apps.studio.serializers import GenerationCreateSerializer
 from apps.studio.services.generation_service import GenerationService
+
+
+class DashboardLegacyWalletTests(APITestCase):
+    def setUp(self):
+        User = get_user_model()
+
+        self.organization = Organization.objects.create(
+            name="Cliente Legado Dashboard",
+            slug="cliente-legado-dashboard",
+        )
+        self.user = User.objects.create_user(
+            email="cliente-dashboard@example.com",
+            password="senha-teste",
+            name="Cliente Dashboard",
+            organization=self.organization,
+            role="OWNER",
+        )
+
+    def test_dashboard_without_wallet_creates_empty_wallet_and_does_not_500(self):
+        self.client.force_authenticate(self.user)
+
+        response = self.client.get(
+            reverse("dashboard")
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        wallet = CreditWallet.objects.get(
+            organization=self.organization
+        )
+        self.assertEqual(wallet.plan_balance, 0)
+        self.assertEqual(wallet.purchased_balance, 0)
+        self.assertEqual(wallet.available_balance, 0)
+        self.assertEqual(response.data["available_credits"], 0)
 
 
 class GenerationModeContractTests(
@@ -2045,4 +2086,934 @@ class GeneratedImagePrivateDownloadTests(
             GeneratedImage.objects.filter(
                 pk=image_id
             ).exists()
+        )
+
+class GenerationPaginationTests(APITestCase):
+    def setUp(self):
+        User = get_user_model()
+
+        self.organization = Organization.objects.create(
+            name="Empresa Paginação Criações A",
+            slug="empresa-paginacao-criacoes-a",
+        )
+
+        self.other_organization = Organization.objects.create(
+            name="Empresa Paginação Criações B",
+            slug="empresa-paginacao-criacoes-b",
+        )
+
+        self.user = User.objects.create_user(
+            email="criacoes-paginacao-a@example.com",
+            password="senha-teste",
+            name="Cliente Criações A",
+            organization=self.organization,
+            role="OWNER",
+        )
+
+        self.other_user = User.objects.create_user(
+            email="criacoes-paginacao-b@example.com",
+            password="senha-teste",
+            name="Cliente Criações B",
+            organization=self.other_organization,
+            role="OWNER",
+        )
+
+        self.product = Product.objects.create(
+            organization=self.organization,
+            created_by=self.user,
+            name="Produto Paginação Criações",
+            category=ProductCategory.EARRING,
+        )
+
+        self.other_product = Product.objects.create(
+            organization=self.other_organization,
+            created_by=self.other_user,
+            name="Produto Outra Organização",
+            category=ProductCategory.EARRING,
+        )
+
+        self.client.force_authenticate(
+            self.user
+        )
+
+    def create_generation(
+        self,
+        *,
+        organization,
+        user,
+        product,
+        index,
+        status=GenerationStatus.COMPLETED,
+    ):
+        generation = Generation.objects.create(
+            organization=organization,
+            user=user,
+            product=product,
+            mode=GenerationMode.STILL,
+            status=status,
+            idempotency_key=f"generation-page-{organization.slug}-{index}",
+            credit_cost=1,
+        )
+
+        created_at = (
+            timezone.now()
+            + timezone.timedelta(
+                minutes=index
+            )
+        )
+
+        Generation.objects.filter(
+            pk=generation.pk
+        ).update(
+            created_at=created_at
+        )
+
+        generation.refresh_from_db()
+
+        return generation
+
+    def create_dataset(self):
+        for index in range(25):
+            status = (
+                GenerationStatus.FAILED
+                if index < 13
+                else GenerationStatus.COMPLETED
+            )
+
+            self.create_generation(
+                organization=self.organization,
+                user=self.user,
+                product=self.product,
+                index=index,
+                status=status,
+            )
+
+        for index in range(10):
+            self.create_generation(
+                organization=self.other_organization,
+                user=self.other_user,
+                product=self.other_product,
+                index=index,
+            )
+
+    def test_generation_list_is_paginated_by_twelve_and_tenant_scoped(self):
+        self.create_dataset()
+
+        response = self.client.get(
+            reverse(
+                "generation-create"
+            )
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+        )
+
+        self.assertEqual(
+            response.data["count"],
+            25,
+        )
+
+        self.assertEqual(
+            len(response.data["results"]),
+            12,
+        )
+
+        self.assertEqual(
+            response.data["results"][0]["product_name"],
+            "Produto Paginação Criações",
+        )
+
+        response = self.client.get(
+            reverse(
+                "generation-create"
+            ),
+            {
+                "page": 3,
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+        )
+
+        self.assertEqual(
+            len(response.data["results"]),
+            1,
+        )
+
+    def test_generation_list_filters_before_count_and_pagination(self):
+        self.create_dataset()
+
+        response = self.client.get(
+            reverse(
+                "generation-create"
+            ),
+            {
+                "status": GenerationStatus.FAILED,
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+        )
+
+        self.assertEqual(
+            response.data["count"],
+            13,
+        )
+
+        self.assertEqual(
+            len(response.data["results"]),
+            12,
+        )
+
+    def test_invalid_generation_page_returns_not_found(self):
+        self.create_dataset()
+
+        response = self.client.get(
+            reverse(
+                "generation-create"
+            ),
+            {
+                "page": 999,
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            404,
+        )
+
+    def test_dashboard_returns_only_four_recent_generations(self):
+        self.create_dataset()
+
+        response = self.client.get(
+            reverse(
+                "dashboard"
+            )
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+        )
+
+        self.assertEqual(
+            len(response.data["recent_generations"]),
+            4,
+        )
+
+
+@override_settings(
+    OPENAI_API_KEY="test-openai-key",
+    OPENAI_IMAGE_MODEL="gpt-image-test",
+)
+class ProductReuseGenerationApiTests(
+    APITransactionTestCase
+):
+    def setUp(
+        self,
+    ):
+        self.temp_media = (
+            tempfile.TemporaryDirectory()
+        )
+
+        self.media_override = (
+            override_settings(
+                MEDIA_ROOT=self.temp_media.name
+            )
+        )
+
+        self.media_override.enable()
+
+        self.addCleanup(
+            self.media_override.disable
+        )
+
+        self.addCleanup(
+            self.temp_media.cleanup
+        )
+
+        User = get_user_model()
+
+        self.organization = (
+            Organization.objects.create(
+                name="Org Reuso",
+                slug="org-reuso",
+            )
+        )
+
+        self.other_organization = (
+            Organization.objects.create(
+                name="Org Reuso Outra",
+                slug="org-reuso-outra",
+            )
+        )
+
+        self.user = (
+            User.objects.create_user(
+                email="reuso@example.com",
+                password="senha-teste",
+                name="Cliente Reuso",
+                organization=self.organization,
+                role="OWNER",
+            )
+        )
+
+        self.other_user = (
+            User.objects.create_user(
+                email="reuso-outra@example.com",
+                password="senha-teste",
+                name="Cliente Reuso Outra",
+                organization=(
+                    self.other_organization
+                ),
+                role="OWNER",
+            )
+        )
+
+        self.wallet = (
+            CreditWallet.objects.create(
+                organization=self.organization,
+                plan_balance=10,
+                balance=10,
+            )
+        )
+
+        self.other_wallet = (
+            CreditWallet.objects.create(
+                organization=(
+                    self.other_organization
+                ),
+                plan_balance=10,
+                balance=10,
+            )
+        )
+
+        self.plan = Plan.objects.create(
+            name="Plano Reuso",
+            slug="plano-reuso",
+            description="Plano de teste.",
+            price=Decimal("99.90"),
+            billing_cycle=BillingCycle.MONTHLY,
+            credits_per_cycle=50,
+            is_active=True,
+        )
+
+        now = timezone.now()
+
+        self.subscription = (
+            Subscription.objects.create(
+                organization=self.organization,
+                plan=self.plan,
+                status=SubscriptionStatus.ACTIVE,
+                price_snapshot=self.plan.price,
+                credits_snapshot=(
+                    self.plan.credits_per_cycle
+                ),
+                started_at=now,
+                current_period_start=now,
+                current_period_end=(
+                    now +
+                    timezone.timedelta(days=30)
+                ),
+                next_billing_at=(
+                    now +
+                    timezone.timedelta(days=30)
+                ),
+            )
+        )
+
+        Subscription.objects.create(
+            organization=self.other_organization,
+            plan=self.plan,
+            status=SubscriptionStatus.ACTIVE,
+            price_snapshot=self.plan.price,
+            credits_snapshot=(
+                self.plan.credits_per_cycle
+            ),
+            started_at=now,
+            current_period_start=now,
+            current_period_end=(
+                now +
+                timezone.timedelta(days=30)
+            ),
+            next_billing_at=(
+                now +
+                timezone.timedelta(days=30)
+            ),
+        )
+
+        self.rule = GenerationRule.objects.create(
+            category=ProductCategory.EARRING,
+            generation_mode=GenerationMode.STILL,
+            framing="PRODUCT",
+            body_area="",
+            placement_instruction="",
+        )
+
+        self.product = (
+            self.create_product_with_original(
+                name="Brinco Reuso"
+            )
+        )
+
+        self.client.force_authenticate(
+            self.user
+        )
+
+    def image_bytes(
+        self,
+        *,
+        image_format="PNG",
+    ):
+        buffer = BytesIO()
+
+        image = Image.new(
+            "RGB",
+            (
+                32,
+                32,
+            ),
+            color="white",
+        )
+
+        image.save(
+            buffer,
+            format=image_format,
+        )
+
+        return buffer.getvalue()
+
+    def create_product_with_original(
+        self,
+        *,
+        name,
+        organization=None,
+        user=None,
+        status_value=ProductStatus.ACTIVE,
+    ):
+        organization = (
+            organization or
+            self.organization
+        )
+
+        user = (
+            user or
+            self.user
+        )
+
+        product = Product.objects.create(
+            organization=organization,
+            created_by=user,
+            name=name,
+            category=ProductCategory.EARRING,
+            status=status_value,
+        )
+
+        asset = ProductAsset(
+            product=product,
+            asset_type=AssetType.ORIGINAL,
+            mime_type="image/png",
+            width=32,
+            height=32,
+            file_size=len(
+                self.image_bytes()
+            ),
+        )
+
+        asset.file.save(
+            f"{product.id}.png",
+            ContentFile(
+                self.image_bytes()
+            ),
+            save=True,
+        )
+
+        return product
+
+    def create_completed_generation(
+        self,
+        *,
+        key,
+    ):
+        generation = Generation.objects.create(
+            organization=self.organization,
+            user=self.user,
+            product=self.product,
+            mode=GenerationMode.STILL,
+            generation_rule=self.rule,
+            status=GenerationStatus.COMPLETED,
+            idempotency_key=key,
+            credit_cost=1,
+            completed_at=timezone.now(),
+        )
+
+        image = GeneratedImage(
+            generation=generation,
+            mime_type="image/png",
+        )
+
+        image.file.save(
+            f"{generation.id}.png",
+            ContentFile(
+                self.image_bytes()
+            ),
+            save=True,
+        )
+
+        return generation
+
+    def generation_payload(
+        self,
+        *,
+        product,
+        key,
+    ):
+        return {
+            "product_id": str(
+                product.id
+            ),
+            "mode": GenerationMode.STILL,
+            "scene_template_id": None,
+            "model_reference_id": None,
+            "idempotency_key": key,
+        }
+
+    def post_generation(
+        self,
+        *,
+        product,
+        key,
+    ):
+        return self.client.post(
+            reverse(
+                "generation-create"
+            ),
+            self.generation_payload(
+                product=product,
+                key=key,
+            ),
+            format="json",
+        )
+
+    def test_existing_product_creates_generation_without_duplicating_product_or_original(
+        self,
+    ):
+        self.create_completed_generation(
+            key="reuse-existing-1"
+        )
+        self.create_completed_generation(
+            key="reuse-existing-2"
+        )
+
+        before_product_count = (
+            Product.objects
+            .filter(
+                organization=self.organization
+            )
+            .count()
+        )
+
+        before_original_count = (
+            ProductAsset.objects
+            .filter(
+                product=self.product,
+                asset_type=AssetType.ORIGINAL,
+            )
+            .count()
+        )
+
+        with patch(
+            "apps.ai.providers.openai.OpenAIImageProvider.generate",
+            return_value=GeneratedAsset(
+                content=self.image_bytes(),
+                mime_type="image/png",
+            ),
+        ) as generate:
+            response = self.post_generation(
+                product=self.product,
+                key="reuse-existing-new",
+            )
+
+        self.assertEqual(
+            response.status_code,
+            201,
+        )
+        self.assertEqual(
+            response.data["status"],
+            GenerationStatus.COMPLETED,
+        )
+        self.assertEqual(
+            generate.call_count,
+            1,
+        )
+        self.assertEqual(
+            Product.objects
+            .filter(
+                organization=self.organization
+            )
+            .count(),
+            before_product_count,
+        )
+        self.assertEqual(
+            ProductAsset.objects
+            .filter(
+                product=self.product,
+                asset_type=AssetType.ORIGINAL,
+            )
+            .count(),
+            before_original_count,
+        )
+        self.assertEqual(
+            Generation.objects
+            .filter(
+                product=self.product
+            )
+            .count(),
+            3,
+        )
+
+        self.wallet.refresh_from_db()
+        self.assertEqual(
+            self.wallet.plan_balance,
+            9,
+        )
+        self.assertEqual(
+            self.wallet.reserved_balance,
+            0,
+        )
+
+        results_response = self.client.get(
+            reverse(
+                "product-results",
+                kwargs={
+                    "pk": self.product.pk,
+                },
+            )
+        )
+
+        self.assertEqual(
+            results_response.status_code,
+            200,
+        )
+        self.assertEqual(
+            results_response.data["count"],
+            3,
+        )
+
+    def test_existing_product_idempotency_does_not_charge_or_process_twice(
+        self,
+    ):
+        with patch(
+            "apps.ai.providers.openai.OpenAIImageProvider.generate",
+            return_value=GeneratedAsset(
+                content=self.image_bytes(),
+                mime_type="image/png",
+            ),
+        ) as generate:
+            first_response = self.post_generation(
+                product=self.product,
+                key="reuse-idempotent",
+            )
+            second_response = self.post_generation(
+                product=self.product,
+                key="reuse-idempotent",
+            )
+
+        self.assertEqual(
+            first_response.status_code,
+            201,
+        )
+        self.assertEqual(
+            second_response.status_code,
+            200,
+        )
+        self.assertEqual(
+            generate.call_count,
+            1,
+        )
+        self.assertEqual(
+            Generation.objects
+            .filter(
+                product=self.product,
+                idempotency_key="reuse-idempotent",
+            )
+            .count(),
+            1,
+        )
+
+        self.wallet.refresh_from_db()
+        self.assertEqual(
+            self.wallet.plan_balance,
+            9,
+        )
+        self.assertEqual(
+            self.wallet.reserved_balance,
+            0,
+        )
+
+    def test_other_organization_cannot_generate_with_existing_product(
+        self,
+    ):
+        self.client.force_authenticate(
+            self.other_user
+        )
+
+        with patch(
+            "apps.ai.providers.openai.OpenAIImageProvider.generate"
+        ) as generate:
+            response = self.post_generation(
+                product=self.product,
+                key="reuse-cross-tenant",
+            )
+
+        self.assertEqual(
+            response.status_code,
+            404,
+        )
+        generate.assert_not_called()
+        self.assertFalse(
+            Generation.objects.filter(
+                idempotency_key=(
+                    "reuse-cross-tenant"
+                )
+            ).exists()
+        )
+
+        self.other_wallet.refresh_from_db()
+        self.assertEqual(
+            self.other_wallet.available_balance,
+            10,
+        )
+
+    def test_product_without_original_does_not_create_generation_or_reserve_credit(
+        self,
+    ):
+        product = Product.objects.create(
+            organization=self.organization,
+            created_by=self.user,
+            name="Peça sem Original",
+            category=ProductCategory.EARRING,
+            status=ProductStatus.ACTIVE,
+        )
+
+        with patch(
+            "apps.ai.providers.openai.OpenAIImageProvider.generate"
+        ) as generate:
+            response = self.post_generation(
+                product=product,
+                key="reuse-no-original",
+            )
+
+        self.assertEqual(
+            response.status_code,
+            400,
+        )
+        self.assertIn(
+            "imagem original",
+            response.data["detail"],
+        )
+        generate.assert_not_called()
+        self.assertFalse(
+            Generation.objects.filter(
+                idempotency_key="reuse-no-original"
+            ).exists()
+        )
+
+        self.wallet.refresh_from_db()
+        self.assertEqual(
+            self.wallet.available_balance,
+            10,
+        )
+        self.assertEqual(
+            self.wallet.reserved_balance,
+            0,
+        )
+
+    def test_product_with_missing_original_file_does_not_create_generation_or_reserve_credit(
+        self,
+    ):
+        product = Product.objects.create(
+            organization=self.organization,
+            created_by=self.user,
+            name="Peça Arquivo Ausente",
+            category=ProductCategory.EARRING,
+            status=ProductStatus.ACTIVE,
+        )
+
+        ProductAsset.objects.create(
+            product=product,
+            asset_type=AssetType.ORIGINAL,
+            file="products/originals/missing.png",
+            mime_type="image/png",
+        )
+
+        with patch(
+            "apps.ai.providers.openai.OpenAIImageProvider.generate"
+        ) as generate:
+            response = self.post_generation(
+                product=product,
+                key="reuse-missing-file",
+            )
+
+        self.assertEqual(
+            response.status_code,
+            400,
+        )
+        self.assertIn(
+            "imagem original",
+            response.data["detail"],
+        )
+        generate.assert_not_called()
+        self.assertFalse(
+            Generation.objects.filter(
+                idempotency_key="reuse-missing-file"
+            ).exists()
+        )
+
+        self.wallet.refresh_from_db()
+        self.assertEqual(
+            self.wallet.available_balance,
+            10,
+        )
+        self.assertEqual(
+            self.wallet.reserved_balance,
+            0,
+        )
+
+    def test_archived_existing_product_cannot_start_generation(
+        self,
+    ):
+        product = self.create_product_with_original(
+            name="Peça Arquivada",
+            status_value=ProductStatus.ARCHIVED,
+        )
+
+        with patch(
+            "apps.ai.providers.openai.OpenAIImageProvider.generate"
+        ) as generate:
+            response = self.post_generation(
+                product=product,
+                key="reuse-archived",
+            )
+
+        self.assertEqual(
+            response.status_code,
+            400,
+        )
+        self.assertIn(
+            "não está disponível",
+            response.data["detail"],
+        )
+        generate.assert_not_called()
+        self.assertFalse(
+            Generation.objects.filter(
+                idempotency_key="reuse-archived"
+            ).exists()
+        )
+
+    def test_blocked_subscription_does_not_generate_or_reserve_credit(
+        self,
+    ):
+        period_end = (
+            timezone.now() -
+            timezone.timedelta(days=4)
+        )
+
+        self.subscription.status = (
+            SubscriptionStatus.PAST_DUE
+        )
+        self.subscription.current_period_end = (
+            period_end
+        )
+        self.subscription.next_billing_at = (
+            period_end
+        )
+        self.subscription.save(
+            update_fields=[
+                "status",
+                "current_period_end",
+                "next_billing_at",
+                "updated_at",
+            ]
+        )
+
+        with patch(
+            "apps.ai.providers.openai.OpenAIImageProvider.generate"
+        ) as generate:
+            response = self.post_generation(
+                product=self.product,
+                key="reuse-blocked-subscription",
+            )
+
+        self.assertEqual(
+            response.status_code,
+            403,
+        )
+        generate.assert_not_called()
+        self.assertFalse(
+            Generation.objects.filter(
+                idempotency_key=(
+                    "reuse-blocked-subscription"
+                )
+            ).exists()
+        )
+
+        self.wallet.refresh_from_db()
+        self.assertEqual(
+            self.wallet.available_balance,
+            10,
+        )
+        self.assertEqual(
+            self.wallet.reserved_balance,
+            0,
+        )
+
+    def test_insufficient_credit_does_not_generate_or_leave_reservation(
+        self,
+    ):
+        self.wallet.plan_balance = 0
+        self.wallet.purchased_balance = 0
+        self.wallet.balance = 0
+        self.wallet.reserved_balance = 0
+        self.wallet.plan_reserved_balance = 0
+        self.wallet.purchased_reserved_balance = 0
+        self.wallet.save()
+
+        with patch(
+            "apps.ai.providers.openai.OpenAIImageProvider.generate"
+        ) as generate:
+            response = self.post_generation(
+                product=self.product,
+                key="reuse-no-credit",
+            )
+
+        self.assertEqual(
+            response.status_code,
+            403,
+        )
+        self.assertIn(
+            "Créditos insuficientes",
+            response.data["detail"],
+        )
+        generate.assert_not_called()
+        self.assertFalse(
+            Generation.objects.filter(
+                idempotency_key="reuse-no-credit"
+            ).exists()
+        )
+
+        self.wallet.refresh_from_db()
+        self.assertEqual(
+            self.wallet.available_balance,
+            0,
+        )
+        self.assertEqual(
+            self.wallet.reserved_balance,
+            0,
         )

@@ -1,7 +1,10 @@
 from rest_framework import serializers
 
+from apps.audit.models import AuditLog
+from apps.billing.services import BillingAccessService
 from apps.accounts.models import User
 from apps.billing.models import Plan, Subscription
+from apps.products.models import Product
 from apps.credits.models import CreditWallet
 from apps.organizations.models import Organization
 from apps.studio.models import Generation, GenerationMode, SceneTemplate
@@ -85,6 +88,9 @@ class SuperAdminSubscriptionSerializer(serializers.ModelSerializer):
         source="plan.name",
         read_only=True,
     )
+    operational_status = serializers.SerializerMethodField()
+    grace_until = serializers.SerializerMethodField()
+    days_remaining_in_grace = serializers.SerializerMethodField()
 
     class Meta:
         model = Subscription
@@ -93,8 +99,341 @@ class SuperAdminSubscriptionSerializer(serializers.ModelSerializer):
             "plan_name", "status", "price_snapshot", "credits_snapshot",
             "started_at", "current_period_start", "current_period_end",
             "next_billing_at", "cancel_at_period_end", "canceled_at",
+            "operational_status", "grace_until",
+            "days_remaining_in_grace",
             "created_at", "updated_at",
         ]
+
+    def _access(self, obj):
+        access = getattr(
+            obj,
+            "_superadmin_access",
+            None,
+        )
+
+        if access is None:
+            access = BillingAccessService.evaluate_subscription(
+                obj
+            )
+            obj._superadmin_access = access
+
+        return access
+
+    def get_operational_status(self, obj):
+        return self._access(obj).status
+
+    def get_grace_until(self, obj):
+        return self._access(obj).grace_until
+
+    def get_days_remaining_in_grace(self, obj):
+        return self._access(obj).days_remaining_in_grace
+
+
+class SuperAdminClientCreateSerializer(serializers.Serializer):
+    name = serializers.CharField(
+        max_length=160,
+        trim_whitespace=True,
+    )
+    email = serializers.EmailField()
+    initial_password = serializers.CharField(
+        min_length=8,
+        max_length=128,
+        write_only=True,
+    )
+    plan_id = serializers.UUIDField()
+
+    def validate_name(self, value):
+        if not value.strip():
+            raise serializers.ValidationError(
+                "Informe um nome válido."
+            )
+
+        return value.strip()
+
+    def validate_email(self, value):
+        email = User.objects.normalize_email(
+            value
+        )
+
+        if User.objects.filter(
+            email__iexact=email
+        ).exists():
+            raise serializers.ValidationError(
+                "Já existe usuário com este e-mail."
+            )
+
+        return email
+
+    def validate_plan_id(self, value):
+        try:
+            plan = Plan.objects.get(
+                pk=value,
+                is_active=True,
+            )
+
+        except Plan.DoesNotExist as exc:
+            raise serializers.ValidationError(
+                "Selecione um plano ativo."
+            ) from exc
+
+        self.context["plan"] = plan
+
+        return value
+
+
+class SuperAdminSubscriptionActionSerializer(
+    serializers.Serializer
+):
+    plan_id = serializers.UUIDField()
+
+    def validate_plan_id(self, value):
+        try:
+            plan = Plan.objects.get(
+                pk=value,
+                is_active=True,
+            )
+
+        except Plan.DoesNotExist as exc:
+            raise serializers.ValidationError(
+                "Selecione um plano ativo."
+            ) from exc
+
+        self.context["plan"] = plan
+
+        return value
+
+
+class SuperAdminAuditLogSerializer(
+    serializers.ModelSerializer
+):
+    actor_email = serializers.CharField(
+        source="user.email",
+        read_only=True,
+    )
+    organization_name = serializers.CharField(
+        source="organization.name",
+        read_only=True,
+        allow_null=True,
+    )
+
+    class Meta:
+        model = AuditLog
+        fields = [
+            "id",
+            "action",
+            "entity_type",
+            "entity_id",
+            "actor_email",
+            "organization",
+            "organization_name",
+            "metadata",
+            "created_at",
+        ]
+
+
+class SuperAdminClientListSerializer(
+    serializers.ModelSerializer
+):
+    user = serializers.SerializerMethodField()
+    subscription = serializers.SerializerMethodField()
+    wallet = serializers.SerializerMethodField()
+    operational_status = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Organization
+        fields = [
+            "id",
+            "name",
+            "slug",
+            "is_active",
+            "user",
+            "subscription",
+            "wallet",
+            "operational_status",
+            "created_at",
+        ]
+
+    def get_user(self, obj):
+        user = (
+            obj.users
+            .filter(
+                is_superuser=False
+            )
+            .order_by(
+                "date_joined"
+            )
+            .first()
+        )
+
+        if not user:
+            return None
+
+        return {
+            "id": user.pk,
+            "name": user.name,
+            "email": user.email,
+            "is_active": user.is_active,
+        }
+
+    def get_subscription(self, obj):
+        subscription = getattr(
+            obj,
+            "subscription",
+            None,
+        )
+
+        if not subscription:
+            return None
+
+        return {
+            "id": str(subscription.pk),
+            "plan": str(subscription.plan_id),
+            "plan_name": subscription.plan.name,
+            "status": subscription.status,
+            "current_period_end": subscription.current_period_end,
+        }
+
+    def get_wallet(self, obj):
+        wallet = getattr(
+            obj,
+            "credit_wallet",
+            None,
+        )
+
+        if not wallet:
+            return None
+
+        return {
+            "id": str(wallet.pk),
+            "available_balance": wallet.available_balance,
+            "plan_balance": wallet.plan_balance,
+            "purchased_balance": wallet.purchased_balance,
+            "reserved_balance": wallet.reserved_balance,
+        }
+
+    def get_operational_status(self, obj):
+        access = BillingAccessService.evaluate_organization(
+            obj
+        )
+
+        return access.status
+
+
+class SuperAdminClientDetailSerializer(
+    serializers.ModelSerializer
+):
+    user = serializers.SerializerMethodField()
+    subscription = serializers.SerializerMethodField()
+    wallet = serializers.SerializerMethodField()
+    usage = serializers.SerializerMethodField()
+    audit_logs = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Organization
+        fields = [
+            "id",
+            "name",
+            "slug",
+            "is_active",
+            "created_at",
+            "updated_at",
+            "user",
+            "subscription",
+            "wallet",
+            "usage",
+            "audit_logs",
+        ]
+
+    def get_user(self, obj):
+        user = (
+            obj.users
+            .filter(
+                is_superuser=False
+            )
+            .order_by(
+                "date_joined"
+            )
+            .first()
+        )
+
+        if not user:
+            return None
+
+        return SuperAdminUserSerializer(
+            user
+        ).data
+
+    def get_subscription(self, obj):
+        subscription = getattr(
+            obj,
+            "subscription",
+            None,
+        )
+
+        access = BillingAccessService.evaluate_subscription(
+            subscription
+        )
+
+        if not subscription:
+            return {
+                "operational_status": access.status,
+                "grace_until": access.grace_until,
+                "days_remaining_in_grace": (
+                    access.days_remaining_in_grace
+                ),
+            }
+
+        data = SuperAdminSubscriptionSerializer(
+            subscription
+        ).data
+
+        data["operational_status"] = access.status
+        data["grace_until"] = access.grace_until
+        data["days_remaining_in_grace"] = (
+            access.days_remaining_in_grace
+        )
+
+        return data
+
+    def get_wallet(self, obj):
+        wallet, _created = CreditWallet.objects.get_or_create(
+            organization=obj
+        )
+
+        return SuperAdminCreditWalletSerializer(
+            wallet
+        ).data
+
+    def get_usage(self, obj):
+        return {
+            "products_count": Product.objects.filter(
+                organization=obj
+            ).count(),
+            "generations_count": Generation.objects.filter(
+                organization=obj
+            ).count(),
+        }
+
+    def get_audit_logs(self, obj):
+        from apps.audit.models import AuditLog
+
+        logs = (
+            AuditLog.objects
+            .filter(
+                organization=obj
+            )
+            .select_related(
+                "user"
+            )
+            .order_by(
+                "-created_at"
+            )[:10]
+        )
+
+        return SuperAdminAuditLogSerializer(
+            logs,
+            many=True,
+        ).data
 
 
 class SuperAdminCreditWalletSerializer(serializers.ModelSerializer):
@@ -136,7 +475,8 @@ class SuperAdminGenerationSerializer(serializers.ModelSerializer):
             "id", "organization", "organization_name", "user",
             "user_email", "product", "product_name", "mode", "status",
             "failure_type", "provider", "model", "credit_cost",
-            "error_code", "error_message", "created_at", "started_at",
+            "retry_count", "error_code", "error_message",
+            "created_at", "started_at",
             "completed_at",
         ]
 

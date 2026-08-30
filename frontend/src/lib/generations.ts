@@ -1,3 +1,7 @@
+import {
+  type PaginatedResponse,
+} from "@/lib/pagination";
+
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ??
   "http://localhost:8000";
@@ -36,15 +40,8 @@ export type Generation = {
 };
 
 
-export type GenerationListResponse = {
-  count: number;
-
-  next: string | null;
-
-  previous: string | null;
-
-  results: Generation[];
-};
+export type GenerationListResponse =
+  PaginatedResponse<Generation>;
 
 
 export type GenerationFilters = {

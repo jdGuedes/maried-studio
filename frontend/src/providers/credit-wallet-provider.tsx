@@ -31,6 +31,8 @@ type CreditWalletContextValue = {
 
   refreshWallet: () => Promise<void>;
 
+  clearWallet: () => void;
+
   setWalletFromGeneration: (
     availableCredits: number
   ) => void;
@@ -121,6 +123,25 @@ export function CreditWalletProvider({
             false
           );
         }
+      },
+      []
+    );
+
+
+  const clearWallet =
+    useCallback(
+      () => {
+        setWallet(
+          null
+        );
+
+        setError(
+          null
+        );
+
+        setLoading(
+          false
+        );
       },
       []
     );
@@ -218,6 +239,8 @@ export function CreditWalletProvider({
 
         refreshWallet,
 
+        clearWallet,
+
         setWalletFromGeneration,
       }),
       [
@@ -226,6 +249,7 @@ export function CreditWalletProvider({
         loading,
         error,
         refreshWallet,
+        clearWallet,
         setWalletFromGeneration,
       ]
     );

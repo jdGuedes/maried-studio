@@ -2,6 +2,10 @@ from django.urls import path
 
 from .views import (
     CreditAdjustmentView,
+    SuperAdminAuditLogListView,
+    SuperAdminClientActivateSubscriptionView,
+    SuperAdminClientDetailView,
+    SuperAdminClientListCreateView,
     SuperAdminCreditWalletListView,
     SuperAdminGenerationDetailView,
     SuperAdminGenerationListView,
@@ -13,6 +17,7 @@ from .views import (
     SuperAdminSceneTemplateListCreateView,
     SuperAdminSubscriptionDetailView,
     SuperAdminSubscriptionListView,
+    SuperAdminSubscriptionRenewView,
     SuperAdminSummaryView,
     SuperAdminUserDetailView,
     SuperAdminUserListView,
@@ -27,6 +32,26 @@ urlpatterns = [
         "summary/",
         SuperAdminSummaryView.as_view(),
         name="summary",
+    ),
+    path(
+        "audit-logs/",
+        SuperAdminAuditLogListView.as_view(),
+        name="audit-logs",
+    ),
+    path(
+        "clients/",
+        SuperAdminClientListCreateView.as_view(),
+        name="clients",
+    ),
+    path(
+        "clients/<uuid:pk>/",
+        SuperAdminClientDetailView.as_view(),
+        name="client-detail",
+    ),
+    path(
+        "clients/<uuid:pk>/activate-subscription/",
+        SuperAdminClientActivateSubscriptionView.as_view(),
+        name="client-activate-subscription",
     ),
     path(
         "organizations/",
@@ -67,6 +92,11 @@ urlpatterns = [
         "subscriptions/<uuid:pk>/",
         SuperAdminSubscriptionDetailView.as_view(),
         name="subscription-detail",
+    ),
+    path(
+        "subscriptions/<uuid:pk>/renew/",
+        SuperAdminSubscriptionRenewView.as_view(),
+        name="subscription-renew",
     ),
     path(
         "credit-wallets/",

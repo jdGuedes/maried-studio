@@ -1,6 +1,6 @@
 // ==========================================================
 // MARIED STUDIO
-// CARTEIRA DE CRÉDITOS
+// ASSINATURA DO CLIENTE
 // ==========================================================
 
 const API_URL =
@@ -12,32 +12,43 @@ const API_URL =
 // TIPOS
 // ==========================================================
 
-export type CreditWallet = {
+export type ClientSubscriptionPlan = {
   id: string;
 
-  balance: number;
+  name: string;
 
-  reserved_balance: number;
+  credits_per_cycle: number;
 
-  plan_balance: number;
+  billing_cycle: string;
+};
 
-  purchased_balance: number;
 
-  plan_reserved_balance: number;
+export type ClientSubscription = {
+  status: string | null;
 
-  purchased_reserved_balance: number;
+  operational_status:
+    | "ACTIVE"
+    | "GRACE"
+    | "BLOCKED"
+    | string;
 
-  available_plan_balance: number;
+  plan_name: string | null;
 
-  available_purchased_balance: number;
+  plan: ClientSubscriptionPlan | null;
 
-  available_balance: number;
+  billing_cycle: string | null;
 
-  total_balance: number;
+  credits_per_cycle: number | null;
 
-  created_at: string;
+  current_period_start: string | null;
 
-  updated_at: string;
+  current_period_end: string | null;
+
+  next_billing_at: string | null;
+
+  grace_until: string | null;
+
+  days_remaining_in_grace: number | null;
 };
 
 
@@ -48,11 +59,12 @@ export type CreditWallet = {
 type ApiErrorData = {
   detail?: string;
 
-  [key: string]: unknown;
+  [key: string]:
+    unknown;
 };
 
 
-export class CreditWalletApiError
+export class SubscriptionApiError
   extends Error {
 
   status: number;
@@ -71,7 +83,7 @@ export class CreditWalletApiError
     super(message);
 
     this.name =
-      "CreditWalletApiError";
+      "SubscriptionApiError";
 
     this.status =
       status;
@@ -89,66 +101,48 @@ export class CreditWalletApiError
 async function parseResponse<T>(
   response: Response
 ): Promise<T> {
-
   let data:
     unknown = null;
 
-
   try {
-
     data =
       await response.json();
-
   } catch {
-
     data = null;
-
   }
 
-
-  if (
-    !response.ok
-  ) {
-
+  if (!response.ok) {
     const errorData =
       data &&
-      typeof data ===
-        "object"
+      typeof data === "object"
         ? (
             data as
               ApiErrorData
           )
         : null;
 
-
-    const message =
+    throw new SubscriptionApiError(
       errorData?.detail ??
-      `Erro ao consultar créditos (${response.status}).`;
-
-
-    throw new CreditWalletApiError(
-      message,
+        `Erro ao consultar assinatura (${response.status}).`,
       response.status,
       errorData
     );
-
   }
-
 
   return data as T;
 }
 
 
 // ==========================================================
-// GET DA CARTEIRA
+// GET ASSINATURA ATUAL
 // ==========================================================
 
-export async function getCreditWallet():
-  Promise<CreditWallet> {
+export async function getCurrentSubscription():
+  Promise<ClientSubscription> {
 
   const response =
     await fetch(
-      `${API_URL}/api/credits/wallet/`,
+      `${API_URL}/api/billing/subscription/`,
       {
         method:
           "GET",
@@ -161,15 +155,12 @@ export async function getCreditWallet():
             "application/json",
         },
 
-        // O saldo financeiro não deve
-        // ficar preso em cache antigo.
         cache:
           "no-store",
       }
     );
 
-
-  return parseResponse<CreditWallet>(
+  return parseResponse<ClientSubscription>(
     response
   );
 }

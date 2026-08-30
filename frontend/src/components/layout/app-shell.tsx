@@ -3,7 +3,6 @@
 import Link from "next/link";
 import {
   usePathname,
-  useRouter,
 } from "next/navigation";
 
 import {
@@ -28,10 +27,6 @@ import type {
 } from "react";
 
 import {
-  useState,
-} from "react";
-
-import {
   useCreditWallet,
 } from "@/providers/credit-wallet-provider";
 
@@ -40,8 +35,8 @@ import {
 } from "@/providers/profile-provider";
 
 import {
-  logoutUser,
-} from "@/lib/api";
+  useLogout,
+} from "@/lib/logout";
 
 
 type AppShellProps = {
@@ -81,7 +76,7 @@ const navItems = [
   {
     label: "Créditos",
     icon: CreditCard,
-    href: "#",
+    href: "/creditos",
   },
 ];
 
@@ -126,16 +121,6 @@ export function AppShell({
   const pathname =
     usePathname();
 
-  const router =
-    useRouter();
-
-  const [
-    loggingOut,
-    setLoggingOut,
-  ] = useState(
-    false
-  );
-
 
   // ========================================================
   // PERFIL REAL
@@ -152,8 +137,6 @@ export function AppShell({
 
     refreshProfile,
 
-    setAuthenticatedProfile,
-
     organizationName,
 
     initials,
@@ -161,6 +144,14 @@ export function AppShell({
     isSuperAdmin,
   } =
     useProfile();
+
+
+  const {
+    loggingOut,
+    logoutError,
+    performLogout,
+  } =
+    useLogout();
 
 
   // ========================================================
@@ -203,38 +194,6 @@ export function AppShell({
       ? "Carregando..."
       : profile?.role_label ??
         "Usuário";
-
-
-  async function handleLogout() {
-    if (
-      loggingOut
-    ) {
-      return;
-    }
-
-    setLoggingOut(
-      true
-    );
-
-    try {
-      await logoutUser();
-
-    } catch (error) {
-      console.error(
-        "Erro ao encerrar sessão:",
-        error
-      );
-
-    } finally {
-      setAuthenticatedProfile(
-        null
-      );
-
-      router.replace(
-        "/login"
-      );
-    }
-  }
 
 
   if (
@@ -402,15 +361,26 @@ export function AppShell({
 
 
           {/* =================================================
-              INDICADOR SUPERADMIN
-
-              Ainda não cria rota administrativa.
-              Apenas identifica a conta global.
+              ÁREA SUPERADMIN
           ================================================= */}
 
           {isSuperAdmin ? (
 
-            <div className="mt-5 rounded-[14px] border border-[var(--maried-sand)] bg-[var(--maried-soft-gold)] px-3 py-2.5">
+            <Link
+              href="/superadmin"
+              className={[
+                "mt-5 block rounded-[14px] border px-3 py-2.5 transition-colors",
+
+                isRouteActive(
+                  pathname,
+                  "/superadmin"
+                )
+                  ? "border-[var(--maried-gold)] bg-[var(--maried-soft-gold)]"
+                  : "border-[var(--maried-sand)] bg-[var(--maried-soft-gold)] hover:bg-[var(--maried-cream)]",
+              ].join(
+                " "
+              )}
+            >
 
               <div className="flex items-center gap-2">
 
@@ -442,7 +412,7 @@ export function AppShell({
 
               </div>
 
-            </div>
+            </Link>
 
           ) : null}
 
@@ -642,6 +612,15 @@ export function AppShell({
             ) : null}
 
 
+            {logoutError ? (
+
+              <div className="mb-2 rounded-xl bg-red-50 px-3 py-2 text-left text-[10px] text-red-700">
+                {logoutError}
+              </div>
+
+            ) : null}
+
+
             <button
               type="button"
 
@@ -650,7 +629,7 @@ export function AppShell({
               }
 
               onClick={() => {
-                void handleLogout();
+                void performLogout();
               }}
 
               className="flex h-11 w-full items-center gap-3 rounded-xl px-3 text-sm text-[var(--maried-cocoa)] transition-colors hover:bg-[var(--maried-cream)]"

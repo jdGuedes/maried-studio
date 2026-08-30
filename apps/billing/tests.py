@@ -773,6 +773,11 @@ class CurrentSubscriptionApiTests(APITestCase):
             role="OWNER",
         )
 
+        self.other_organization = Organization.objects.create(
+            name="Outra Organização Assinatura",
+            slug="outra-org-assinatura-api",
+        )
+
         self.plan = Plan.objects.create(
             name="Plano API",
             slug="plano-api-billing",
@@ -780,6 +785,16 @@ class CurrentSubscriptionApiTests(APITestCase):
             price=Decimal("99.90"),
             billing_cycle=BillingCycle.MONTHLY,
             credits_per_cycle=50,
+            is_active=True,
+        )
+
+        self.other_plan = Plan.objects.create(
+            name="Plano Outro Cliente",
+            slug="plano-outro-cliente-billing",
+            description="Plano de outra organização.",
+            price=Decimal("199.90"),
+            billing_cycle=BillingCycle.MONTHLY,
+            credits_per_cycle=999,
             is_active=True,
         )
 
@@ -794,12 +809,24 @@ class CurrentSubscriptionApiTests(APITestCase):
             )
         )
 
-        Subscription.objects.create(
+        self.subscription = Subscription.objects.create(
             organization=self.organization,
             plan=self.plan,
             status=SubscriptionStatus.PAST_DUE,
             price_snapshot=self.plan.price,
             credits_snapshot=self.plan.credits_per_cycle,
+            started_at=self.period_end - timezone.timedelta(days=30),
+            current_period_start=self.period_end - timezone.timedelta(days=30),
+            current_period_end=self.period_end,
+            next_billing_at=self.period_end,
+        )
+
+        Subscription.objects.create(
+            organization=self.other_organization,
+            plan=self.other_plan,
+            status=SubscriptionStatus.ACTIVE,
+            price_snapshot=self.other_plan.price,
+            credits_snapshot=self.other_plan.credits_per_cycle,
             started_at=self.period_end - timezone.timedelta(days=30),
             current_period_start=self.period_end - timezone.timedelta(days=30),
             current_period_end=self.period_end,
@@ -843,4 +870,179 @@ class CurrentSubscriptionApiTests(APITestCase):
         self.assertEqual(
             response.data["grace_until"],
             "2026-08-28",
+        )
+
+        self.assertEqual(
+            response.data["plan_name"],
+            "Plano API",
+        )
+        self.assertEqual(
+            response.data["plan"]["id"],
+            str(self.plan.pk),
+        )
+        self.assertEqual(
+            response.data["plan"]["credits_per_cycle"],
+            50,
+        )
+        self.assertEqual(
+            response.data["billing_cycle"],
+            BillingCycle.MONTHLY,
+        )
+        self.assertEqual(
+            response.data["credits_per_cycle"],
+            50,
+        )
+        self.assertIsNotNone(
+            response.data["current_period_start"],
+        )
+        self.assertIsNotNone(
+            response.data["current_period_end"],
+        )
+        self.assertIsNotNone(
+            response.data["next_billing_at"],
+        )
+
+    def test_current_subscription_ignores_arbitrary_organization_id(self):
+        self.client.force_authenticate(
+            self.user
+        )
+
+        response = self.client.get(
+            (
+                reverse("billing:current-subscription")
+                + f"?organization_id={self.other_organization.pk}"
+            )
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+        )
+        self.assertEqual(
+            response.data["plan_name"],
+            "Plano API",
+        )
+        self.assertNotEqual(
+            response.data["plan_name"],
+            "Plano Outro Cliente",
+        )
+
+    def test_anonymous_user_cannot_access_current_subscription(self):
+        response = self.client.get(
+            reverse(
+                "billing:current-subscription"
+            )
+        )
+
+        self.assertIn(
+            response.status_code,
+            [401, 403],
+        )
+
+    def test_active_subscription_returns_active_status(self):
+        self.subscription.status = SubscriptionStatus.ACTIVE
+        self.subscription.current_period_end = self.period_end
+        self.subscription.next_billing_at = self.period_end
+        self.subscription.save(
+            update_fields=[
+                "status",
+                "current_period_end",
+                "next_billing_at",
+                "updated_at",
+            ]
+        )
+        self.client.force_authenticate(
+            self.user
+        )
+
+        with patch(
+            "apps.billing.services.timezone.now",
+            return_value=timezone.make_aware(
+                timezone.datetime(
+                    2026,
+                    8,
+                    24,
+                    10,
+                    0,
+                    0,
+                )
+            ),
+        ):
+            response = self.client.get(
+                reverse(
+                    "billing:current-subscription"
+                )
+            )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+        )
+        self.assertEqual(
+            response.data["operational_status"],
+            SubscriptionAccessStatus.ACTIVE,
+        )
+
+    def test_blocked_subscription_is_still_readable(self):
+        self.client.force_authenticate(
+            self.user
+        )
+
+        with patch(
+            "apps.billing.services.timezone.now",
+            return_value=timezone.make_aware(
+                timezone.datetime(
+                    2026,
+                    8,
+                    29,
+                    10,
+                    0,
+                    0,
+                )
+            ),
+        ):
+            response = self.client.get(
+                reverse(
+                    "billing:current-subscription"
+                )
+            )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+        )
+        self.assertEqual(
+            response.data["operational_status"],
+            SubscriptionAccessStatus.BLOCKED,
+        )
+        self.assertEqual(
+            response.data["plan_name"],
+            "Plano API",
+        )
+
+    def test_without_subscription_returns_safe_empty_payload(self):
+        self.subscription.delete()
+        self.client.force_authenticate(
+            self.user
+        )
+
+        response = self.client.get(
+            reverse(
+                "billing:current-subscription"
+            )
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+        )
+        self.assertEqual(
+            response.data["operational_status"],
+            SubscriptionAccessStatus.BLOCKED,
+        )
+        self.assertIsNone(
+            response.data["status"],
+        )
+        self.assertIsNone(
+            response.data["plan"],
         )

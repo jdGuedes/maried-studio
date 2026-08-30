@@ -28,6 +28,7 @@ from apps.common.private_media import (
     build_private_image_response,
     build_private_media_url,
 )
+from apps.common.pagination import ClientListPagination
 
 from apps.studio.models import (
     GenerationStatus,
@@ -104,6 +105,8 @@ class ProductViewSet(
     serializer_class = (
         ProductSerializer
     )
+
+    pagination_class = ClientListPagination
 
     permission_classes = [
         permissions.IsAuthenticated,
@@ -263,7 +266,8 @@ class ProductViewSet(
 
         return (
             queryset.order_by(
-                "-created_at"
+                "-created_at",
+                "-id",
             )
         )
 

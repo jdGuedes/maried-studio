@@ -1,3 +1,7 @@
+import {
+  type PaginatedResponse,
+} from "@/lib/pagination";
+
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ??
   "http://localhost:8000";
@@ -73,13 +77,7 @@ export type Product = {
 
 
 export type ProductListResponse =
-  | Product[]
-  | {
-      count: number;
-      next: string | null;
-      previous: string | null;
-      results: Product[];
-    };
+  PaginatedResponse<Product>;
 
 
 export type ProductFilters = {
@@ -90,6 +88,8 @@ export type ProductFilters = {
   startDate?: string;
 
   endDate?: string;
+
+  page?: number;
 };
 
 
@@ -241,7 +241,7 @@ async function parseResponse<T>(
 export async function getProducts(
   filters:
     ProductFilters = {}
-): Promise<Product[]> {
+): Promise<ProductListResponse> {
 
   const params =
     new URLSearchParams();
@@ -287,6 +287,19 @@ export async function getProducts(
   }
 
 
+  if (
+    filters.page &&
+    filters.page > 1
+  ) {
+    params.set(
+      "page",
+      String(
+        filters.page
+      )
+    );
+  }
+
+
   const query =
     params.toString();
 
@@ -327,11 +340,20 @@ export async function getProducts(
       data
     )
   ) {
-    return data;
+    return {
+      count:
+        data.length,
+      next:
+        null,
+      previous:
+        null,
+      results:
+        data,
+    };
   }
 
 
-  return data.results;
+  return data;
 }
 
 

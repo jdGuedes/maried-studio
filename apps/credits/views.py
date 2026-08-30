@@ -44,29 +44,12 @@ class CreditWalletDetailView(
                 ),
             )
 
-        try:
-            wallet = (
-                CreditWallet.objects
-                .select_related(
-                    "organization"
-                )
-                .get(
-                    organization=organization
-                )
+        wallet, _created = (
+            CreditWallet.objects
+            .get_or_create(
+                organization=organization
             )
-
-        except CreditWallet.DoesNotExist:
-            return Response(
-                {
-                    "detail": (
-                        "Carteira de créditos "
-                        "não encontrada."
-                    )
-                },
-                status=(
-                    status.HTTP_404_NOT_FOUND
-                ),
-            )
+        )
 
         serializer = (
             CreditWalletSerializer(

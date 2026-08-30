@@ -10,9 +10,18 @@ from rest_framework.response import Response
 
 from rest_framework.views import APIView
 
-from apps.billing.services import SubscriptionRequiredError
+from apps.billing.services import (
+    BillingAccessService,
+    SubscriptionRequiredError,
+)
+from apps.common.pagination import ClientListPagination
 from apps.common.private_media import build_private_image_response
-from apps.products.models import Product
+from apps.credits.services import InsufficientCredits
+from apps.products.models import (
+    AssetType,
+    Product,
+    ProductStatus,
+)
 from apps.products.services import VisualDataDeletionService
 
 from .models import (
@@ -30,6 +39,56 @@ from .serializers import (
 )
 
 from .services.generation_service import GenerationService
+
+
+def get_product_generation_block_reason(product):
+    if (
+        product.status
+        != ProductStatus.ACTIVE
+    ):
+        return (
+            "Esta peça não está disponível "
+            "para novas criações."
+        )
+
+    source_asset = (
+        product.assets
+        .filter(
+            asset_type=AssetType.ORIGINAL
+        )
+        .order_by(
+            "-created_at"
+        )
+        .first()
+    )
+
+    if (
+        not source_asset
+        or not source_asset.file
+        or not source_asset.file.name
+    ):
+        return (
+            "Esta peça não possui uma "
+            "imagem original disponível."
+        )
+
+    try:
+        exists = (
+            source_asset.file.storage.exists(
+                source_asset.file.name
+            )
+        )
+
+    except Exception:
+        exists = False
+
+    if not exists:
+        return (
+            "Esta peça não possui uma "
+            "imagem original disponível."
+        )
+
+    return None
 
 
 class GeneratedImageDownloadView(
@@ -209,7 +268,8 @@ class GenerationCreateView(APIView):
                 "model_reference",
             )
             .order_by(
-                "-created_at"
+                "-created_at",
+                "-id",
             )
         )
 
@@ -261,10 +321,7 @@ class GenerationCreateView(APIView):
                 created_at__date__lte=end_date
             )
 
-        paginator = (
-            generics.ListAPIView()
-            .pagination_class()
-        )
+        paginator = ClientListPagination()
 
         page = paginator.paginate_queryset(
             queryset,
@@ -333,6 +390,34 @@ class GenerationCreateView(APIView):
         )
 
         try:
+            BillingAccessService.ensure_operational_access(
+                organization
+            )
+
+        except SubscriptionRequiredError as exc:
+            return Response(
+                {
+                    "code": exc.code,
+                    "detail": str(exc),
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        block_reason = (
+            get_product_generation_block_reason(
+                product
+            )
+        )
+
+        if block_reason:
+            return Response(
+                {
+                    "detail": block_reason,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
             generation, created = (
                 GenerationService.create_request(
                     user=request.user,
@@ -354,6 +439,14 @@ class GenerationCreateView(APIView):
             return Response(
                 {
                     "code": exc.code,
+                    "detail": str(exc),
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        except InsufficientCredits as exc:
+            return Response(
+                {
                     "detail": str(exc),
                 },
                 status=status.HTTP_403_FORBIDDEN,

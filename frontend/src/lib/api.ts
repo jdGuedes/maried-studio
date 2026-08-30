@@ -625,3 +625,887 @@ export async function getGeneration(
     response
   );
 }
+
+
+// ==========================================================
+// SUPERADMIN
+// ==========================================================
+
+type PaginatedResponse<T> = {
+  count: number;
+
+  next:
+    string | null;
+
+  previous:
+    string | null;
+
+  results:
+    T[];
+};
+
+
+function unpackResults<T>(
+  data:
+    | PaginatedResponse<T>
+    | T[]
+): T[] {
+  if (
+    Array.isArray(data)
+  ) {
+    return data;
+  }
+
+  return data.results;
+}
+
+
+export type SuperAdminSummary = {
+  organizations: number;
+  active_organizations: number;
+  users: number;
+  plans: number;
+  subscriptions: number;
+  operational_active_subscriptions: number;
+  operational_grace_subscriptions: number;
+  operational_blocked_subscriptions: number;
+  credit_wallets: number;
+  generations: number;
+  failed_generations: number;
+};
+
+
+export type SuperAdminPlan = {
+  id: string;
+  name: string;
+  slug: string;
+  description: string;
+  price: string;
+  billing_cycle: string;
+  credits_per_cycle: number;
+  is_active: boolean;
+  sort_order: number;
+};
+
+
+export type SuperAdminClientUser = {
+  id: number;
+  email: string;
+  name: string;
+  role?: string;
+  role_label?: string;
+  organization?: string | null;
+  organization_name?: string | null;
+  is_active: boolean;
+  is_staff?: boolean;
+  is_superuser?: boolean;
+};
+
+
+export type SuperAdminClientSubscription = {
+  id?: string;
+  organization?: string;
+  organization_name?: string;
+  plan?: string;
+  plan_name?: string;
+  status?: string;
+  price_snapshot?: string;
+  credits_snapshot?: number;
+  current_period_start?: string | null;
+  current_period_end?: string | null;
+  next_billing_at?: string | null;
+  cancel_at_period_end?: boolean;
+  operational_status: string;
+  grace_until?: string | null;
+  days_remaining_in_grace?: number | null;
+};
+
+
+export type SuperAdminSubscription =
+  SuperAdminClientSubscription & {
+    id: string;
+    organization: string;
+    organization_name: string;
+    plan: string;
+    plan_name: string;
+    status: string;
+    price_snapshot: string;
+    credits_snapshot: number;
+    started_at: string | null;
+    created_at: string;
+    updated_at: string;
+  };
+
+
+export type SuperAdminClientWallet = {
+  id: string;
+  available_balance: number;
+  total_balance?: number;
+  balance?: number;
+  reserved_balance: number;
+  plan_balance: number;
+  purchased_balance: number;
+  plan_reserved_balance?: number;
+  purchased_reserved_balance?: number;
+};
+
+
+export type SuperAdminClientListItem = {
+  id: string;
+  name: string;
+  slug: string;
+  is_active: boolean;
+  user: SuperAdminClientUser | null;
+  subscription: SuperAdminClientSubscription | null;
+  wallet: SuperAdminClientWallet | null;
+  operational_status: string;
+  created_at: string;
+};
+
+
+export type SuperAdminAuditLog = {
+  id: string;
+  action: string;
+  entity_type: string;
+  entity_id: string;
+  actor_email: string;
+  organization: string | null;
+  organization_name: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+};
+
+
+export type SuperAdminWallet = {
+  id: string;
+  organization: string;
+  organization_name: string;
+  balance: number;
+  reserved_balance: number;
+  plan_balance: number;
+  purchased_balance: number;
+  plan_reserved_balance: number;
+  purchased_reserved_balance: number;
+  available_balance: number;
+  total_balance: number;
+  created_at: string;
+  updated_at: string;
+};
+
+
+export type SuperAdminGeneration = {
+  id: string;
+  organization: string;
+  organization_name: string;
+  user: number;
+  user_email: string;
+  product: string;
+  product_name: string;
+  mode: GenerationMode;
+  status: string;
+  failure_type: string;
+  provider: string;
+  model: string;
+  credit_cost: number;
+  retry_count: number;
+  error_code: string;
+  error_message: string;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+};
+
+
+export type SuperAdminSceneTemplate = SceneTemplate & {
+  prompt_template: string;
+  generation_mode: GenerationMode;
+  category: ProductCategory;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+
+export type SuperAdminClientDetail =
+  SuperAdminClientListItem & {
+    updated_at: string;
+    subscription: SuperAdminClientSubscription;
+    wallet: SuperAdminClientWallet;
+    usage: {
+      products_count: number;
+      generations_count: number;
+    };
+    audit_logs: SuperAdminAuditLog[];
+  };
+
+
+export type CreateSuperAdminClientInput = {
+  name: string;
+  email: string;
+  initial_password: string;
+  plan_id: string;
+};
+
+
+export type AdjustSuperAdminCreditsInput = {
+  organization_id: string;
+  amount: number;
+  balance_type:
+    | "PLAN"
+    | "PURCHASED";
+  reason: string;
+};
+
+
+export async function getSuperAdminSummary():
+  Promise<SuperAdminSummary> {
+  const response =
+    await fetch(
+      `${API_URL}/api/superadmin/summary/`,
+      {
+        method:
+          "GET",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+      }
+    );
+
+  return parseResponse<SuperAdminSummary>(
+    response
+  );
+}
+
+
+export async function getSuperAdminClients():
+  Promise<SuperAdminClientListItem[]> {
+  const response =
+    await fetch(
+      `${API_URL}/api/superadmin/clients/`,
+      {
+        method:
+          "GET",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+      }
+    );
+
+  const data =
+    await parseResponse<
+      | PaginatedResponse<SuperAdminClientListItem>
+      | SuperAdminClientListItem[]
+    >(response);
+
+  return unpackResults(data);
+}
+
+
+export async function getSuperAdminClient(
+  clientId: string
+): Promise<SuperAdminClientDetail> {
+  const response =
+    await fetch(
+      `${API_URL}/api/superadmin/clients/${clientId}/`,
+      {
+        method:
+          "GET",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+      }
+    );
+
+  return parseResponse<SuperAdminClientDetail>(
+    response
+  );
+}
+
+
+export async function getSuperAdminPlans():
+  Promise<SuperAdminPlan[]> {
+  const response =
+    await fetch(
+      `${API_URL}/api/superadmin/plans/`,
+      {
+        method:
+          "GET",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+      }
+    );
+
+  const data =
+    await parseResponse<
+      | PaginatedResponse<SuperAdminPlan>
+      | SuperAdminPlan[]
+    >(response);
+
+  return unpackResults(data);
+}
+
+
+export async function createSuperAdminPlan(
+  input: Omit<SuperAdminPlan, "id">
+): Promise<SuperAdminPlan> {
+  await ensureCsrfCookie();
+
+  const response =
+    await fetch(
+      `${API_URL}/api/superadmin/plans/`,
+      {
+        method:
+          "POST",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+
+        headers: {
+          "Content-Type":
+            "application/json",
+
+          ...getCsrfHeaders(),
+        },
+
+        body:
+          JSON.stringify(input),
+      }
+    );
+
+  return parseResponse<SuperAdminPlan>(
+    response
+  );
+}
+
+
+export async function updateSuperAdminPlan(
+  planId: string,
+  input: Partial<Omit<SuperAdminPlan, "id">>
+): Promise<SuperAdminPlan> {
+  await ensureCsrfCookie();
+
+  const response =
+    await fetch(
+      `${API_URL}/api/superadmin/plans/${planId}/`,
+      {
+        method:
+          "PATCH",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+
+        headers: {
+          "Content-Type":
+            "application/json",
+
+          ...getCsrfHeaders(),
+        },
+
+        body:
+          JSON.stringify(input),
+      }
+    );
+
+  return parseResponse<SuperAdminPlan>(
+    response
+  );
+}
+
+
+export async function createSuperAdminClient(
+  input: CreateSuperAdminClientInput
+): Promise<SuperAdminClientDetail> {
+  await ensureCsrfCookie();
+
+  const response =
+    await fetch(
+      `${API_URL}/api/superadmin/clients/`,
+      {
+        method:
+          "POST",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+
+        headers: {
+          "Content-Type":
+            "application/json",
+
+          ...getCsrfHeaders(),
+        },
+
+        body:
+          JSON.stringify(input),
+      }
+    );
+
+  return parseResponse<SuperAdminClientDetail>(
+    response
+  );
+}
+
+
+export async function updateSuperAdminOrganization(
+  organizationId: string,
+  input: {
+    name?: string;
+    is_active?: boolean;
+  }
+): Promise<unknown> {
+  await ensureCsrfCookie();
+
+  const response =
+    await fetch(
+      `${API_URL}/api/superadmin/organizations/${organizationId}/`,
+      {
+        method:
+          "PATCH",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+
+        headers: {
+          "Content-Type":
+            "application/json",
+
+          ...getCsrfHeaders(),
+        },
+
+        body:
+          JSON.stringify(input),
+      }
+    );
+
+  return parseResponse<unknown>(
+    response
+  );
+}
+
+
+export async function updateSuperAdminUser(
+  userId: number,
+  input: {
+    name?: string;
+    is_active?: boolean;
+  }
+): Promise<unknown> {
+  await ensureCsrfCookie();
+
+  const response =
+    await fetch(
+      `${API_URL}/api/superadmin/accounts/${userId}/`,
+      {
+        method:
+          "PATCH",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+
+        headers: {
+          "Content-Type":
+            "application/json",
+
+          ...getCsrfHeaders(),
+        },
+
+        body:
+          JSON.stringify(input),
+      }
+    );
+
+  return parseResponse<unknown>(
+    response
+  );
+}
+
+
+export async function activateSuperAdminSubscription(
+  organizationId: string,
+  planId: string
+): Promise<SuperAdminClientDetail> {
+  await ensureCsrfCookie();
+
+  const response =
+    await fetch(
+      `${API_URL}/api/superadmin/clients/${organizationId}/activate-subscription/`,
+      {
+        method:
+          "POST",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+
+        headers: {
+          "Content-Type":
+            "application/json",
+
+          ...getCsrfHeaders(),
+        },
+
+        body:
+          JSON.stringify({
+            plan_id:
+              planId,
+          }),
+      }
+    );
+
+  return parseResponse<SuperAdminClientDetail>(
+    response
+  );
+}
+
+
+export async function renewSuperAdminSubscription(
+  subscriptionId: string
+): Promise<SuperAdminClientSubscription> {
+  await ensureCsrfCookie();
+
+  const response =
+    await fetch(
+      `${API_URL}/api/superadmin/subscriptions/${subscriptionId}/renew/`,
+      {
+        method:
+          "POST",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+
+        headers: {
+          "Content-Type":
+            "application/json",
+
+          ...getCsrfHeaders(),
+        },
+
+        body:
+          JSON.stringify({}),
+      }
+    );
+
+  return parseResponse<SuperAdminClientSubscription>(
+    response
+  );
+}
+
+
+export async function adjustSuperAdminCredits(
+  input: AdjustSuperAdminCreditsInput
+): Promise<SuperAdminClientWallet> {
+  await ensureCsrfCookie();
+
+  const response =
+    await fetch(
+      `${API_URL}/api/superadmin/credit-adjustments/`,
+      {
+        method:
+          "POST",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+
+        headers: {
+          "Content-Type":
+            "application/json",
+
+          ...getCsrfHeaders(),
+        },
+
+        body:
+          JSON.stringify(input),
+      }
+    );
+
+  return parseResponse<SuperAdminClientWallet>(
+    response
+  );
+}
+
+
+export async function getSuperAdminSubscriptions():
+  Promise<SuperAdminSubscription[]> {
+  const response =
+    await fetch(
+      `${API_URL}/api/superadmin/subscriptions/`,
+      {
+        method:
+          "GET",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+      }
+    );
+
+  const data =
+    await parseResponse<
+      | PaginatedResponse<SuperAdminSubscription>
+      | SuperAdminSubscription[]
+    >(response);
+
+  return unpackResults(data);
+}
+
+
+export async function getSuperAdminWallets():
+  Promise<SuperAdminWallet[]> {
+  const response =
+    await fetch(
+      `${API_URL}/api/superadmin/credit-wallets/`,
+      {
+        method:
+          "GET",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+      }
+    );
+
+  const data =
+    await parseResponse<
+      | PaginatedResponse<SuperAdminWallet>
+      | SuperAdminWallet[]
+    >(response);
+
+  return unpackResults(data);
+}
+
+
+export async function getSuperAdminGenerations(
+  statusFilter = ""
+): Promise<SuperAdminGeneration[]> {
+  const params =
+    statusFilter
+      ? `?status=${encodeURIComponent(statusFilter)}`
+      : "";
+
+  const response =
+    await fetch(
+      `${API_URL}/api/superadmin/generations/${params}`,
+      {
+        method:
+          "GET",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+      }
+    );
+
+  const data =
+    await parseResponse<
+      | PaginatedResponse<SuperAdminGeneration>
+      | SuperAdminGeneration[]
+    >(response);
+
+  return unpackResults(data);
+}
+
+
+export async function getSuperAdminGeneration(
+  generationId: string
+): Promise<SuperAdminGeneration> {
+  const response =
+    await fetch(
+      `${API_URL}/api/superadmin/generations/${generationId}/`,
+      {
+        method:
+          "GET",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+      }
+    );
+
+  return parseResponse<SuperAdminGeneration>(
+    response
+  );
+}
+
+
+export async function getSuperAdminSceneTemplates():
+  Promise<SuperAdminSceneTemplate[]> {
+  const response =
+    await fetch(
+      `${API_URL}/api/superadmin/scene-templates/`,
+      {
+        method:
+          "GET",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+      }
+    );
+
+  const data =
+    await parseResponse<
+      | PaginatedResponse<SuperAdminSceneTemplate>
+      | SuperAdminSceneTemplate[]
+    >(response);
+
+  return unpackResults(data);
+}
+
+
+export async function createSuperAdminSceneTemplate(
+  input: Omit<
+    SuperAdminSceneTemplate,
+    | "id"
+    | "preview_image"
+    | "created_at"
+    | "updated_at"
+  >
+): Promise<SuperAdminSceneTemplate> {
+  await ensureCsrfCookie();
+
+  const response =
+    await fetch(
+      `${API_URL}/api/superadmin/scene-templates/`,
+      {
+        method:
+          "POST",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+
+        headers: {
+          "Content-Type":
+            "application/json",
+
+          ...getCsrfHeaders(),
+        },
+
+        body:
+          JSON.stringify(input),
+      }
+    );
+
+  return parseResponse<SuperAdminSceneTemplate>(
+    response
+  );
+}
+
+
+export async function updateSuperAdminSceneTemplate(
+  templateId: string,
+  input: Partial<
+    Omit<
+      SuperAdminSceneTemplate,
+      | "id"
+      | "preview_image"
+      | "created_at"
+      | "updated_at"
+    >
+  >
+): Promise<SuperAdminSceneTemplate> {
+  await ensureCsrfCookie();
+
+  const response =
+    await fetch(
+      `${API_URL}/api/superadmin/scene-templates/${templateId}/`,
+      {
+        method:
+          "PATCH",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+
+        headers: {
+          "Content-Type":
+            "application/json",
+
+          ...getCsrfHeaders(),
+        },
+
+        body:
+          JSON.stringify(input),
+      }
+    );
+
+  return parseResponse<SuperAdminSceneTemplate>(
+    response
+  );
+}
+
+
+export async function getSuperAdminAuditLogs():
+  Promise<SuperAdminAuditLog[]> {
+  const response =
+    await fetch(
+      `${API_URL}/api/superadmin/audit-logs/`,
+      {
+        method:
+          "GET",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+      }
+    );
+
+  const data =
+    await parseResponse<
+      | PaginatedResponse<SuperAdminAuditLog>
+      | SuperAdminAuditLog[]
+    >(response);
+
+  return unpackResults(data);
+}

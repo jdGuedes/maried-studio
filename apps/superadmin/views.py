@@ -1,13 +1,22 @@
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from django.db.models import Count
 from django.shortcuts import get_object_or_404
+from django.utils.text import slugify
 
 from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.audit.models import AuditLog
+from apps.accounts.models import UserRole
 from apps.billing.models import Plan, Subscription
+from apps.billing.services import (
+    BillingAccessService,
+    BillingError,
+    SubscriptionAccessStatus,
+    SubscriptionService,
+)
 from apps.credits.models import CreditWallet
 from apps.credits.services import CreditService
 from apps.organizations.models import Organization
@@ -21,6 +30,10 @@ from apps.studio.models import (
 from .permissions import IsSuperAdmin
 from .serializers import (
     CreditAdjustmentSerializer,
+    SuperAdminAuditLogSerializer,
+    SuperAdminClientCreateSerializer,
+    SuperAdminClientDetailSerializer,
+    SuperAdminClientListSerializer,
     SuperAdminCreditWalletSerializer,
     SuperAdminGenerationSerializer,
     SuperAdminOrganizationSerializer,
@@ -28,6 +41,7 @@ from .serializers import (
     SuperAdminPlanSerializer,
     SuperAdminSceneTemplateSerializer,
     SuperAdminSubscriptionSerializer,
+    SuperAdminSubscriptionActionSerializer,
     SuperAdminUserSerializer,
     SuperAdminUserUpdateSerializer,
 )
@@ -51,10 +65,51 @@ def _audit(
     )
 
 
+def _unique_organization_slug(name):
+    base = slugify(
+        name
+    ) or "cliente"
+
+    candidate = base
+    suffix = 2
+
+    while Organization.objects.filter(
+        slug=candidate
+    ).exists():
+        candidate = (
+            f"{base}-{suffix}"
+        )
+        suffix += 1
+
+    return candidate
+
+
 class SuperAdminSummaryView(APIView):
     permission_classes = [IsSuperAdmin]
 
     def get(self, request):
+        subscription_statuses = {
+            SubscriptionAccessStatus.ACTIVE: 0,
+            SubscriptionAccessStatus.GRACE: 0,
+            SubscriptionAccessStatus.BLOCKED: 0,
+        }
+
+        for subscription in (
+            Subscription.objects
+            .select_related(
+                "organization",
+                "plan",
+            )
+            .all()
+        ):
+            access = (
+                BillingAccessService
+                .evaluate_subscription(
+                    subscription
+                )
+            )
+            subscription_statuses[access.status] += 1
+
         return Response(
             {
                 "organizations": Organization.objects.count(),
@@ -64,12 +119,290 @@ class SuperAdminSummaryView(APIView):
                 "users": get_user_model().objects.count(),
                 "plans": Plan.objects.count(),
                 "subscriptions": Subscription.objects.count(),
+                "operational_active_subscriptions": (
+                    subscription_statuses[
+                        SubscriptionAccessStatus.ACTIVE
+                    ]
+                ),
+                "operational_grace_subscriptions": (
+                    subscription_statuses[
+                        SubscriptionAccessStatus.GRACE
+                    ]
+                ),
+                "operational_blocked_subscriptions": (
+                    subscription_statuses[
+                        SubscriptionAccessStatus.BLOCKED
+                    ]
+                ),
                 "credit_wallets": CreditWallet.objects.count(),
                 "generations": Generation.objects.count(),
                 "failed_generations": Generation.objects.filter(
                     status=GenerationStatus.FAILED
                 ).count(),
             },
+            status=status.HTTP_200_OK,
+        )
+
+
+class SuperAdminAuditLogListView(
+    generics.ListAPIView
+):
+    serializer_class = SuperAdminAuditLogSerializer
+    permission_classes = [IsSuperAdmin]
+
+    def get_queryset(self):
+        return (
+            AuditLog.objects
+            .select_related(
+                "organization",
+                "user",
+            )
+            .order_by(
+                "-created_at"
+            )
+        )
+
+
+class SuperAdminClientListCreateView(
+    generics.ListCreateAPIView
+):
+    permission_classes = [IsSuperAdmin]
+
+    def get_queryset(self):
+        return (
+            Organization.objects
+            .select_related(
+                "credit_wallet",
+                "subscription__plan",
+            )
+            .prefetch_related(
+                "users"
+            )
+            .order_by(
+                "name"
+            )
+        )
+
+    def get_serializer_class(self):
+        if self.request.method == "POST":
+            return SuperAdminClientCreateSerializer
+
+        return SuperAdminClientListSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = SuperAdminClientCreateSerializer(
+            data=request.data,
+            context={},
+        )
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        data = serializer.validated_data
+        plan = serializer.context["plan"]
+        User = get_user_model()
+
+        try:
+            with transaction.atomic():
+                organization = Organization.objects.create(
+                    name=data["name"],
+                    slug=_unique_organization_slug(
+                        data["name"]
+                    ),
+                    is_active=True,
+                )
+
+                user = User.objects.create_user(
+                    email=data["email"],
+                    password=data["initial_password"],
+                    name=data["name"],
+                    organization=organization,
+                    role=UserRole.OWNER,
+                    is_active=True,
+                    is_staff=False,
+                    is_superuser=False,
+                )
+
+                CreditWallet.objects.get_or_create(
+                    organization=organization
+                )
+
+                subscription = SubscriptionService.activate(
+                    organization=organization,
+                    plan=plan,
+                    actor=request.user,
+                )
+
+                _audit(
+                    request=request,
+                    action="SUPERADMIN_CLIENT_CREATED",
+                    entity=organization,
+                    organization=organization,
+                    metadata={
+                        "organization_id": str(
+                            organization.pk
+                        ),
+                        "user_id": user.pk,
+                        "plan_id": str(
+                            plan.pk
+                        ),
+                        "subscription_id": str(
+                            subscription.pk
+                        ),
+                    },
+                )
+
+        except BillingError as exc:
+            return Response(
+                {
+                    "detail": str(exc),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(
+            SuperAdminClientDetailSerializer(
+                organization,
+                context={
+                    "request": request,
+                },
+            ).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class SuperAdminClientDetailView(
+    generics.RetrieveAPIView
+):
+    serializer_class = SuperAdminClientDetailSerializer
+    permission_classes = [IsSuperAdmin]
+
+    queryset = (
+        Organization.objects
+        .select_related(
+            "credit_wallet",
+            "subscription__plan",
+        )
+        .prefetch_related(
+            "users"
+        )
+    )
+
+
+class SuperAdminClientActivateSubscriptionView(
+    APIView
+):
+    permission_classes = [IsSuperAdmin]
+
+    def post(self, request, pk):
+        organization = get_object_or_404(
+            Organization,
+            pk=pk,
+        )
+
+        serializer = SuperAdminSubscriptionActionSerializer(
+            data=request.data,
+            context={},
+        )
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        plan = serializer.context["plan"]
+
+        try:
+            subscription = SubscriptionService.activate(
+                organization=organization,
+                plan=plan,
+                actor=request.user,
+            )
+
+        except BillingError as exc:
+            return Response(
+                {
+                    "detail": str(exc),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        _audit(
+            request=request,
+            action="SUPERADMIN_SUBSCRIPTION_ACTIVATED",
+            entity=subscription,
+            organization=organization,
+            metadata={
+                "plan_id": str(
+                    plan.pk
+                ),
+            },
+        )
+
+        organization.refresh_from_db()
+
+        return Response(
+            SuperAdminClientDetailSerializer(
+                organization,
+                context={
+                    "request": request,
+                },
+            ).data,
+            status=status.HTTP_200_OK,
+        )
+
+
+class SuperAdminSubscriptionRenewView(
+    APIView
+):
+    permission_classes = [IsSuperAdmin]
+
+    def post(self, request, pk):
+        subscription = get_object_or_404(
+            Subscription.objects.select_related(
+                "organization",
+                "plan",
+            ),
+            pk=pk,
+        )
+
+        try:
+            subscription = (
+                SubscriptionService.renew_current_cycle(
+                    subscription=subscription,
+                    actor=request.user,
+                )
+            )
+
+        except BillingError as exc:
+            return Response(
+                {
+                    "detail": str(exc),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        _audit(
+            request=request,
+            action="SUPERADMIN_SUBSCRIPTION_RENEWED",
+            entity=subscription,
+            organization=subscription.organization,
+            metadata={
+                "plan_id": str(
+                    subscription.plan_id
+                ),
+                "operational_status": (
+                    BillingAccessService
+                    .evaluate_subscription(
+                        subscription
+                    )
+                    .status
+                ),
+            },
+        )
+
+        return Response(
+            SuperAdminSubscriptionSerializer(
+                subscription
+            ).data,
             status=status.HTTP_200_OK,
         )
 

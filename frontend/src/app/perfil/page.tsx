@@ -2,9 +2,11 @@
 
 import {
   Building2,
+  CalendarDays,
   Check,
   CreditCard,
   LoaderCircle,
+  LogOut,
   Mail,
   Pencil,
   Save,
@@ -16,6 +18,8 @@ import {
 import {
   motion,
 } from "motion/react";
+
+import Link from "next/link";
 
 import {
   useEffect,
@@ -29,6 +33,15 @@ import {
 } from "@/lib/profile";
 
 import {
+  getCurrentSubscription,
+  type ClientSubscription,
+} from "@/lib/subscription";
+
+import {
+  useLogout,
+} from "@/lib/logout";
+
+import {
   useCreditWallet,
 } from "@/providers/credit-wallet-provider";
 
@@ -37,10 +50,67 @@ import {
 } from "@/providers/profile-provider";
 
 
+function formatDate(
+  value: string | null
+) {
+  if (!value) {
+    return "Não informado";
+  }
+
+  return new Intl.DateTimeFormat(
+    "pt-BR",
+    {
+      day:
+        "2-digit",
+
+      month:
+        "2-digit",
+
+      year:
+        "numeric",
+    }
+  ).format(
+    new Date(
+      value
+    )
+  );
+}
+
+
+function getSubscriptionStatusLabel(
+  subscription: ClientSubscription | null
+) {
+  if (!subscription?.status) {
+    return "Sem assinatura ativa";
+  }
+
+  if (
+    subscription.operational_status ===
+    "GRACE"
+  ) {
+    return "Em período de tolerância";
+  }
+
+  if (
+    subscription.operational_status ===
+    "BLOCKED"
+  ) {
+    return "Assinatura bloqueada";
+  }
+
+  return "Ativa";
+}
+
+
 export default function ProfilePage() {
 
   const {
     availableCredits,
+    error:
+      walletError,
+    loading:
+      loadingWallet,
+    wallet,
   } =
     useCreditWallet();
 
@@ -48,6 +118,13 @@ export default function ProfilePage() {
     refreshProfile,
   } =
     useProfile();
+
+  const {
+    loggingOut,
+    logoutError,
+    performLogout,
+  } =
+    useLogout();
 
 
   const [
@@ -85,6 +162,30 @@ export default function ProfilePage() {
   const [
     error,
     setError,
+  ] = useState<string | null>(
+    null
+  );
+
+
+  const [
+    subscription,
+    setSubscription,
+  ] = useState<ClientSubscription | null>(
+    null
+  );
+
+
+  const [
+    loadingSubscription,
+    setLoadingSubscription,
+  ] = useState(
+    true
+  );
+
+
+  const [
+    subscriptionError,
+    setSubscriptionError,
   ] = useState<string | null>(
     null
   );
@@ -172,6 +273,46 @@ export default function ProfilePage() {
 
 
     void load();
+
+  }, []);
+
+
+  // ========================================================
+  // CARREGAR ASSINATURA
+  // ========================================================
+
+  useEffect(() => {
+
+    async function loadSubscription() {
+      setLoadingSubscription(
+        true
+      );
+
+      setSubscriptionError(
+        null
+      );
+
+      try {
+        const data =
+          await getCurrentSubscription();
+
+        setSubscription(
+          data
+        );
+      } catch (error) {
+        setSubscriptionError(
+          error instanceof Error
+            ? error.message
+            : "Não foi possível carregar sua assinatura."
+        );
+      } finally {
+        setLoadingSubscription(
+          false
+        );
+      }
+    }
+
+    void loadSubscription();
 
   }, []);
 
@@ -382,36 +523,82 @@ export default function ProfilePage() {
 
           {!editing ? (
 
-            <motion.button
-              type="button"
+            <div className="flex flex-col gap-2 sm:flex-row">
 
-              whileTap={{
-                scale:
-                  0.98,
-              }}
+              <motion.button
+                type="button"
 
-              onClick={() => {
-                setEditing(
-                  true
-                );
+                whileTap={{
+                  scale:
+                    0.98,
+                }}
 
-                setSuccess(
-                  null
-                );
-              }}
+                onClick={() => {
+                  setEditing(
+                    true
+                  );
 
-              className="flex h-11 items-center justify-center gap-2 rounded-xl border border-[var(--maried-sand)] bg-white px-4 text-sm font-medium text-[var(--maried-coffee)]"
-            >
+                  setSuccess(
+                    null
+                  );
+                }}
 
-              <Pencil
-                size={
-                  16
+                className="flex h-11 items-center justify-center gap-2 rounded-xl border border-[var(--maried-sand)] bg-white px-4 text-sm font-medium text-[var(--maried-coffee)]"
+              >
+
+                <Pencil
+                  size={
+                    16
+                  }
+                />
+
+                Editar perfil
+
+              </motion.button>
+
+
+              <button
+                type="button"
+
+                disabled={
+                  loggingOut ||
+                  saving
                 }
-              />
 
-              Editar perfil
+                onClick={() => {
+                  void performLogout();
+                }}
 
-            </motion.button>
+                className="flex h-11 items-center justify-center gap-2 rounded-xl border border-[var(--maried-sand)] bg-white px-4 text-sm font-medium text-[var(--maried-cocoa)] transition-colors hover:bg-[var(--maried-cream)] disabled:opacity-60"
+              >
+
+                {loggingOut ? (
+
+                  <LoaderCircle
+                    size={
+                      16
+                    }
+
+                    className="animate-spin"
+                  />
+
+                ) : (
+
+                  <LogOut
+                    size={
+                      16
+                    }
+                  />
+
+                )}
+
+                {loggingOut
+                  ? "Saindo..."
+                  : "Sair"}
+
+              </button>
+
+            </div>
 
           ) : (
 
@@ -530,6 +717,15 @@ export default function ProfilePage() {
             {
               error
             }
+          </div>
+
+        ) : null}
+
+
+        {logoutError ? (
+
+          <div className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700">
+            {logoutError}
           </div>
 
         ) : null}
@@ -772,27 +968,106 @@ export default function ProfilePage() {
 
             </div>
 
+            {loadingWallet ? (
 
-            <div className="mt-5 text-4xl font-semibold tracking-[-0.04em] text-[var(--maried-espresso)]">
-              {
-                availableCredits ??
-                0
-              }
-            </div>
+              <div className="mt-5 flex min-h-[120px] items-center">
+                <LoaderCircle
+                  size={
+                    22
+                  }
+
+                  className="animate-spin text-[var(--maried-gold)]"
+                />
+              </div>
+
+            ) : (
+
+              <>
+                <div className="mt-5 text-4xl font-semibold tracking-[-0.04em] text-[var(--maried-espresso)]">
+                  {
+                    availableCredits ??
+                    0
+                  }
+                </div>
 
 
-            <div className="mt-1 text-xs text-[var(--maried-cocoa)]">
-              créditos disponíveis
-            </div>
+                <div className="mt-1 text-xs text-[var(--maried-cocoa)]">
+                  total disponível
+                </div>
 
 
-            <button
-              type="button"
+                <div className="mt-5 grid gap-3 sm:grid-cols-2">
 
-              className="mt-5 h-10 rounded-xl border border-[var(--maried-sand)] bg-white px-4 text-xs font-medium text-[var(--maried-gold)]"
-            >
-              Adicionar créditos
-            </button>
+                  <div className="rounded-xl border border-[var(--maried-sand)] bg-white px-3 py-3">
+                    <div className="text-[10px] font-medium uppercase text-[var(--maried-caramel)]">
+                      Plano
+                    </div>
+
+                    <div className="mt-1 text-xl font-semibold text-[var(--maried-espresso)]">
+                      {
+                        wallet?.available_plan_balance ??
+                        0
+                      }
+                    </div>
+
+                    <p className="mt-1 text-[10px] leading-4 text-[var(--maried-cocoa)]">
+                      Não acumulam entre ciclos.
+                    </p>
+                  </div>
+
+
+                  <div className="rounded-xl border border-[var(--maried-sand)] bg-white px-3 py-3">
+                    <div className="text-[10px] font-medium uppercase text-[var(--maried-caramel)]">
+                      Comprados
+                    </div>
+
+                    <div className="mt-1 text-xl font-semibold text-[var(--maried-espresso)]">
+                      {
+                        wallet?.available_purchased_balance ??
+                        0
+                      }
+                    </div>
+
+                    <p className="mt-1 text-[10px] leading-4 text-[var(--maried-cocoa)]">
+                      Não expiram.
+                    </p>
+                  </div>
+
+                </div>
+
+
+                {walletError ? (
+
+                  <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                    {walletError}
+                  </div>
+
+                ) : null}
+
+
+                <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+
+                  <Link
+                    href="/creditos"
+
+                    className="flex h-10 items-center justify-center rounded-xl border border-[var(--maried-sand)] bg-white px-4 text-xs font-medium text-[var(--maried-gold)]"
+                  >
+                    Ver meus créditos
+                  </Link>
+
+
+                  <button
+                    type="button"
+
+                    className="h-10 rounded-xl border border-[var(--maried-sand)] bg-white px-4 text-xs font-medium text-[var(--maried-gold)]"
+                  >
+                    Adicionar créditos
+                  </button>
+
+                </div>
+              </>
+
+            )}
 
           </section>
 
@@ -846,16 +1121,173 @@ export default function ProfilePage() {
 
         <section className="maried-card mt-5 p-5">
 
-          <h2 className="text-sm font-semibold">
-            Assinatura
-          </h2>
+          <div className="flex items-center gap-2">
+
+            <CalendarDays
+              size={
+                17
+              }
+
+              className="text-[var(--maried-gold)]"
+            />
+
+            <h2 className="text-sm font-semibold">
+              Assinatura
+            </h2>
+
+          </div>
 
 
-          <p className="mt-2 text-xs leading-5 text-[var(--maried-cocoa)]">
-            A estrutura de assinatura será adicionada
-            quando conectarmos os planos e cobranças.
-            Nenhuma informação fictícia está sendo exibida.
-          </p>
+          {loadingSubscription ? (
+
+            <div className="mt-5 flex min-h-[120px] items-center">
+              <LoaderCircle
+                size={
+                  22
+                }
+
+                className="animate-spin text-[var(--maried-gold)]"
+              />
+            </div>
+
+          ) : subscriptionError ? (
+
+            <div className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700">
+              {subscriptionError}
+            </div>
+
+          ) : (
+
+            <>
+              <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+
+                <div>
+
+                  <div className="text-[11px] text-[var(--maried-cocoa)]">
+                    Plano
+                  </div>
+
+                  <div className="mt-1 text-xl font-semibold text-[var(--maried-espresso)]">
+                    {subscription?.plan_name ??
+                      "Sem assinatura ativa"}
+                  </div>
+
+                </div>
+
+
+                <div
+                  className={[
+                    "inline-flex w-fit rounded-full px-3 py-1 text-[10px] font-medium",
+
+                    !subscription?.status
+                      ? "bg-[var(--maried-cream)] text-[var(--maried-cocoa)]"
+                      : subscription.operational_status ===
+                      "BLOCKED"
+                      ? "bg-red-50 text-red-700"
+                      : subscription.operational_status ===
+                          "GRACE"
+                        ? "bg-amber-50 text-amber-700"
+                        : "bg-green-50 text-green-700",
+                  ].join(
+                    " "
+                  )}
+                >
+                  {
+                    getSubscriptionStatusLabel(
+                      subscription
+                    )
+                  }
+                </div>
+
+              </div>
+
+
+              {subscription?.status ? (
+
+                <>
+                  <div className="mt-5 grid gap-4 sm:grid-cols-3">
+
+                    <div>
+                      <div className="text-[11px] text-[var(--maried-cocoa)]">
+                        Ciclo atual
+                      </div>
+
+                      <div className="mt-1 text-xs font-medium text-[var(--maried-coffee)]">
+                        {formatDate(
+                          subscription.current_period_start
+                        )}{" "}
+                        →{" "}
+                        {formatDate(
+                          subscription.current_period_end
+                        )}
+                      </div>
+                    </div>
+
+
+                    <div>
+                      <div className="text-[11px] text-[var(--maried-cocoa)]">
+                        Próxima renovação
+                      </div>
+
+                      <div className="mt-1 text-xs font-medium text-[var(--maried-coffee)]">
+                        {formatDate(
+                          subscription.next_billing_at
+                        )}
+                      </div>
+                    </div>
+
+
+                    <div>
+                      <div className="text-[11px] text-[var(--maried-cocoa)]">
+                        Créditos do plano
+                      </div>
+
+                      <div className="mt-1 text-xs font-medium text-[var(--maried-coffee)]">
+                        {subscription.credits_per_cycle ??
+                          0}{" "}
+                        por ciclo mensal
+                      </div>
+                    </div>
+
+                  </div>
+
+
+                  {subscription.operational_status ===
+                  "GRACE" ? (
+
+                    <p className="mt-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800">
+                      Regularize sua assinatura até{" "}
+                      {formatDate(
+                        subscription.grace_until
+                      )}{" "}
+                      para evitar interrupção do Studio.
+                    </p>
+
+                  ) : null}
+
+
+                  {subscription.operational_status ===
+                  "BLOCKED" ? (
+
+                    <p className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs leading-5 text-red-700">
+                      Regularize sua assinatura para voltar
+                      a criar imagens. Seus dados e créditos
+                      permanecem preservados.
+                    </p>
+
+                  ) : null}
+                </>
+
+              ) : (
+
+                <p className="mt-4 text-xs leading-5 text-[var(--maried-cocoa)]">
+                  Nenhum plano ativo está vinculado à sua conta.
+                </p>
+
+              )}
+            </>
+
+          )}
 
         </section>
 

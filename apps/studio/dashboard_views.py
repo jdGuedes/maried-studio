@@ -12,6 +12,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.common.private_media import build_private_media_url
+from apps.credits.models import CreditWallet
 
 from apps.products.models import (
     Product,
@@ -341,9 +342,11 @@ class DashboardView(
         # CARTEIRA
         # ==================================================
 
-        wallet = (
-            organization
-            .credit_wallet
+        wallet, _created = (
+            CreditWallet.objects
+            .get_or_create(
+                organization=organization
+            )
         )
 
         available_credits = (
@@ -381,8 +384,9 @@ class DashboardView(
                 "scene_template",
             )
             .order_by(
-                "-created_at"
-            )[:8]
+                "-created_at",
+                "-id",
+            )[:4]
         )
 
         recent_generations = []

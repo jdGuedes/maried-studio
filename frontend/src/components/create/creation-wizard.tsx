@@ -26,6 +26,12 @@ import {
 } from "@/lib/image-preparation";
 
 import {
+  getProduct,
+  ProductsApiError,
+  type Product as ExistingProduct,
+} from "@/lib/products";
+
+import {
   useCreditWallet,
 } from "@/providers/credit-wallet-provider";
 
@@ -56,6 +62,11 @@ import {
 } from "motion/react";
 
 import Image from "next/image";
+import Link from "next/link";
+
+import {
+  useRouter,
+} from "next/navigation";
 
 import {
   ChangeEvent,
@@ -94,6 +105,49 @@ const categories = [
 ] as const;
 
 
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+
+function isValidUuid(
+  value:
+    string
+) {
+  return UUID_PATTERN.test(
+    value
+  );
+}
+
+
+function getCategoryLabel(
+  value:
+    string
+) {
+  return (
+    categories.find(
+      (category) =>
+        category.value === value
+    )?.label ?? value
+  );
+}
+
+
+function revokePreviewUrl(
+  value:
+    string | null
+) {
+  if (
+    value?.startsWith(
+      "blob:"
+    )
+  ) {
+    URL.revokeObjectURL(
+      value
+    );
+  }
+}
+
+
 // =========================================================
 // WIZARD
 // =========================================================
@@ -104,6 +158,17 @@ type WizardStep =
   | 3
   | 4
   | 5;
+
+
+type CreationSource =
+  | "NEW_PRODUCT"
+  | "EXISTING_PRODUCT";
+
+
+type CreationWizardProps = {
+  productId?:
+    string | null;
+};
 
 
 const stepLabels = [
@@ -130,7 +195,18 @@ const stepLabels = [
 // COMPONENTE
 // =========================================================
 
-export function CreationWizard() {
+export function CreationWizard({
+  productId = null,
+}: CreationWizardProps) {
+  const router =
+    useRouter();
+
+  const creationSource:
+    CreationSource =
+    productId
+      ? "EXISTING_PRODUCT"
+      : "NEW_PRODUCT";
+
   const inputRef =
     useRef<HTMLInputElement>(
       null
@@ -294,6 +370,30 @@ export function CreationWizard() {
   );
 
 
+  const [
+    existingProduct,
+    setExistingProduct,
+  ] = useState<ExistingProduct | null>(
+    null
+  );
+
+
+  const [
+    loadingExistingProduct,
+    setLoadingExistingProduct,
+  ] = useState(
+    Boolean(productId)
+  );
+
+
+  const [
+    existingProductError,
+    setExistingProductError,
+  ] = useState<string | null>(
+    null
+  );
+
+
   // =======================================================
   // PREPARAÇÃO AUTOMÁTICA
   // =======================================================
@@ -414,11 +514,9 @@ export function CreationWizard() {
 
   useEffect(() => {
     return () => {
-      if (preview) {
-        URL.revokeObjectURL(
-          preview
-        );
-      }
+      revokePreviewUrl(
+        preview
+      );
     };
   }, [preview]);
 
@@ -496,13 +594,9 @@ export function CreationWizard() {
           selectedFile
         );
 
-      if (
+      revokePreviewUrl(
         preview
-      ) {
-        URL.revokeObjectURL(
-          preview
-        );
-      }
+      );
 
       const preparedFile =
         result.file;
@@ -657,13 +751,9 @@ export function CreationWizard() {
   // =======================================================
 
   function removeImage() {
-    if (
+    revokePreviewUrl(
       preview
-    ) {
-      URL.revokeObjectURL(
-        preview
-      );
-    }
+    );
 
     setPreview(
       null
@@ -744,15 +834,218 @@ export function CreationWizard() {
 
 
   // =======================================================
+  // PEÇA EXISTENTE
+  // =======================================================
+
+  useEffect(() => {
+    let isCurrent =
+      true;
+
+    const timer =
+      window.setTimeout(
+        async () => {
+          if (
+            !productId
+          ) {
+            if (
+              !isCurrent
+            ) {
+              return;
+            }
+
+            setExistingProduct(
+              null
+            );
+
+            setExistingProductError(
+              null
+            );
+
+            setLoadingExistingProduct(
+              false
+            );
+
+            return;
+          }
+
+          setLoadingExistingProduct(
+            true
+          );
+
+          setExistingProductError(
+            null
+          );
+
+          setExistingProduct(
+            null
+          );
+
+          if (
+            !isValidUuid(
+              productId
+            )
+          ) {
+            setExistingProductError(
+              "Peça não encontrada."
+            );
+
+            setLoadingExistingProduct(
+              false
+            );
+
+            return;
+          }
+
+          try {
+            const product =
+              await getProduct(
+                productId
+              );
+
+            if (
+              !isCurrent
+            ) {
+              return;
+            }
+
+            if (
+              !product.original_image_url
+            ) {
+              setExistingProductError(
+                "Esta peça não possui uma imagem original disponível."
+              );
+
+              setLoadingExistingProduct(
+                false
+              );
+
+              return;
+            }
+
+            setExistingProduct(
+              product
+            );
+
+            setProductName(
+              product.name ||
+                "Peça sem nome"
+            );
+
+            setCategory(
+              product.category as ProductCategory
+            );
+
+            setFile(
+              null
+            );
+
+            setPreview(
+              product.original_image_url
+            );
+
+            setCreatedProductId(
+              product.id
+            );
+
+            setGenerationMode(
+              null
+            );
+
+            setSceneTemplates(
+              []
+            );
+
+            setSelectedTemplateId(
+              null
+            );
+
+            setTemplatesError(
+              null
+            );
+
+            setModelReferences(
+              []
+            );
+
+            setSelectedModelReferenceId(
+              null
+            );
+
+            setModelReferencesError(
+              null
+            );
+
+            setImagePreparationMessage(
+              null
+            );
+
+            resetGenerationState();
+
+            setStep(
+              1
+            );
+
+          } catch (error) {
+            if (
+              !isCurrent
+            ) {
+              return;
+            }
+
+            const message =
+              error instanceof ProductsApiError &&
+              error.status === 404
+                ? "Peça não encontrada."
+                : error instanceof Error
+                  ? error.message
+                  : "Não foi possível carregar esta peça.";
+
+            setExistingProductError(
+              message
+            );
+
+          } finally {
+            if (
+              isCurrent
+            ) {
+              setLoadingExistingProduct(
+                false
+              );
+            }
+          }
+        },
+        0
+      );
+
+    return () => {
+      isCurrent =
+        false;
+
+      window.clearTimeout(
+        timer
+      );
+    };
+  }, [productId]);
+
+
+  // =======================================================
   // CONTINUAR
   // =======================================================
 
   const canContinue =
-    Boolean(
-      file &&
-      category &&
-      !preparingImage
-    );
+    creationSource ===
+    "EXISTING_PRODUCT"
+      ? Boolean(
+          existingProduct &&
+          existingProduct.original_image_url &&
+          !loadingExistingProduct &&
+          !existingProductError
+        )
+      : Boolean(
+          file &&
+          category &&
+          !preparingImage
+        );
 
 
   function goToResultStep() {
@@ -1042,10 +1335,27 @@ export function CreationWizard() {
     }
 
     if (
+      creationSource ===
+        "NEW_PRODUCT" &&
       !file
     ) {
       setGenerationError(
         "A imagem original da peça não foi encontrada."
+      );
+
+      return;
+    }
+
+    if (
+      creationSource ===
+        "EXISTING_PRODUCT" &&
+      (
+        !existingProduct ||
+        !existingProduct.original_image_url
+      )
+    ) {
+      setGenerationError(
+        "Esta peça não possui uma imagem original disponível."
       );
 
       return;
@@ -1117,12 +1427,25 @@ export function CreationWizard() {
       // 1. PRODUTO
       // ===================================================
 
-      let productId =
-        createdProductId;
+      let productIdToGenerate =
+        creationSource ===
+        "EXISTING_PRODUCT"
+          ? existingProduct?.id ?? null
+          : createdProductId;
 
       if (
-        !productId
+        !productIdToGenerate
       ) {
+        if (
+          !file
+        ) {
+          setGenerationError(
+            "A imagem original da peça não foi encontrada."
+          );
+
+          return;
+        }
+
         const product =
           await createProduct({
             name:
@@ -1134,7 +1457,7 @@ export function CreationWizard() {
             file,
           });
 
-        productId =
+        productIdToGenerate =
           product.id;
 
         setCreatedProductId(
@@ -1154,7 +1477,7 @@ export function CreationWizard() {
       } else {
         console.log(
           "Produto já existente:",
-          productId
+          productIdToGenerate
         );
       }
 
@@ -1185,7 +1508,8 @@ export function CreationWizard() {
       console.log(
         "CRIANDO GERAÇÃO:",
         {
-          productId,
+          productId:
+            productIdToGenerate,
           generationMode,
           selectedTemplateId,
           selectedModelReferenceId,
@@ -1197,7 +1521,8 @@ export function CreationWizard() {
 
       const createdGeneration =
         await createGeneration({
-          productId,
+          productId:
+            productIdToGenerate,
 
           mode:
             generationMode,
@@ -1354,13 +1679,9 @@ export function CreationWizard() {
   // =======================================================
 
   function handleNewCreation() {
-    if (
+    revokePreviewUrl(
       preview
-    ) {
-      URL.revokeObjectURL(
-        preview
-      );
-    }
+    );
 
     setStep(
       1
@@ -1430,6 +1751,18 @@ export function CreationWizard() {
       null
     );
 
+    setExistingProduct(
+      null
+    );
+
+    setExistingProductError(
+      null
+    );
+
+    setLoadingExistingProduct(
+      false
+    );
+
     if (
       inputRef.current
     ) {
@@ -1442,6 +1775,15 @@ export function CreationWizard() {
     ) {
       cameraInputRef.current.value =
         "";
+    }
+
+    if (
+      creationSource ===
+      "EXISTING_PRODUCT"
+    ) {
+      router.push(
+        "/criar"
+      );
     }
   }
 
@@ -1703,7 +2045,32 @@ export function CreationWizard() {
               ETAPA 01
           ================================================= */}
 
-          {step === 1 ? (
+          {step === 1 &&
+          creationSource ===
+            "EXISTING_PRODUCT" ? (
+
+            <ExistingProductStep
+              key="step-1-existing"
+              product={
+                existingProduct
+              }
+              loading={
+                loadingExistingProduct
+              }
+              error={
+                existingProductError
+              }
+              onContinue={
+                goToResultStep
+              }
+            />
+
+          ) : null}
+
+
+          {step === 1 &&
+          creationSource ===
+            "NEW_PRODUCT" ? (
 
             <motion.div
               key="step-1"
@@ -2776,5 +3143,244 @@ export function CreationWizard() {
       </div>
 
     </main>
+  );
+}
+
+
+type ExistingProductStepProps = {
+  product:
+    ExistingProduct | null;
+
+  loading:
+    boolean;
+
+  error:
+    string | null;
+
+  onContinue:
+    () => void;
+};
+
+
+function ExistingProductStep({
+  product,
+  loading,
+  error,
+  onContinue,
+}: ExistingProductStepProps) {
+  return (
+    <motion.section
+      key="step-1-existing"
+      initial={{
+        opacity:
+          0,
+
+        x:
+          -12,
+      }}
+      animate={{
+        opacity:
+          1,
+
+        x:
+          0,
+      }}
+      exit={{
+        opacity:
+          0,
+
+        x:
+          -18,
+      }}
+      transition={{
+        duration:
+          0.28,
+      }}
+      className="space-y-6"
+    >
+
+      <div>
+
+        <h1 className="text-[30px] font-semibold leading-tight tracking-[-0.035em] text-[var(--maried-espresso)] sm:text-[38px]">
+          Criar nova imagem.
+        </h1>
+
+
+        <p className="mt-3 max-w-xl text-sm leading-6 text-[var(--maried-cocoa)]">
+          Usaremos a peça selecionada como base
+          para a próxima criação.
+        </p>
+
+      </div>
+
+
+      {loading ? (
+
+        <div className="maried-card flex min-h-[260px] items-center justify-center p-6">
+
+          <div className="flex items-center gap-3 text-sm text-[var(--maried-cocoa)]">
+
+            <LoaderCircle
+              size={
+                18
+              }
+              className="animate-spin text-[var(--maried-gold)]"
+            />
+
+            Carregando peça...
+
+          </div>
+
+        </div>
+
+      ) : null}
+
+
+      {!loading &&
+      error ? (
+
+        <div className="maried-card p-6">
+
+          <div className="text-sm font-semibold text-[var(--maried-espresso)]">
+            Não foi possível carregar esta peça.
+          </div>
+
+
+          <p className="mt-2 text-sm leading-6 text-[var(--maried-cocoa)]">
+            {
+              error
+            }
+          </p>
+
+
+          <Link
+            href="/pecas"
+            className="mt-5 inline-flex h-11 items-center justify-center rounded-xl border border-[var(--maried-sand)] bg-white px-4 text-sm font-medium text-[var(--maried-coffee)]"
+          >
+            Voltar para minhas peças
+          </Link>
+
+        </div>
+
+      ) : null}
+
+
+      {!loading &&
+      !error &&
+      product ? (
+
+        <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+
+          <div className="maried-card overflow-hidden p-4">
+
+            <div className="relative aspect-square overflow-hidden rounded-[18px] bg-[var(--maried-cream)]">
+
+              {product.original_image_url ? (
+
+                <Image
+                  src={
+                    product.original_image_url
+                  }
+                  alt={
+                    product.name ||
+                    "Peça selecionada"
+                  }
+                  fill
+                  unoptimized
+                  className="object-contain p-5"
+                />
+
+              ) : (
+
+                <div className="flex h-full items-center justify-center">
+
+                  <ImagePlus
+                    size={
+                      40
+                    }
+                    className="text-[var(--maried-gold)]"
+                  />
+
+                </div>
+
+              )}
+
+            </div>
+
+          </div>
+
+
+          <div className="space-y-4">
+
+            <div className="maried-card p-5">
+
+              <div className="text-[10px] uppercase tracking-[0.14em] text-[var(--maried-caramel)]">
+                Peça selecionada
+              </div>
+
+
+              <div className="mt-2 text-lg font-semibold text-[var(--maried-espresso)]">
+                {
+                  product.name ||
+                  "Peça sem nome"
+                }
+              </div>
+
+
+              <div className="mt-5 text-[10px] uppercase tracking-[0.14em] text-[var(--maried-caramel)]">
+                Categoria
+              </div>
+
+
+              <div className="mt-2 text-sm font-medium text-[var(--maried-coffee)]">
+                {
+                  product.category_label ||
+                  getCategoryLabel(
+                    product.category
+                  )
+                }
+              </div>
+
+
+              <p className="mt-5 text-sm leading-6 text-[var(--maried-cocoa)]">
+                Esta peça será reutilizada.
+                Nenhum novo produto será criado
+                nesta etapa.
+              </p>
+
+            </div>
+
+
+            <button
+              type="button"
+              onClick={
+                onContinue
+              }
+              className="flex h-[52px] w-full items-center justify-center gap-2 rounded-xl bg-[var(--maried-gold)] text-sm font-medium text-white"
+            >
+              Continuar
+
+              <ArrowRight
+                size={
+                  17
+                }
+              />
+            </button>
+
+
+            <Link
+              href="/pecas"
+              className="flex h-12 w-full items-center justify-center rounded-xl border border-[var(--maried-sand)] bg-white text-sm font-medium text-[var(--maried-coffee)]"
+            >
+              Voltar para minhas peças
+            </Link>
+
+          </div>
+
+        </div>
+
+      ) : null}
+
+    </motion.section>
   );
 }
