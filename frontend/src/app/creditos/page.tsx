@@ -15,7 +15,11 @@ import {
 } from "react";
 
 import {
+  cancelCreditPurchase,
+  createCreditCheckout,
+  getCreditPackages,
   getCurrentSubscription,
+  type CreditPackage,
   type ClientSubscription,
 } from "@/lib/subscription";
 
@@ -109,6 +113,27 @@ export default function CreditsPage() {
     null
   );
 
+  const [
+    packages,
+    setPackages,
+  ] = useState<CreditPackage[]>(
+    []
+  );
+
+  const [
+    buyingPackageId,
+    setBuyingPackageId,
+  ] = useState<string | null>(
+    null
+  );
+
+  const [
+    cancelingPurchaseId,
+    setCancelingPurchaseId,
+  ] = useState<string | null>(
+    null
+  );
+
 
   useEffect(() => {
     async function loadSubscription() {
@@ -127,6 +152,10 @@ export default function CreditsPage() {
         setSubscription(
           data
         );
+
+        setPackages(
+          await getCreditPackages()
+        );
       } catch (error) {
         setSubscriptionError(
           error instanceof Error
@@ -143,6 +172,78 @@ export default function CreditsPage() {
     void loadSubscription();
   }, []);
 
+  async function reloadBilling() {
+    const data =
+      await getCurrentSubscription();
+
+    setSubscription(
+      data
+    );
+
+    setPackages(
+      await getCreditPackages()
+    );
+  }
+
+  async function buyPackage(
+    packageId: string
+  ) {
+    setBuyingPackageId(
+      packageId
+    );
+    setSubscriptionError(
+      null
+    );
+
+    try {
+      const checkout =
+        await createCreditCheckout(
+          packageId
+        );
+
+      window.location.assign(
+        checkout.url
+      );
+    } catch (error) {
+      setSubscriptionError(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível iniciar a compra."
+      );
+      setBuyingPackageId(
+        null
+      );
+    }
+  }
+
+
+  async function cancelPendingPurchase(
+    purchaseId: string
+  ) {
+    setCancelingPurchaseId(
+      purchaseId
+    );
+    setSubscriptionError(
+      null
+    );
+
+    try {
+      await cancelCreditPurchase(
+        purchaseId
+      );
+      await reloadBilling();
+    } catch (error) {
+      setSubscriptionError(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível cancelar a tentativa."
+      );
+    } finally {
+      setCancelingPurchaseId(
+        null
+      );
+    }
+  }
 
   return (
     <main className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
@@ -163,6 +264,16 @@ export default function CreditsPage() {
 
           <button
             type="button"
+            onClick={() => {
+              document
+                .getElementById(
+                  "pacotes-creditos"
+                )
+                ?.scrollIntoView({
+                  behavior:
+                    "smooth",
+                });
+            }}
             className="flex h-11 items-center justify-center gap-2 rounded-xl border border-[var(--maried-sand)] bg-white px-5 text-sm font-medium text-[var(--maried-gold)]"
           >
             <Plus
@@ -459,6 +570,140 @@ export default function CreditsPage() {
               ) : null}
             </>
           )}
+        </section>
+
+
+        <section id="pacotes-creditos" className="maried-card mt-5 p-5">
+          <div className="flex items-center gap-2">
+            <Plus
+              size={
+                17
+              }
+              className="text-[var(--maried-gold)]"
+            />
+
+            <h2 className="text-sm font-semibold">
+              Comprar créditos extras
+            </h2>
+          </div>
+
+          <div className="mt-4 rounded-xl bg-[var(--maried-cream)] px-4 py-3 text-xs leading-5 text-[var(--maried-coffee)]">
+            Limite do ciclo:{" "}
+            {subscription?.extra_credit_limit_per_cycle ??
+              0}{" "}
+            créditos. Comprados/pendentes neste ciclo:{" "}
+            {subscription?.paid_credits_this_cycle ??
+              0}
+            /
+            {subscription?.pending_credits_this_cycle ??
+              0}
+            . Restante:{" "}
+            {subscription?.remaining_extra_credits ??
+              0}
+            .
+          </div>
+
+          {!subscription?.can_purchase_credits ? (
+            <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800">
+              Compra de créditos extras disponível apenas
+              para assinatura ativa.
+            </p>
+          ) : null}
+
+          <div className="mt-5 grid gap-4 md:grid-cols-3">
+            {packages.map((creditPackage) => (
+              <div
+                key={creditPackage.id}
+                className="rounded-xl border border-[var(--maried-sand)] bg-white p-4"
+              >
+                <div className="text-sm font-semibold text-[var(--maried-espresso)]">
+                  {creditPackage.name}
+                </div>
+
+                <div className="mt-3 text-3xl font-semibold tracking-[-0.035em] text-[var(--maried-espresso)]">
+                  {creditPackage.credits}
+                </div>
+
+                <p className="mt-1 text-xs text-[var(--maried-cocoa)]">
+                  créditos extras
+                </p>
+
+                <div className="mt-4 text-sm font-medium text-[var(--maried-coffee)]">
+                  R$ {creditPackage.price}
+                </div>
+
+                {creditPackage.pending_purchase ? (
+                  <div className="mt-4 space-y-2">
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                      Pagamento pendente
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={
+                        buyingPackageId === creditPackage.id
+                      }
+                      onClick={() => {
+                        void buyPackage(
+                          creditPackage.id
+                        );
+                      }}
+                      className="h-10 w-full rounded-xl bg-[var(--maried-coffee)] px-4 text-xs font-medium text-white disabled:opacity-50"
+                    >
+                      {buyingPackageId === creditPackage.id
+                        ? "Abrindo Stripe..."
+                        : "Continuar pagamento"}
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={
+                        cancelingPurchaseId ===
+                        creditPackage.pending_purchase.id
+                      }
+                      onClick={() => {
+                        void cancelPendingPurchase(
+                          creditPackage.pending_purchase!.id
+                        );
+                      }}
+                      className="h-10 w-full rounded-xl border border-[var(--maried-sand)] bg-white px-4 text-xs font-medium text-[var(--maried-gold)] disabled:opacity-50"
+                    >
+                      {cancelingPurchaseId ===
+                      creditPackage.pending_purchase.id
+                        ? "Cancelando..."
+                        : "Cancelar tentativa"}
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={
+                      !creditPackage.checkout_available ||
+                      buyingPackageId === creditPackage.id
+                    }
+                    onClick={() => {
+                      void buyPackage(
+                        creditPackage.id
+                      );
+                    }}
+                    className="mt-4 h-10 w-full rounded-xl bg-[var(--maried-coffee)] px-4 text-xs font-medium text-white disabled:opacity-50"
+                  >
+                    {buyingPackageId === creditPackage.id
+                      ? "Abrindo Stripe..."
+                      : "Comprar"}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {!loadingSubscription &&
+          packages.length === 0 ? (
+            <p className="mt-4 text-xs leading-5 text-[var(--maried-cocoa)]">
+              Nenhum pacote de créditos está disponível no
+              momento.
+            </p>
+          ) : null}
         </section>
 
 

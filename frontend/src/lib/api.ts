@@ -683,6 +683,7 @@ export type SuperAdminPlan = {
   price: string;
   billing_cycle: string;
   credits_per_cycle: number;
+  extra_credit_limit_per_cycle: number;
   is_active: boolean;
   sort_order: number;
   stripe_product_id?: string | null;
@@ -804,6 +805,48 @@ export type SuperAdminWallet = {
   total_balance: number;
   created_at: string;
   updated_at: string;
+};
+
+
+export type SuperAdminCreditPackage = {
+  id: string;
+  name: string;
+  slug: string;
+  description: string;
+  credits: number;
+  price: string;
+  currency: string;
+  is_active: boolean;
+  sort_order: number;
+  stripe_product_id?: string | null;
+  stripe_price_id?: string | null;
+  stripe_synced_at?: string | null;
+  stripe_sync_error?: string;
+  stripe_ready_for_checkout?: boolean;
+  stripe_sync_status?:
+    | "SYNCED"
+    | "PENDING"
+    | "ERROR";
+};
+
+
+export type SuperAdminCreditPurchase = {
+  id: string;
+  organization: string;
+  organization_name: string;
+  package: string;
+  package_name: string;
+  subscription: string;
+  plan: string;
+  plan_name: string;
+  status: string;
+  credits_snapshot: number;
+  price_snapshot: string;
+  currency_snapshot: string;
+  stripe_checkout_session_id?: string | null;
+  stripe_payment_intent_id?: string | null;
+  paid_at: string | null;
+  created_at: string;
 };
 
 
@@ -1093,6 +1136,142 @@ export async function syncSuperAdminPlanStripe(
     );
 
   return parseResponse<SuperAdminPlan>(
+    response
+  );
+}
+
+
+export async function getSuperAdminCreditPackages():
+  Promise<SuperAdminCreditPackage[]> {
+  const response =
+    await fetch(
+      `${API_URL}/api/superadmin/credit-packages/`,
+      {
+        method:
+          "GET",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+      }
+    );
+
+  const data =
+    await parseResponse<
+      | PaginatedResponse<SuperAdminCreditPackage>
+      | SuperAdminCreditPackage[]
+    >(response);
+
+  return unpackResults(data);
+}
+
+
+export async function createSuperAdminCreditPackage(
+  input: Omit<SuperAdminCreditPackage, "id">
+): Promise<SuperAdminCreditPackage> {
+  await ensureCsrfCookie();
+
+  const response =
+    await fetch(
+      `${API_URL}/api/superadmin/credit-packages/`,
+      {
+        method:
+          "POST",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+
+        headers: {
+          "Content-Type":
+            "application/json",
+
+          ...getCsrfHeaders(),
+        },
+
+        body:
+          JSON.stringify(input),
+      }
+    );
+
+  return parseResponse<SuperAdminCreditPackage>(
+    response
+  );
+}
+
+
+export async function updateSuperAdminCreditPackage(
+  packageId: string,
+  input: Partial<Omit<SuperAdminCreditPackage, "id">>
+): Promise<SuperAdminCreditPackage> {
+  await ensureCsrfCookie();
+
+  const response =
+    await fetch(
+      `${API_URL}/api/superadmin/credit-packages/${packageId}/`,
+      {
+        method:
+          "PATCH",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+
+        headers: {
+          "Content-Type":
+            "application/json",
+
+          ...getCsrfHeaders(),
+        },
+
+        body:
+          JSON.stringify(input),
+      }
+    );
+
+  return parseResponse<SuperAdminCreditPackage>(
+    response
+  );
+}
+
+
+export async function syncSuperAdminCreditPackageStripe(
+  packageId: string
+): Promise<SuperAdminCreditPackage> {
+  await ensureCsrfCookie();
+
+  const response =
+    await fetch(
+      `${API_URL}/api/superadmin/credit-packages/${packageId}/stripe-sync/`,
+      {
+        method:
+          "POST",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+
+        headers: {
+          "Content-Type":
+            "application/json",
+
+          ...getCsrfHeaders(),
+        },
+
+        body:
+          JSON.stringify({}),
+      }
+    );
+
+  return parseResponse<SuperAdminCreditPackage>(
     response
   );
 }
@@ -1410,6 +1589,33 @@ export async function getSuperAdminWallets():
     await parseResponse<
       | PaginatedResponse<SuperAdminWallet>
       | SuperAdminWallet[]
+    >(response);
+
+  return unpackResults(data);
+}
+
+
+export async function getSuperAdminCreditPurchases():
+  Promise<SuperAdminCreditPurchase[]> {
+  const response =
+    await fetch(
+      `${API_URL}/api/superadmin/credit-purchases/`,
+      {
+        method:
+          "GET",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+      }
+    );
+
+  const data =
+    await parseResponse<
+      | PaginatedResponse<SuperAdminCreditPurchase>
+      | SuperAdminCreditPurchase[]
     >(response);
 
   return unpackResults(data);

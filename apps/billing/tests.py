@@ -1,3 +1,4 @@
+import uuid
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -13,6 +14,9 @@ from rest_framework.test import APITestCase
 
 from apps.billing.models import (
     BillingCycle,
+    CreditPackage,
+    CreditPurchase,
+    CreditPurchaseStatus,
     Plan,
     SubscriptionCheckoutAttempt,
     SubscriptionCheckoutAttemptStatus,
@@ -23,15 +27,22 @@ from apps.billing.models import (
 )
 from apps.billing.services import (
     BillingAccessService,
+    CreditPurchaseLimitExceededError,
+    CreditPurchaseNotAllowedError,
+    CreditPurchaseService,
     InactivePlanError,
+    SubscriptionDelinquencyService,
     SubscriptionAccessStatus,
     SubscriptionRequiredError,
     SubscriptionService,
 )
 from apps.billing.stripe_services import (
+    CreditPurchaseCheckoutService,
     StripeBillingError,
     StripeBillingService,
     StripeConfigurationError,
+    StripeCreditPackageService,
+    StripeCreditPurchaseSessionError,
     StripeLiveModeError,
     StripePlanService,
     StripeReconciliationError,
@@ -1523,9 +1534,23 @@ class FakeStripeCustomers:
 
 
 class FakeStripeCheckoutSessions:
-    def __init__(self, *, side_effect=None):
+    def __init__(
+        self,
+        *,
+        side_effect=None,
+        retrieve_response=None,
+        retrieve_side_effect=None,
+        expire_response=None,
+        expire_side_effect=None,
+    ):
         self.create_calls = []
+        self.retrieve_calls = []
+        self.expire_calls = []
         self.side_effect = side_effect
+        self.retrieve_response = retrieve_response
+        self.retrieve_side_effect = retrieve_side_effect
+        self.expire_response = expire_response
+        self.expire_side_effect = expire_side_effect
 
     def create(self, *, params, options):
         self.create_calls.append({"params": params, "options": options})
@@ -1543,11 +1568,51 @@ class FakeStripeCheckoutSessions:
         )
         return session
 
+    def retrieve(self, session_id):
+        self.retrieve_calls.append(session_id)
+
+        if self.retrieve_side_effect:
+            raise self.retrieve_side_effect
+
+        if self.retrieve_response is not None:
+            return self.retrieve_response
+
+        session = FakeStripeObject(session_id)
+        session.status = "open"
+        session.payment_status = "unpaid"
+        return session
+
+    def expire(self, session_id):
+        self.expire_calls.append(session_id)
+
+        if self.expire_side_effect:
+            raise self.expire_side_effect
+
+        if self.expire_response is not None:
+            return self.expire_response
+
+        session = FakeStripeObject(session_id)
+        session.status = "expired"
+        session.payment_status = "unpaid"
+        return session
+
 
 class FakeStripeCheckoutNamespace:
-    def __init__(self, *, side_effect=None):
+    def __init__(
+        self,
+        *,
+        side_effect=None,
+        retrieve_response=None,
+        retrieve_side_effect=None,
+        expire_response=None,
+        expire_side_effect=None,
+    ):
         self.sessions = FakeStripeCheckoutSessions(
-            side_effect=side_effect
+            side_effect=side_effect,
+            retrieve_response=retrieve_response,
+            retrieve_side_effect=retrieve_side_effect,
+            expire_response=expire_response,
+            expire_side_effect=expire_side_effect,
         )
 
 
@@ -1652,10 +1717,18 @@ class FakeStripeV1Billing:
         subscriptions=None,
         subscription_retrieve_side_effect=None,
         subscription_list_side_effect=None,
+        checkout_retrieve_response=None,
+        checkout_retrieve_side_effect=None,
+        checkout_expire_response=None,
+        checkout_expire_side_effect=None,
     ):
         self.customers = FakeStripeCustomers()
         self.checkout = FakeStripeCheckoutNamespace(
-            side_effect=checkout_side_effect
+            side_effect=checkout_side_effect,
+            retrieve_response=checkout_retrieve_response,
+            retrieve_side_effect=checkout_retrieve_side_effect,
+            expire_response=checkout_expire_response,
+            expire_side_effect=checkout_expire_side_effect,
         )
         self.invoices = FakeStripeInvoices(
             invoice=invoice,
@@ -1684,6 +1757,10 @@ class FakeStripeBillingClient:
         subscriptions=None,
         subscription_retrieve_side_effect=None,
         subscription_list_side_effect=None,
+        checkout_retrieve_response=None,
+        checkout_retrieve_side_effect=None,
+        checkout_expire_response=None,
+        checkout_expire_side_effect=None,
     ):
         self.v1 = FakeStripeV1Billing(
             checkout_side_effect=checkout_side_effect,
@@ -1699,6 +1776,10 @@ class FakeStripeBillingClient:
             subscription_list_side_effect=(
                 subscription_list_side_effect
             ),
+            checkout_retrieve_response=checkout_retrieve_response,
+            checkout_retrieve_side_effect=checkout_retrieve_side_effect,
+            checkout_expire_response=checkout_expire_response,
+            checkout_expire_side_effect=checkout_expire_side_effect,
         )
 
 
@@ -1974,6 +2055,7 @@ class StripeCheckoutApiTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
         self.assertFalse(
             SubscriptionCheckoutAttempt.objects.exists()
         )
@@ -3217,3 +3299,809 @@ class StripeWebhookApiTests(APITestCase):
             )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+@override_settings(
+    STRIPE_SECRET_KEY="sk_test_123",
+    STRIPE_CURRENCY="brl",
+    STRIPE_ALLOW_LIVE_MODE=False,
+)
+class CreditPackagePurchaseTests(TestCase):
+    def setUp(self):
+        self.organization = Organization.objects.create(
+            name="Cliente Extras",
+            slug="cliente-extras",
+        )
+        self.plan = Plan.objects.create(
+            name="Pro",
+            slug="pro-extras",
+            description="Plano com extras.",
+            price=Decimal("79.90"),
+            billing_cycle=BillingCycle.MONTHLY,
+            credits_per_cycle=30,
+            extra_credit_limit_per_cycle=25,
+            is_active=True,
+        )
+        self.period_start = timezone.make_aware(
+            timezone.datetime(2026, 8, 1, 10, 0, 0)
+        )
+        self.period_end = timezone.make_aware(
+            timezone.datetime(2026, 9, 1, 10, 0, 0)
+        )
+        self.subscription = Subscription.objects.create(
+            organization=self.organization,
+            plan=self.plan,
+            status=SubscriptionStatus.ACTIVE,
+            price_snapshot=self.plan.price,
+            credits_snapshot=self.plan.credits_per_cycle,
+            started_at=self.period_start,
+            current_period_start=self.period_start,
+            current_period_end=self.period_end,
+            next_billing_at=self.period_end,
+            stripe_customer_id="cus_test",
+        )
+        self.wallet = CreditWallet.objects.create(
+            organization=self.organization,
+            plan_balance=30,
+            balance=30,
+        )
+        self.package = CreditPackage.objects.create(
+            name="10 extras",
+            slug="10-extras",
+            description="Pacote teste.",
+            credits=10,
+            price=Decimal("19.90"),
+            currency="BRL",
+            is_active=True,
+            stripe_product_id="prod_extra",
+            stripe_price_id="price_extra_10",
+            stripe_price_signature="brl|1990|10",
+        )
+
+    def create_purchase(self, **overrides):
+        data = {
+            "organization": self.organization,
+            "package": self.package,
+            "subscription": self.subscription,
+            "plan": self.plan,
+            "status": CreditPurchaseStatus.PENDING,
+            "credits_snapshot": self.package.credits,
+            "price_snapshot": self.package.price,
+            "currency_snapshot": self.package.currency,
+            "stripe_price_id_snapshot": self.package.stripe_price_id,
+            "extra_credit_limit_snapshot": (
+                self.plan.extra_credit_limit_per_cycle
+            ),
+            "cycle_start": self.period_start,
+            "cycle_end": self.period_end,
+            "stripe_customer_id": "cus_test",
+            "stripe_checkout_session_id": f"cs_{uuid.uuid4()}",
+            "stripe_checkout_url": "https://checkout.stripe.test/session",
+            "stripe_idempotency_key": f"key-{uuid.uuid4()}",
+            "request_signature": "signature",
+            "expires_at": timezone.now() + timezone.timedelta(hours=1),
+        }
+        data.update(overrides)
+        return CreditPurchase.objects.create(**data)
+
+    def stripe_checkout_session(
+        self,
+        session_id="cs_test",
+        *,
+        session_status="open",
+        payment_status="unpaid",
+        payment_intent="",
+    ):
+        session = FakeStripeObject(session_id)
+        session.status = session_status
+        session.payment_status = payment_status
+        session.customer = "cus_test"
+        session.payment_intent = payment_intent
+        session.amount_total = 1990
+        session.currency = "brl"
+        return session
+
+    def test_plan_extra_credit_limit_defaults_to_zero(self):
+        plan = Plan.objects.create(
+            name="Essencial",
+            slug="essencial-default-limit",
+            description="Plano sem limite configurado.",
+            price=Decimal("49.90"),
+            billing_cycle=BillingCycle.MONTHLY,
+            credits_per_cycle=15,
+        )
+
+        self.assertEqual(plan.extra_credit_limit_per_cycle, 0)
+
+    def test_package_stripe_sync_creates_one_time_price(self):
+        package = CreditPackage.objects.create(
+            name="25 extras",
+            slug="25-extras-sync",
+            description="Pacote sync.",
+            credits=25,
+            price=Decimal("39.90"),
+            currency="BRL",
+        )
+        fake = FakeStripeClient()
+
+        with patch.object(
+            StripePlanService,
+            "client",
+            return_value=fake,
+        ):
+            StripeCreditPackageService.sync_package(package)
+
+        price_params = fake.v1.prices.create_calls[0]["params"]
+
+        self.assertEqual(price_params["unit_amount"], 3990)
+        self.assertEqual(price_params["currency"], "brl")
+        self.assertNotIn("recurring", price_params)
+        self.assertEqual(
+            price_params["metadata"]["maried_credit_package_id"],
+            str(package.pk),
+        )
+
+    def test_active_subscription_can_purchase_within_limit(self):
+        purchase, created = CreditPurchaseService.create_pending_purchase(
+            organization=self.organization,
+            package=self.package,
+            subscription=self.subscription,
+            stripe_customer_id="cus_test",
+            request_signature="sig-active",
+        )
+
+        self.assertTrue(created)
+        self.assertEqual(purchase.status, CreditPurchaseStatus.PENDING)
+        allowance = CreditPurchaseService.allowance_for_subscription(
+            self.subscription
+        )
+        self.assertEqual(allowance["pending_credits_this_cycle"], 10)
+
+    def test_credit_checkout_uses_one_time_payment_mode(self):
+        user = get_user_model().objects.create_user(
+            email="extras@example.com",
+            password="senha-teste",
+            name="Cliente Extras",
+            organization=self.organization,
+            role="OWNER",
+        )
+        fake_client = FakeStripeBillingClient()
+
+        with patch.object(
+            StripeBillingService,
+            "client",
+            return_value=fake_client,
+        ):
+            checkout = StripeBillingService.create_credit_checkout(
+                user=user,
+                package=self.package,
+            )
+
+        checkout_call = fake_client.v1.checkout.sessions.create_calls[0]
+        params = checkout_call["params"]
+        purchase = CreditPurchase.objects.get(
+            stripe_checkout_session_id=checkout["checkout_session_id"]
+        )
+
+        self.assertEqual(params["mode"], "payment")
+        self.assertEqual(params["line_items"][0]["price"], "price_extra_10")
+        self.assertEqual(params["line_items"][0]["quantity"], 1)
+        self.assertNotIn("payment_method_types", params)
+        self.assertEqual(
+            params["metadata"]["maried_credit_purchase_id"],
+            str(purchase.pk),
+        )
+
+    def test_open_pending_purchase_reuses_checkout_without_new_session(self):
+        self.organization.stripe_customer_id = "cus_test"
+        self.organization.save(
+            update_fields=[
+                "stripe_customer_id",
+                "updated_at",
+            ]
+        )
+        user = get_user_model().objects.create_user(
+            email="retry-extras@example.com",
+            password="senha-teste",
+            name="Cliente Retry",
+            organization=self.organization,
+            role="OWNER",
+        )
+        purchase = self.create_purchase(
+            stripe_checkout_session_id="cs_pending_open",
+            stripe_checkout_url="https://checkout.stripe.test/open",
+            request_signature=(
+                StripeBillingService.checkout_request_signature(
+                    customer_id="cus_test",
+                    price_id="price_extra_10",
+                    success_url=(
+                        "http://localhost:3000/creditos/sucesso"
+                        "?session_id={CHECKOUT_SESSION_ID}"
+                    ),
+                    cancel_url=(
+                        "http://localhost:3000/creditos?checkout=cancelled"
+                    ),
+                )
+            ),
+        )
+        fake_client = FakeStripeBillingClient(
+            checkout_retrieve_response=self.stripe_checkout_session(
+                "cs_pending_open",
+                session_status="open",
+                payment_status="unpaid",
+            )
+        )
+
+        with patch.object(
+            StripePlanService,
+            "client",
+            return_value=fake_client,
+        ):
+            checkout = StripeBillingService.create_credit_checkout(
+                user=user,
+                package=self.package,
+            )
+
+        purchase.refresh_from_db()
+        allowance = CreditPurchaseService.allowance_for_subscription(
+            self.subscription
+        )
+        self.assertEqual(checkout["purchase_id"], str(purchase.pk))
+        self.assertEqual(
+            checkout["checkout_session_id"],
+            "cs_pending_open",
+        )
+        self.assertEqual(
+            checkout["url"],
+            "https://checkout.stripe.test/open",
+        )
+        self.assertEqual(
+            fake_client.v1.checkout.sessions.create_calls,
+            [],
+        )
+        self.assertEqual(
+            fake_client.v1.checkout.sessions.retrieve_calls,
+            ["cs_pending_open"],
+        )
+        self.assertEqual(
+            CreditPurchase.objects.count(),
+            1,
+        )
+        self.assertEqual(
+            purchase.status,
+            CreditPurchaseStatus.PENDING,
+        )
+        self.assertEqual(
+            allowance["pending_credits_this_cycle"],
+            10,
+        )
+
+    def test_expired_stripe_session_marks_purchase_expired_and_releases_limit(self):
+        purchase = self.create_purchase(
+            stripe_checkout_session_id="cs_expired_remote"
+        )
+        fake_client = FakeStripeBillingClient(
+            checkout_retrieve_response=self.stripe_checkout_session(
+                "cs_expired_remote",
+                session_status="expired",
+            )
+        )
+
+        with patch.object(
+            StripePlanService,
+            "client",
+            return_value=fake_client,
+        ):
+            synced = (
+                CreditPurchaseCheckoutService
+                .sync_purchase_from_session(
+                    purchase=purchase,
+                )
+            )
+
+        allowance = CreditPurchaseService.allowance_for_subscription(
+            self.subscription
+        )
+        self.assertEqual(
+            synced.status,
+            CreditPurchaseStatus.EXPIRED,
+        )
+        self.assertEqual(
+            allowance["pending_credits_this_cycle"],
+            0,
+        )
+        self.assertEqual(
+            allowance["remaining_extra_credits"],
+            25,
+        )
+
+    def test_complete_paid_stripe_session_applies_credits_once(self):
+        purchase = self.create_purchase(
+            stripe_checkout_session_id="cs_paid_remote"
+        )
+        session = self.stripe_checkout_session(
+            "cs_paid_remote",
+            session_status="complete",
+            payment_status="paid",
+            payment_intent="pi_paid_remote",
+        )
+
+        synced = (
+            CreditPurchaseCheckoutService
+            .sync_purchase_from_session(
+                purchase=purchase,
+                session=session,
+                event_id="evt_checkout_remote",
+            )
+        )
+        synced_again = (
+            CreditPurchaseCheckoutService
+            .sync_purchase_from_session(
+                purchase=synced,
+                session=session,
+                event_id="evt_checkout_remote_again",
+            )
+        )
+
+        self.wallet.refresh_from_db()
+        self.assertEqual(
+            synced.status,
+            CreditPurchaseStatus.PAID,
+        )
+        self.assertEqual(
+            synced_again.status,
+            CreditPurchaseStatus.PAID,
+        )
+        self.assertEqual(
+            self.wallet.purchased_balance,
+            10,
+        )
+
+    def test_cancel_pending_open_session_expires_stripe_and_releases_limit(self):
+        purchase = self.create_purchase(
+            stripe_checkout_session_id="cs_cancel_open"
+        )
+        fake_client = FakeStripeBillingClient(
+            checkout_retrieve_response=self.stripe_checkout_session(
+                "cs_cancel_open",
+                session_status="open",
+            )
+        )
+
+        with patch.object(
+            StripePlanService,
+            "client",
+            return_value=fake_client,
+        ):
+            canceled = (
+                CreditPurchaseCheckoutService
+                .cancel_pending_purchase(
+                    purchase=purchase,
+                )
+            )
+
+        allowance = CreditPurchaseService.allowance_for_subscription(
+            self.subscription
+        )
+        self.assertEqual(
+            canceled.status,
+            CreditPurchaseStatus.EXPIRED,
+        )
+        self.assertEqual(
+            fake_client.v1.checkout.sessions.retrieve_calls,
+            ["cs_cancel_open"],
+        )
+        self.assertEqual(
+            fake_client.v1.checkout.sessions.expire_calls,
+            ["cs_cancel_open"],
+        )
+        self.assertEqual(
+            allowance["pending_credits_this_cycle"],
+            0,
+        )
+
+    def test_stripe_sync_failure_keeps_pending_reservation(self):
+        purchase = self.create_purchase(
+            stripe_checkout_session_id="cs_sync_failure"
+        )
+        fake_client = FakeStripeBillingClient(
+            checkout_retrieve_side_effect=RuntimeError("stripe unavailable")
+        )
+
+        with patch.object(
+            StripePlanService,
+            "client",
+            return_value=fake_client,
+        ):
+            synced = (
+                CreditPurchaseCheckoutService
+                .sync_pending_for_subscription(
+                    self.subscription,
+                )
+            )
+
+        purchase.refresh_from_db()
+        allowance = CreditPurchaseService.allowance_for_subscription(
+            self.subscription
+        )
+        self.assertEqual(synced, 0)
+        self.assertEqual(
+            purchase.status,
+            CreditPurchaseStatus.PENDING,
+        )
+        self.assertEqual(
+            allowance["pending_credits_this_cycle"],
+            10,
+        )
+
+    def test_cancel_stripe_failure_keeps_pending_reservation(self):
+        purchase = self.create_purchase(
+            stripe_checkout_session_id="cs_cancel_failure"
+        )
+        fake_client = FakeStripeBillingClient(
+            checkout_retrieve_response=self.stripe_checkout_session(
+                "cs_cancel_failure",
+                session_status="open",
+            ),
+            checkout_expire_side_effect=RuntimeError("stripe unavailable"),
+        )
+
+        with patch.object(
+            StripePlanService,
+            "client",
+            return_value=fake_client,
+        ):
+            with self.assertRaises(StripeCreditPurchaseSessionError):
+                (
+                    CreditPurchaseCheckoutService
+                    .cancel_pending_purchase(
+                        purchase=purchase,
+                    )
+                )
+
+        purchase.refresh_from_db()
+        allowance = CreditPurchaseService.allowance_for_subscription(
+            self.subscription
+        )
+        self.assertEqual(
+            purchase.status,
+            CreditPurchaseStatus.PENDING,
+        )
+        self.assertEqual(
+            allowance["pending_credits_this_cycle"],
+            10,
+        )
+
+    def test_grace_subscription_cannot_purchase_extras(self):
+        self.subscription.status = SubscriptionStatus.PAST_DUE
+        self.subscription.current_period_end = (
+            timezone.now() - timezone.timedelta(days=1)
+        )
+        self.subscription.next_billing_at = self.subscription.current_period_end
+        self.subscription.save()
+
+        with self.assertRaises(CreditPurchaseNotAllowedError):
+            CreditPurchaseService.create_pending_purchase(
+                organization=self.organization,
+                package=self.package,
+                subscription=self.subscription,
+                stripe_customer_id="cus_test",
+                request_signature="sig-grace",
+            )
+
+    def test_limit_counts_paid_and_pending_without_reopening_after_consumption(self):
+        self.create_purchase(
+            status=CreditPurchaseStatus.PAID,
+            credits_snapshot=20,
+            stripe_checkout_session_id="cs_paid",
+            stripe_payment_intent_id="pi_paid",
+        )
+
+        with self.assertRaises(CreditPurchaseLimitExceededError):
+            CreditPurchaseService.create_pending_purchase(
+                organization=self.organization,
+                package=self.package,
+                subscription=self.subscription,
+                stripe_customer_id="cus_test",
+                request_signature="sig-limit",
+            )
+
+    def test_expired_pending_purchase_releases_cycle_limit(self):
+        self.create_purchase(
+            credits_snapshot=20,
+            stripe_checkout_session_id="cs_expired",
+            expires_at=timezone.now() - timezone.timedelta(minutes=1),
+        )
+
+        purchase, created = CreditPurchaseService.create_pending_purchase(
+            organization=self.organization,
+            package=self.package,
+            subscription=self.subscription,
+            stripe_customer_id="cus_test",
+            request_signature="sig-after-expire",
+        )
+
+        self.assertTrue(created)
+        self.assertEqual(purchase.credits_snapshot, 10)
+
+    def test_paid_purchase_adds_purchased_credits_once(self):
+        purchase = self.create_purchase()
+
+        first, applied = CreditPurchaseService.apply_paid_purchase(
+            purchase=purchase,
+            stripe_customer_id="cus_test",
+            stripe_payment_intent_id="pi_paid_once",
+            amount_received=1990,
+            currency="brl",
+            event_id="evt_1",
+        )
+        second, applied_again = CreditPurchaseService.apply_paid_purchase(
+            purchase=first,
+            stripe_customer_id="cus_test",
+            stripe_payment_intent_id="pi_paid_once",
+            amount_received=1990,
+            currency="brl",
+            event_id="evt_2",
+        )
+
+        self.wallet.refresh_from_db()
+        self.assertTrue(applied)
+        self.assertFalse(applied_again)
+        self.assertEqual(second.status, CreditPurchaseStatus.PAID)
+        self.assertEqual(self.wallet.purchased_balance, 10)
+
+    def test_checkout_and_payment_intent_events_do_not_duplicate_credits(self):
+        purchase = self.create_purchase(
+            stripe_checkout_session_id="cs_both_events"
+        )
+        event = {
+            "id": "evt_checkout_paid",
+            "type": "checkout.session.completed",
+            "data": {
+                "object": {
+                    "id": purchase.stripe_checkout_session_id,
+                    "payment_status": "paid",
+                    "customer": "cus_test",
+                    "payment_intent": "pi_both_events",
+                    "amount_total": 1990,
+                    "currency": "brl",
+                    "metadata": {
+                        "maried_credit_purchase_id": str(purchase.pk),
+                    },
+                }
+            },
+        }
+        intent_event = {
+            "id": "evt_payment_intent_paid",
+            "type": "payment_intent.succeeded",
+            "data": {
+                "object": {
+                    "id": "pi_both_events",
+                    "customer": "cus_test",
+                    "amount_received": 1990,
+                    "currency": "brl",
+                    "metadata": {
+                        "maried_credit_purchase_id": str(purchase.pk),
+                    },
+                }
+            },
+        }
+
+        StripeWebhookService.process_event(event)
+        StripeWebhookService.process_event(intent_event)
+
+        self.wallet.refresh_from_db()
+        self.assertEqual(self.wallet.purchased_balance, 10)
+
+    def test_canceled_subscription_with_purchased_balance_can_create_but_not_buy(self):
+        self.subscription.status = SubscriptionStatus.CANCELED
+        self.subscription.canceled_at = timezone.now()
+        self.subscription.save()
+        self.wallet.purchased_balance = 3
+        self.wallet.balance = 33
+        self.wallet.save()
+
+        access = BillingAccessService.evaluate_organization(
+            self.organization
+        )
+
+        self.assertTrue(access.can_create)
+        self.assertFalse(access.can_purchase_credits)
+
+    def test_finalize_expired_grace_cancels_and_expires_plan_credits(self):
+        self.subscription.status = SubscriptionStatus.PAST_DUE
+        self.subscription.current_period_end = (
+            timezone.now() - timezone.timedelta(days=4)
+        )
+        self.subscription.next_billing_at = self.subscription.current_period_end
+        self.subscription.save()
+        self.wallet.purchased_balance = 7
+        self.wallet.balance = 37
+        self.wallet.save()
+
+        processed = SubscriptionDelinquencyService.finalize_expired_grace()
+
+        self.subscription.refresh_from_db()
+        self.wallet.refresh_from_db()
+        self.assertEqual(processed, 1)
+        self.assertEqual(self.subscription.status, SubscriptionStatus.CANCELED)
+        self.assertEqual(self.wallet.plan_balance, 0)
+        self.assertEqual(self.wallet.purchased_balance, 7)
+
+
+@override_settings(
+    STRIPE_SECRET_KEY="sk_test_123",
+    STRIPE_CURRENCY="brl",
+    STRIPE_ALLOW_LIVE_MODE=False,
+)
+class CreditPurchaseCancelApiTests(APITestCase):
+    def setUp(self):
+        self.organization = Organization.objects.create(
+            name="Cliente Cancelamento",
+            slug="cliente-cancelamento",
+        )
+        self.other_organization = Organization.objects.create(
+            name="Outro Cliente Cancelamento",
+            slug="outro-cliente-cancelamento",
+        )
+        self.user = get_user_model().objects.create_user(
+            email="cancelamento@example.com",
+            password="senha-teste",
+            name="Cliente Cancelamento",
+            organization=self.organization,
+            role="OWNER",
+        )
+        self.plan = Plan.objects.create(
+            name="Pro Cancelamento",
+            slug="pro-cancelamento",
+            description="Plano com extras.",
+            price=Decimal("79.90"),
+            billing_cycle=BillingCycle.MONTHLY,
+            credits_per_cycle=30,
+            extra_credit_limit_per_cycle=25,
+            is_active=True,
+        )
+        self.other_plan = Plan.objects.create(
+            name="Pro Outro Cancelamento",
+            slug="pro-outro-cancelamento",
+            description="Plano de outro cliente.",
+            price=Decimal("79.90"),
+            billing_cycle=BillingCycle.MONTHLY,
+            credits_per_cycle=30,
+            extra_credit_limit_per_cycle=25,
+            is_active=True,
+        )
+        self.period_start = timezone.make_aware(
+            timezone.datetime(2026, 8, 1, 10, 0, 0)
+        )
+        self.period_end = timezone.make_aware(
+            timezone.datetime(2026, 9, 1, 10, 0, 0)
+        )
+        self.subscription = Subscription.objects.create(
+            organization=self.organization,
+            plan=self.plan,
+            status=SubscriptionStatus.ACTIVE,
+            price_snapshot=self.plan.price,
+            credits_snapshot=self.plan.credits_per_cycle,
+            started_at=self.period_start,
+            current_period_start=self.period_start,
+            current_period_end=self.period_end,
+            next_billing_at=self.period_end,
+            stripe_customer_id="cus_cancel",
+        )
+        self.other_subscription = Subscription.objects.create(
+            organization=self.other_organization,
+            plan=self.other_plan,
+            status=SubscriptionStatus.ACTIVE,
+            price_snapshot=self.other_plan.price,
+            credits_snapshot=self.other_plan.credits_per_cycle,
+            started_at=self.period_start,
+            current_period_start=self.period_start,
+            current_period_end=self.period_end,
+            next_billing_at=self.period_end,
+            stripe_customer_id="cus_other_cancel",
+        )
+        self.package = CreditPackage.objects.create(
+            name="10 extras cancelamento",
+            slug="10-extras-cancelamento",
+            description="Pacote teste.",
+            credits=10,
+            price=Decimal("19.90"),
+            currency="BRL",
+            is_active=True,
+            stripe_product_id="prod_cancel",
+            stripe_price_id="price_cancel_10",
+            stripe_price_signature="brl|1990|10",
+        )
+        self.client.force_authenticate(self.user)
+
+    def create_purchase(self, organization, subscription):
+        return CreditPurchase.objects.create(
+            organization=organization,
+            package=self.package,
+            subscription=subscription,
+            plan=subscription.plan,
+            status=CreditPurchaseStatus.PENDING,
+            credits_snapshot=self.package.credits,
+            price_snapshot=self.package.price,
+            currency_snapshot=self.package.currency,
+            stripe_price_id_snapshot=self.package.stripe_price_id,
+            extra_credit_limit_snapshot=(
+                subscription.plan.extra_credit_limit_per_cycle
+            ),
+            cycle_start=self.period_start,
+            cycle_end=self.period_end,
+            stripe_customer_id=subscription.stripe_customer_id,
+            stripe_checkout_session_id=f"cs_{uuid.uuid4()}",
+            stripe_checkout_url="https://checkout.stripe.test/session",
+            stripe_idempotency_key=f"key-{uuid.uuid4()}",
+            request_signature=f"sig-{uuid.uuid4()}",
+            expires_at=timezone.now() + timezone.timedelta(hours=1),
+        )
+
+    def test_user_cannot_cancel_other_organization_credit_purchase(self):
+        purchase = self.create_purchase(
+            self.other_organization,
+            self.other_subscription,
+        )
+
+        response = self.client.post(
+            reverse(
+                "billing:credit-purchase-cancel",
+                args=[purchase.pk],
+            ),
+            {},
+            format="json",
+        )
+
+        purchase.refresh_from_db()
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+        self.assertEqual(
+            purchase.status,
+            CreditPurchaseStatus.PENDING,
+        )
+
+    def test_cancel_endpoint_expires_own_open_credit_purchase(self):
+        purchase = self.create_purchase(
+            self.organization,
+            self.subscription,
+        )
+        session = FakeStripeObject(
+            purchase.stripe_checkout_session_id
+        )
+        session.status = "open"
+        session.payment_status = "unpaid"
+        fake_client = FakeStripeBillingClient(
+            checkout_retrieve_response=session,
+        )
+
+        with patch.object(
+            StripePlanService,
+            "client",
+            return_value=fake_client,
+        ):
+            response = self.client.post(
+                reverse(
+                    "billing:credit-purchase-cancel",
+                    args=[purchase.pk],
+                ),
+                {},
+                format="json",
+            )
+
+        purchase.refresh_from_db()
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+        self.assertEqual(
+            response.data["status"],
+            CreditPurchaseStatus.EXPIRED,
+        )
+        self.assertEqual(
+            purchase.status,
+            CreditPurchaseStatus.EXPIRED,
+        )

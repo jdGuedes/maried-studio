@@ -24,6 +24,8 @@ export type ClientSubscriptionPlan = {
 
   credits_per_cycle: number;
 
+  extra_credit_limit_per_cycle: number;
+
   billing_cycle: string;
 };
 
@@ -54,6 +56,20 @@ export type ClientSubscription = {
   grace_until: string | null;
 
   days_remaining_in_grace: number | null;
+
+  can_create: boolean;
+
+  can_purchase_credits: boolean;
+
+  access_reason: string;
+
+  extra_credit_limit_per_cycle: number;
+
+  paid_credits_this_cycle: number;
+
+  pending_credits_this_cycle: number;
+
+  remaining_extra_credits: number;
 };
 
 
@@ -62,10 +78,8 @@ export function canOperateStudioFromSubscription(
     ClientSubscription | null
 ) {
   return (
-    subscription?.operational_status ===
-      "ACTIVE" ||
-    subscription?.operational_status ===
-      "GRACE"
+    subscription?.can_create ??
+    false
   );
 }
 
@@ -134,6 +148,74 @@ export type SubscriptionCheckoutResponse = {
   checkout_session_id: string;
 
   url: string;
+};
+
+
+export type CreditPackage = {
+  id: string;
+
+  name: string;
+
+  description: string;
+
+  credits: number;
+
+  price: string;
+
+  currency: string;
+
+  stripe_ready_for_checkout: boolean;
+
+  checkout_available: boolean;
+
+  checkout_unavailable_reason: string;
+
+  pending_purchase: {
+    id: string;
+    status: string;
+    checkout_session_id: string;
+    checkout_url: string;
+    expires_at: string | null;
+    credits_snapshot: number;
+  } | null;
+};
+
+
+export type CreditCheckoutResponse = {
+  purchase_id: string;
+
+  checkout_session_id: string;
+
+  url: string;
+
+  status: string;
+};
+
+
+export type CreditPurchase = {
+  id: string;
+
+  package_name: string;
+
+  status: string;
+
+  credits_snapshot: number;
+
+  price_snapshot: string;
+
+  currency_snapshot: string;
+
+  stripe_checkout_session_id: string;
+
+  cycle_start: string;
+
+  cycle_end: string;
+
+  paid_at: string | null;
+
+  created_at: string;
+
+  updated_at: string;
 };
 
 
@@ -387,6 +469,160 @@ export async function createSubscriptionCheckout(
     );
 
   return parseResponse<SubscriptionCheckoutResponse>(
+    response
+  );
+}
+
+
+// ==========================================================
+// PACOTES DE CRÉDITO
+// ==========================================================
+
+export async function getCreditPackages():
+  Promise<CreditPackage[]> {
+
+  const response =
+    await fetch(
+      `${API_URL}/api/billing/credit-packages/`,
+      {
+        method:
+          "GET",
+
+        credentials:
+          "include",
+
+        headers: {
+          Accept:
+            "application/json",
+        },
+
+        cache:
+          "no-store",
+      }
+    );
+
+  const data =
+    await parseResponse<
+      | CreditPackage[]
+      | {
+          results: CreditPackage[];
+        }
+    >(
+      response
+    );
+
+  if (
+    Array.isArray(data)
+  ) {
+    return data;
+  }
+
+  return data.results;
+}
+
+
+export async function createCreditCheckout(
+  packageId: string
+): Promise<CreditCheckoutResponse> {
+
+  await ensureCsrfCookie();
+
+  const response =
+    await fetch(
+      `${API_URL}/api/billing/checkout/credits/`,
+      {
+        method:
+          "POST",
+
+        credentials:
+          "include",
+
+        headers: {
+          Accept:
+            "application/json",
+
+          "Content-Type":
+            "application/json",
+
+          ...getCsrfHeaders(),
+        },
+
+        body:
+          JSON.stringify({
+            package_id:
+              packageId,
+          }),
+      }
+    );
+
+  return parseResponse<CreditCheckoutResponse>(
+    response
+  );
+}
+
+
+export async function getCreditPurchaseBySession(
+  sessionId: string
+): Promise<CreditPurchase> {
+
+  const response =
+    await fetch(
+      `${API_URL}/api/billing/credit-purchases/by-session/${encodeURIComponent(sessionId)}/`,
+      {
+        method:
+          "GET",
+
+        credentials:
+          "include",
+
+        headers: {
+          Accept:
+            "application/json",
+        },
+
+        cache:
+          "no-store",
+      }
+    );
+
+  return parseResponse<CreditPurchase>(
+    response
+  );
+}
+
+
+export async function cancelCreditPurchase(
+  purchaseId: string
+): Promise<CreditPurchase> {
+
+  await ensureCsrfCookie();
+
+  const response =
+    await fetch(
+      `${API_URL}/api/billing/credit-purchases/${purchaseId}/cancel/`,
+      {
+        method:
+          "POST",
+
+        credentials:
+          "include",
+
+        headers: {
+          Accept:
+            "application/json",
+
+          "Content-Type":
+            "application/json",
+
+          ...getCsrfHeaders(),
+        },
+
+        body:
+          JSON.stringify({}),
+      }
+    );
+
+  return parseResponse<CreditPurchase>(
     response
   );
 }

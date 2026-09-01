@@ -24,6 +24,7 @@ const emptyPlan = {
   price: "",
   billing_cycle: "MONTHLY",
   credits_per_cycle: 50,
+  extra_credit_limit_per_cycle: 0,
   is_active: true,
   sort_order: 10,
 };
@@ -78,6 +79,7 @@ export default function SuperAdminPlanosPage() {
       price: plan.price,
       billing_cycle: plan.billing_cycle,
       credits_per_cycle: plan.credits_per_cycle,
+      extra_credit_limit_per_cycle: plan.extra_credit_limit_per_cycle,
       is_active: plan.is_active,
       sort_order: plan.sort_order,
     });
@@ -157,6 +159,7 @@ export default function SuperAdminPlanosPage() {
             <Input label="Descrição" value={form.description} onChange={(description) => setForm({ ...form, description })} />
             <Input label="Preço" value={form.price} onChange={(price) => setForm({ ...form, price })} />
             <Input label="Créditos por ciclo" type="number" value={String(form.credits_per_cycle)} onChange={(value) => setForm({ ...form, credits_per_cycle: Number(value) })} />
+            <Input label="Limite extras por ciclo" type="number" value={String(form.extra_credit_limit_per_cycle)} onChange={(value) => setForm({ ...form, extra_credit_limit_per_cycle: Number(value) })} />
             <Input label="Ordem" type="number" value={String(form.sort_order)} onChange={(value) => setForm({ ...form, sort_order: Number(value) })} />
 
             <label className="flex items-center gap-2 text-sm text-[var(--maried-cocoa)]">
@@ -186,6 +189,7 @@ export default function SuperAdminPlanosPage() {
                       <th>Preço</th>
                       <th>Ciclo</th>
                       <th>Créditos</th>
+                      <th>Extras</th>
                       <th>Status</th>
                       <th>Stripe</th>
                       <th>Ordem</th>
@@ -199,6 +203,7 @@ export default function SuperAdminPlanosPage() {
                         <td>{plan.price}</td>
                         <td>{plan.billing_cycle}</td>
                         <td>{plan.credits_per_cycle}</td>
+                        <td>{plan.extra_credit_limit_per_cycle}</td>
                         <td>{plan.is_active ? "Ativo" : "Inativo"}</td>
                         <td>
                           <div className="flex flex-col gap-1">

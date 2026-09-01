@@ -3,7 +3,12 @@ from rest_framework import serializers
 from apps.audit.models import AuditLog
 from apps.billing.services import BillingAccessService
 from apps.accounts.models import User
-from apps.billing.models import Plan, Subscription
+from apps.billing.models import (
+    CreditPackage,
+    CreditPurchase,
+    Plan,
+    Subscription,
+)
 from apps.products.models import Product
 from apps.credits.models import CreditWallet
 from apps.organizations.models import Organization
@@ -79,7 +84,8 @@ class SuperAdminPlanSerializer(serializers.ModelSerializer):
         model = Plan
         fields = [
             "id", "name", "slug", "description", "price",
-            "billing_cycle", "credits_per_cycle", "is_active",
+            "billing_cycle", "credits_per_cycle",
+            "extra_credit_limit_per_cycle", "is_active",
             "sort_order", "stripe_product_id", "stripe_price_id",
             "stripe_synced_at", "stripe_sync_error",
             "stripe_ready_for_checkout", "stripe_sync_status",
@@ -482,6 +488,75 @@ class SuperAdminCreditWalletSerializer(serializers.ModelSerializer):
             "plan_reserved_balance", "purchased_reserved_balance",
             "available_balance", "total_balance", "created_at",
             "updated_at",
+        ]
+
+
+class SuperAdminCreditPackageSerializer(serializers.ModelSerializer):
+    stripe_ready_for_checkout = serializers.BooleanField(
+        read_only=True,
+    )
+    stripe_sync_status = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CreditPackage
+        fields = [
+            "id", "name", "slug", "description", "credits",
+            "price", "currency", "is_active", "sort_order",
+            "stripe_product_id", "stripe_price_id",
+            "stripe_synced_at", "stripe_sync_error",
+            "stripe_ready_for_checkout", "stripe_sync_status",
+            "created_at", "updated_at",
+        ]
+        read_only_fields = [
+            "id", "stripe_product_id", "stripe_price_id",
+            "stripe_synced_at", "stripe_sync_error",
+            "stripe_ready_for_checkout", "stripe_sync_status",
+            "created_at", "updated_at",
+        ]
+
+    def get_stripe_sync_status(self, obj):
+        if obj.stripe_sync_error:
+            return "ERROR"
+
+        if (
+            obj.stripe_product_id
+            and obj.stripe_price_id
+        ):
+            return "SYNCED"
+
+        return "PENDING"
+
+
+class SuperAdminCreditPurchaseSerializer(serializers.ModelSerializer):
+    organization_name = serializers.CharField(
+        source="organization.name",
+        read_only=True,
+    )
+    package_name = serializers.CharField(
+        source="package.name",
+        read_only=True,
+    )
+    plan_name = serializers.CharField(
+        source="plan.name",
+        read_only=True,
+    )
+
+    class Meta:
+        model = CreditPurchase
+        fields = [
+            "id", "organization", "organization_name",
+            "package", "package_name", "subscription", "plan",
+            "plan_name", "status", "credits_snapshot",
+            "price_snapshot", "currency_snapshot",
+            "stripe_price_id_snapshot",
+            "extra_credit_limit_snapshot",
+            "cycle_start", "cycle_end",
+            "stripe_customer_id",
+            "stripe_checkout_session_id",
+            "stripe_payment_intent_id",
+            "expires_at", "paid_at",
+            "processed_event_id",
+            "created_at", "updated_at",
         ]
 
 

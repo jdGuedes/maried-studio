@@ -7,14 +7,28 @@ from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Plan
+from .models import (
+    CreditPackage,
+    CreditPurchase,
+    CreditPurchaseStatus,
+    Plan,
+)
 from .serializers import (
     AvailablePlanSerializer,
+    CreditCheckoutSerializer,
+    CreditPackageSerializer,
+    CreditPurchaseSerializer,
     CurrentSubscriptionSerializer,
     SubscriptionCheckoutSerializer,
 )
-from .services import BillingAccessService
+from .services import (
+    BillingAccessService,
+    CreditPurchaseLimitExceededError,
+    CreditPurchaseNotAllowedError,
+)
 from .stripe_services import (
+    CreditPurchaseCheckoutService,
+    StripeCreditPurchaseSessionError,
     StripeBillingError,
     StripeBillingService,
     StripeCheckoutProviderError,
@@ -85,6 +99,17 @@ class CurrentSubscriptionView(APIView):
             organization
         )
 
+        try:
+            CreditPurchaseCheckoutService.sync_pending_for_subscription(
+                access.subscription
+            )
+        except StripeCreditPurchaseSessionError:
+            pass
+
+        access = BillingAccessService.evaluate_organization(
+            organization
+        )
+
         serializer = CurrentSubscriptionSerializer.from_access(
             access
         )
@@ -93,6 +118,103 @@ class CurrentSubscriptionView(APIView):
             serializer.data,
             status=status.HTTP_200_OK,
         )
+
+
+class CreditPackageListView(
+    generics.ListAPIView
+):
+    serializer_class = CreditPackageSerializer
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def get_queryset(self):
+        return (
+            CreditPackage.objects
+            .filter(
+                is_active=True,
+                stripe_product_id__isnull=False,
+                stripe_price_id__isnull=False,
+                stripe_sync_error="",
+            )
+            .exclude(
+                stripe_product_id="",
+            )
+            .exclude(
+                stripe_price_id="",
+            )
+            .order_by(
+                "sort_order",
+                "price",
+            )
+        )
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        organization = getattr(
+            self.request.user,
+            "organization",
+            None,
+        )
+
+        if not organization:
+            return context
+
+        access = BillingAccessService.evaluate_organization(
+            organization
+        )
+
+        try:
+            CreditPurchaseCheckoutService.sync_pending_for_subscription(
+                access.subscription
+            )
+
+        except StripeCreditPurchaseSessionError:
+            pass
+
+        pending_purchases = {}
+
+        if access.subscription:
+            pending_purchases = {
+                purchase.package_id: purchase
+                for purchase in (
+                    CreditPurchase.objects
+                    .filter(
+                        organization=organization,
+                        subscription=access.subscription,
+                        status=CreditPurchaseStatus.PENDING,
+                    )
+                    .select_related("package")
+                )
+            }
+
+        subscription_data = (
+            CurrentSubscriptionSerializer
+            .from_access(
+                access
+            )
+            .data
+        )
+
+        context.update(
+            {
+                "can_purchase_credits": (
+                    subscription_data[
+                        "can_purchase_credits"
+                    ]
+                ),
+                "remaining_extra_credits": (
+                    subscription_data[
+                        "remaining_extra_credits"
+                    ]
+                ),
+                "pending_purchases_by_package": (
+                    pending_purchases
+                ),
+            }
+        )
+
+        return context
 
 
 class SubscriptionCheckoutView(APIView):
@@ -175,6 +297,223 @@ class SubscriptionCheckoutView(APIView):
         return Response(
             checkout,
             status=status.HTTP_201_CREATED,
+        )
+
+
+class CreditCheckoutView(APIView):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def post(
+        self,
+        request,
+    ):
+        serializer = CreditCheckoutSerializer(
+            data=request.data,
+            context={},
+        )
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        package = serializer.context["package"]
+
+        try:
+            checkout = (
+                StripeBillingService
+                .create_credit_checkout(
+                    user=request.user,
+                    package=package,
+                )
+            )
+
+        except (
+            StripeCheckoutUnavailableError,
+            CreditPurchaseNotAllowedError,
+            CreditPurchaseLimitExceededError,
+        ) as exc:
+            return Response(
+                {
+                    "detail": str(exc),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        except StripeCreditPurchaseSessionError as exc:
+            return Response(
+                {
+                    "detail": str(exc),
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        except StripeConfigurationError as exc:
+            return Response(
+                {
+                    "detail": str(exc),
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        except StripeCheckoutRetryRequiredError:
+            return Response(
+                {
+                    "detail": (
+                        "Não foi possível iniciar o pagamento. Tente novamente."
+                    ),
+                    "code": "CHECKOUT_RETRY_REQUIRED",
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        except StripeCheckoutProviderError:
+            return Response(
+                {
+                    "detail": (
+                        "Não foi possível iniciar o pagamento. Tente novamente."
+                    ),
+                    "code": "CHECKOUT_UNAVAILABLE",
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        except StripeBillingError as exc:
+            return Response(
+                {
+                    "detail": str(exc),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(
+            checkout,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class CreditPurchaseCancelView(APIView):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def post(
+        self,
+        request,
+        pk,
+    ):
+        organization = getattr(
+            request.user,
+            "organization",
+            None,
+        )
+
+        if not organization:
+            return Response(
+                {
+                    "detail": (
+                        "Usuário não possui organização vinculada."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        purchase = (
+            CreditPurchase.objects
+            .select_related(
+                "package",
+                "subscription",
+            )
+            .filter(
+                pk=pk,
+                organization=organization,
+            )
+            .first()
+        )
+
+        if not purchase:
+            return Response(
+                {
+                    "detail": "Compra não encontrada.",
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        try:
+            purchase = (
+                CreditPurchaseCheckoutService
+                .cancel_pending_purchase(
+                    purchase=purchase
+                )
+            )
+
+        except StripeCreditPurchaseSessionError as exc:
+            return Response(
+                {
+                    "detail": str(exc),
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        return Response(
+            CreditPurchaseSerializer(
+                purchase
+            ).data,
+            status=status.HTTP_200_OK,
+        )
+
+
+class CreditPurchaseBySessionView(APIView):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def get(
+        self,
+        request,
+        session_id,
+    ):
+        organization = getattr(
+            request.user,
+            "organization",
+            None,
+        )
+
+        if not organization:
+            return Response(
+                {
+                    "detail": (
+                        "Usuário não possui organização vinculada."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        purchase = (
+            CreditPurchase.objects
+            .select_related(
+                "package",
+            )
+            .filter(
+                organization=organization,
+                stripe_checkout_session_id=session_id,
+            )
+            .first()
+        )
+
+        if not purchase:
+            return Response(
+                {
+                    "detail": "Compra não encontrada.",
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        return Response(
+            CreditPurchaseSerializer(
+                purchase
+            ).data,
+            status=status.HTTP_200_OK,
         )
 
 

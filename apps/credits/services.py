@@ -795,6 +795,85 @@ class CreditService:
         return wallet
 
     # ======================================================
+    # EXPIRAR CRÉDITOS DO PLANO
+    #
+    # Usado quando a assinatura deixa de ter direito
+    # operacional definitivo. Créditos comprados ficam
+    # preservados.
+    # ======================================================
+
+    @staticmethod
+    @transaction.atomic
+    def expire_plan_credits(
+        wallet:
+            CreditWallet,
+        *,
+        actor=None,
+        description=(
+            "Créditos do plano expirados."
+        ),
+    ):
+        wallet = (
+            CreditWallet.objects
+            .select_for_update()
+            .get(
+                pk=wallet.pk
+            )
+        )
+
+        if (
+            wallet.plan_reserved_balance
+            > 0
+        ):
+            raise ValueError(
+                "Existem créditos do plano "
+                "reservados em processamento."
+            )
+
+        if (
+            wallet.plan_balance
+            <= 0
+        ):
+            return wallet
+
+        before = (
+            CreditService
+            ._snapshot(
+                wallet
+            )
+        )
+
+        expired = wallet.plan_balance
+        wallet.plan_balance = 0
+
+        CreditService._sync_totals(
+            wallet
+        )
+
+        wallet.save(
+            update_fields=[
+                "balance",
+                "plan_balance",
+                "updated_at",
+            ]
+        )
+
+        CreditService._create_transaction(
+            wallet=wallet,
+            actor=actor,
+            transaction_type=(
+                CreditTransactionType
+                .PLAN_EXPIRE
+            ),
+            amount=-expired,
+            plan_amount=-expired,
+            before=before,
+            description=description,
+        )
+
+        return wallet
+
+    # ======================================================
     # AJUSTE ADMINISTRATIVO
     #
     # Usado somente por SuperAdmin via camada autorizada.

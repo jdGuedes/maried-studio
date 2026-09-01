@@ -11,6 +11,8 @@ from rest_framework.views import APIView
 from apps.audit.models import AuditLog
 from apps.accounts.models import UserRole
 from apps.billing.models import (
+    CreditPackage,
+    CreditPurchase,
     Plan,
     Subscription,
     SubscriptionStatus,
@@ -22,6 +24,7 @@ from apps.billing.services import (
     SubscriptionService,
 )
 from apps.billing.stripe_services import (
+    StripeCreditPackageService,
     StripePlanError,
     StripePlanService,
     StripeReconciliationError,
@@ -44,6 +47,8 @@ from .serializers import (
     SuperAdminClientCreateSerializer,
     SuperAdminClientDetailSerializer,
     SuperAdminClientListSerializer,
+    SuperAdminCreditPackageSerializer,
+    SuperAdminCreditPurchaseSerializer,
     SuperAdminCreditWalletSerializer,
     SuperAdminGenerationSerializer,
     SuperAdminOrganizationSerializer,
@@ -147,6 +152,58 @@ def _sync_plan_with_stripe(
             "stripe_price_id": (
                 plan.stripe_price_id
             ),
+        },
+    )
+
+    return None
+
+
+def _sync_credit_package_with_stripe(
+    *,
+    request,
+    package,
+):
+    before_price_id = package.stripe_price_id
+
+    try:
+        StripeCreditPackageService.sync_package(
+            package
+        )
+
+    except StripePlanError as exc:
+        package.mark_stripe_sync_error(
+            str(exc)
+        )
+
+        _audit(
+            request=request,
+            action="CREDIT_PACKAGE_STRIPE_SYNC_FAILED",
+            entity=package,
+            metadata={
+                "credit_package_id": str(package.pk),
+                "error_type": exc.__class__.__name__,
+            },
+        )
+
+        return exc
+
+    package.refresh_from_db()
+
+    action = (
+        "CREDIT_PACKAGE_STRIPE_PRICE_VERSIONED"
+        if before_price_id
+        and before_price_id != package.stripe_price_id
+        else "CREDIT_PACKAGE_STRIPE_SYNCED"
+    )
+
+    _audit(
+        request=request,
+        action=action,
+        entity=package,
+        metadata={
+            "credit_package_id": str(package.pk),
+            "stripe_product_id": package.stripe_product_id,
+            "stripe_price_id": package.stripe_price_id,
         },
     )
 
@@ -544,7 +601,7 @@ class SuperAdminSubscriptionRenewView(
         if subscription.status == SubscriptionStatus.ACTIVE:
             code = "STRIPE_AUTOMATIC_RENEWAL"
             detail = (
-                "A renovaÃ§Ã£o Ã© automÃ¡tica pelo Stripe."
+                "A renovação é automática pelo Stripe."
             )
 
         elif subscription.status == SubscriptionStatus.PENDING:
@@ -557,15 +614,15 @@ class SuperAdminSubscriptionRenewView(
         elif subscription.status == SubscriptionStatus.PAST_DUE:
             code = "STRIPE_REGULARIZATION_REQUIRED"
             detail = (
-                "A regularizaÃ§Ã£o deve ocorrer pelo Stripe "
+                "A regularização deve ocorrer pelo Stripe "
                 "e somente o webhook confirma o pagamento."
             )
 
         else:
             code = "SUBSCRIPTION_NOT_RENEWABLE"
             detail = (
-                "Esta assinatura nÃ£o pode ser renovada "
-                "por aÃ§Ã£o local."
+                "Esta assinatura não pode ser renovada "
+                "por ação local."
             )
 
         _audit(
@@ -773,6 +830,9 @@ class SuperAdminPlanListView(
                 "slug": plan.slug,
                 "price": str(plan.price),
                 "credits_per_cycle": plan.credits_per_cycle,
+                "extra_credit_limit_per_cycle": (
+                    plan.extra_credit_limit_per_cycle
+                ),
                 "is_active": plan.is_active,
             },
         )
@@ -799,6 +859,9 @@ class SuperAdminPlanDetailView(
             "slug": plan.slug,
             "price": str(plan.price),
             "credits_per_cycle": plan.credits_per_cycle,
+            "extra_credit_limit_per_cycle": (
+                plan.extra_credit_limit_per_cycle
+            ),
             "is_active": plan.is_active,
             "sort_order": plan.sort_order,
         }
@@ -818,6 +881,9 @@ class SuperAdminPlanDetailView(
             "slug": plan.slug,
             "price": str(plan.price),
             "credits_per_cycle": plan.credits_per_cycle,
+            "extra_credit_limit_per_cycle": (
+                plan.extra_credit_limit_per_cycle
+            ),
             "is_active": plan.is_active,
             "sort_order": plan.sort_order,
         }
@@ -878,6 +944,159 @@ class SuperAdminPlanStripeSyncView(
                 context={"request": request},
             ).data,
             status=response_status,
+        )
+
+
+class SuperAdminCreditPackageListView(
+    generics.ListCreateAPIView
+):
+    serializer_class = SuperAdminCreditPackageSerializer
+    permission_classes = [IsSuperAdmin]
+
+    def get_queryset(self):
+        return CreditPackage.objects.order_by(
+            "sort_order",
+            "price",
+        )
+
+    def perform_create(self, serializer):
+        package = serializer.save()
+
+        _audit(
+            request=self.request,
+            action="SUPERADMIN_CREDIT_PACKAGE_CREATED",
+            entity=package,
+            metadata={
+                "name": package.name,
+                "slug": package.slug,
+                "price": str(package.price),
+                "credits": package.credits,
+                "is_active": package.is_active,
+            },
+        )
+
+        _sync_credit_package_with_stripe(
+            request=self.request,
+            package=package,
+        )
+
+
+class SuperAdminCreditPackageDetailView(
+    generics.RetrieveUpdateAPIView
+):
+    serializer_class = SuperAdminCreditPackageSerializer
+    permission_classes = [IsSuperAdmin]
+    http_method_names = ["get", "patch", "head", "options"]
+    queryset = CreditPackage.objects.all()
+
+    def patch(self, request, *args, **kwargs):
+        package = self.get_object()
+
+        before = {
+            "name": package.name,
+            "slug": package.slug,
+            "price": str(package.price),
+            "credits": package.credits,
+            "currency": package.currency,
+            "is_active": package.is_active,
+            "sort_order": package.sort_order,
+        }
+
+        serializer = SuperAdminCreditPackageSerializer(
+            package,
+            data=request.data,
+            partial=True,
+            context={"request": request},
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        package.refresh_from_db()
+
+        after = {
+            "name": package.name,
+            "slug": package.slug,
+            "price": str(package.price),
+            "credits": package.credits,
+            "currency": package.currency,
+            "is_active": package.is_active,
+            "sort_order": package.sort_order,
+        }
+
+        _audit(
+            request=request,
+            action="SUPERADMIN_CREDIT_PACKAGE_UPDATED",
+            entity=package,
+            metadata={
+                "before": before,
+                "after": after,
+            },
+        )
+
+        _sync_credit_package_with_stripe(
+            request=request,
+            package=package,
+        )
+
+        package.refresh_from_db()
+
+        return Response(
+            SuperAdminCreditPackageSerializer(
+                package,
+                context={"request": request},
+            ).data,
+            status=status.HTTP_200_OK,
+        )
+
+
+class SuperAdminCreditPackageStripeSyncView(
+    APIView
+):
+    permission_classes = [IsSuperAdmin]
+
+    def post(self, request, pk):
+        package = get_object_or_404(
+            CreditPackage,
+            pk=pk,
+        )
+
+        error = _sync_credit_package_with_stripe(
+            request=request,
+            package=package,
+        )
+
+        package.refresh_from_db()
+
+        response_status = (
+            status.HTTP_400_BAD_REQUEST
+            if error
+            else status.HTTP_200_OK
+        )
+
+        return Response(
+            SuperAdminCreditPackageSerializer(
+                package,
+                context={"request": request},
+            ).data,
+            status=response_status,
+        )
+
+
+class SuperAdminCreditPurchaseListView(
+    generics.ListAPIView
+):
+    serializer_class = SuperAdminCreditPurchaseSerializer
+    permission_classes = [IsSuperAdmin]
+
+    def get_queryset(self):
+        return (
+            CreditPurchase.objects
+            .select_related(
+                "organization",
+                "package",
+                "subscription",
+                "plan",
+            )
+            .order_by("-created_at")
         )
 
 

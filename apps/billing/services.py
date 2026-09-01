@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from django.db import transaction
+from django.db.models import Sum
 from django.utils import timezone
 
 from apps.credits.models import CreditWallet
@@ -10,6 +11,9 @@ from apps.credits.services import CreditService
 
 from .models import (
     BillingCycle,
+    CreditPackage,
+    CreditPurchase,
+    CreditPurchaseStatus,
     Plan,
     StripeInvoiceRecord,
     Subscription,
@@ -37,6 +41,22 @@ class SubscriptionNotActiveError(BillingError):
     pass
 
 
+class CreditPackageUnavailableError(BillingError):
+    pass
+
+
+class CreditPurchaseNotAllowedError(BillingError):
+    pass
+
+
+class CreditPurchaseLimitExceededError(BillingError):
+    pass
+
+
+class CreditPurchasePaymentValidationError(BillingError):
+    pass
+
+
 class SubscriptionAccessStatus:
     ACTIVE = "ACTIVE"
     GRACE = "GRACE"
@@ -61,13 +81,13 @@ class SubscriptionAccess:
     subscription: Subscription | None = None
     grace_until: date | None = None
     days_remaining_in_grace: int | None = None
+    can_create: bool = False
+    can_purchase_credits: bool = False
+    access_reason: str = "SUBSCRIPTION_REQUIRED"
 
     @property
     def allowed(self):
-        return self.status in {
-            SubscriptionAccessStatus.ACTIVE,
-            SubscriptionAccessStatus.GRACE,
-        }
+        return self.can_create
 
 
 class BillingAccessService:
@@ -88,6 +108,7 @@ class BillingAccessService:
         subscription,
         *,
         now=None,
+        wallet=None,
     ):
         now = now or timezone.now()
         today = BillingAccessService._local_date(
@@ -98,6 +119,7 @@ class BillingAccessService:
             return SubscriptionAccess(
                 status=SubscriptionAccessStatus.BLOCKED,
                 subscription=None,
+                access_reason="SUBSCRIPTION_REQUIRED",
             )
 
         period_end = BillingAccessService._local_date(
@@ -108,6 +130,7 @@ class BillingAccessService:
             return SubscriptionAccess(
                 status=SubscriptionAccessStatus.BLOCKED,
                 subscription=subscription,
+                access_reason="SUBSCRIPTION_PERIOD_MISSING",
             )
 
         grace_until = (
@@ -128,6 +151,9 @@ class BillingAccessService:
                 status=SubscriptionAccessStatus.ACTIVE,
                 subscription=subscription,
                 grace_until=grace_until,
+                can_create=True,
+                can_purchase_credits=True,
+                access_reason="ACTIVE",
             )
 
         if status in {
@@ -142,12 +168,44 @@ class BillingAccessService:
                     days_remaining_in_grace=(
                         grace_until - today
                     ).days,
+                    can_create=True,
+                    can_purchase_credits=False,
+                    access_reason="GRACE",
                 )
+
+        if (
+            status == SubscriptionStatus.CANCELED
+            and wallet is None
+        ):
+            wallet = (
+                CreditWallet.objects
+                .filter(
+                    organization=subscription.organization,
+                )
+                .first()
+            )
+
+        if (
+            status == SubscriptionStatus.CANCELED
+            and wallet is not None
+            and wallet.available_purchased_balance > 0
+        ):
+            return SubscriptionAccess(
+                status=SubscriptionAccessStatus.BLOCKED,
+                subscription=subscription,
+                grace_until=grace_until,
+                can_create=True,
+                can_purchase_credits=False,
+                access_reason="CANCELED_WITH_PURCHASED_CREDITS",
+            )
 
         return SubscriptionAccess(
             status=SubscriptionAccessStatus.BLOCKED,
             subscription=subscription,
             grace_until=grace_until,
+            can_create=False,
+            can_purchase_credits=False,
+            access_reason="SUBSCRIPTION_BLOCKED",
         )
 
     @staticmethod
@@ -168,9 +226,18 @@ class BillingAccessService:
             .first()
         )
 
+        wallet = (
+            CreditWallet.objects
+            .filter(
+                organization=organization,
+            )
+            .first()
+        )
+
         return BillingAccessService.evaluate_subscription(
             subscription,
             now=now,
+            wallet=wallet,
         )
 
     @staticmethod
@@ -374,7 +441,7 @@ class SubscriptionService:
             and subscription.status == SubscriptionStatus.ACTIVE
         ):
             raise SubscriptionAlreadyActiveError(
-                "OrganizaÃ§Ã£o jÃ¡ possui assinatura ativa."
+                "Organização já possui assinatura ativa."
             )
 
         if subscription is None:
@@ -536,7 +603,7 @@ class SubscriptionService:
             != BillingCycle.MONTHLY
         ):
             raise UnsupportedBillingCycleError(
-                "Somente ciclo mensal Ã© suportado na V1."
+                "Somente ciclo mensal é suportado na V1."
             )
 
         if subscription is None:
@@ -580,7 +647,7 @@ class SubscriptionService:
             wallet,
             subscription.credits_snapshot,
             description=(
-                "CrÃ©ditos do ciclo pago via Stripe."
+                "Créditos do ciclo pago via Stripe."
             ),
         )
 
@@ -644,6 +711,453 @@ class SubscriptionService:
                 "status",
                 "stripe_customer_id",
                 "stripe_status",
+                "updated_at",
+            ]
+        )
+
+        return subscription
+
+
+class CreditPurchaseService:
+    @staticmethod
+    def active_cycle_purchases_query(subscription):
+        return CreditPurchase.objects.filter(
+            subscription=subscription,
+            cycle_start=subscription.current_period_start,
+            cycle_end=subscription.current_period_end,
+        )
+
+    @staticmethod
+    def expire_stale_pending_purchases(*, now=None):
+        now = now or timezone.now()
+
+        return (
+            CreditPurchase.objects
+            .filter(
+                status=CreditPurchaseStatus.PENDING,
+                expires_at__isnull=False,
+                expires_at__lte=now,
+            )
+            .update(
+                status=CreditPurchaseStatus.EXPIRED,
+                updated_at=now,
+            )
+        )
+
+    @classmethod
+    def allowance_for_subscription(
+        cls,
+        subscription,
+        *,
+        now=None,
+    ):
+        now = now or timezone.now()
+        cls.expire_stale_pending_purchases(
+            now=now
+        )
+
+        if (
+            not subscription
+            or not subscription.current_period_start
+            or not subscription.current_period_end
+        ):
+            return {
+                "extra_credit_limit_per_cycle": 0,
+                "paid_credits_this_cycle": 0,
+                "pending_credits_this_cycle": 0,
+                "remaining_extra_credits": 0,
+            }
+
+        queryset = cls.active_cycle_purchases_query(
+            subscription
+        )
+
+        paid = (
+            queryset
+            .filter(
+                status=CreditPurchaseStatus.PAID,
+            )
+            .aggregate(total=Sum("credits_snapshot"))
+            ["total"]
+            or 0
+        )
+
+        pending = (
+            queryset
+            .filter(
+                status=CreditPurchaseStatus.PENDING,
+            )
+            .filter(
+                expires_at__isnull=True,
+            )
+            .aggregate(total=Sum("credits_snapshot"))
+            ["total"]
+            or 0
+        )
+
+        pending += (
+            queryset
+            .filter(
+                status=CreditPurchaseStatus.PENDING,
+                expires_at__gt=now,
+            )
+            .aggregate(total=Sum("credits_snapshot"))
+            ["total"]
+            or 0
+        )
+
+        limit = (
+            subscription
+            .plan
+            .extra_credit_limit_per_cycle
+        )
+
+        return {
+            "extra_credit_limit_per_cycle": limit,
+            "paid_credits_this_cycle": paid,
+            "pending_credits_this_cycle": pending,
+            "remaining_extra_credits": max(
+                0,
+                limit - paid - pending,
+            ),
+        }
+
+    @classmethod
+    @transaction.atomic
+    def create_pending_purchase(
+        cls,
+        *,
+        organization,
+        package,
+        subscription,
+        stripe_customer_id,
+        request_signature,
+    ):
+        cls.expire_stale_pending_purchases()
+
+        subscription = (
+            Subscription.objects
+            .select_for_update()
+            .select_related("plan")
+            .get(
+                pk=subscription.pk,
+            )
+        )
+
+        access = BillingAccessService.evaluate_subscription(
+            subscription,
+            wallet=(
+                CreditWallet.objects
+                .filter(
+                    organization=organization,
+                )
+                .first()
+            ),
+        )
+
+        if not access.can_purchase_credits:
+            raise CreditPurchaseNotAllowedError(
+                "Compra de créditos disponível apenas para assinatura ativa."
+            )
+
+        if not package.stripe_ready_for_checkout:
+            raise CreditPackageUnavailableError(
+                "Pacote indisponível para pagamento no momento."
+            )
+
+        existing = (
+            CreditPurchase.objects
+            .select_for_update()
+            .filter(
+                organization=organization,
+                package=package,
+                subscription=subscription,
+                status=CreditPurchaseStatus.PENDING,
+                request_signature=request_signature,
+            )
+            .order_by("-created_at")
+            .first()
+        )
+
+        if (
+            existing
+            and existing.is_pending_reservation
+            and existing.stripe_checkout_session_id
+            and existing.stripe_checkout_url
+        ):
+            return existing, False
+
+        allowance = cls.allowance_for_subscription(
+            subscription
+        )
+
+        if (
+            package.credits
+            > allowance["remaining_extra_credits"]
+        ):
+            raise CreditPurchaseLimitExceededError(
+                "Pacote excede o limite de créditos extras deste ciclo."
+            )
+
+        purchase = CreditPurchase(
+            organization=organization,
+            package=package,
+            subscription=subscription,
+            plan=subscription.plan,
+            credits_snapshot=package.credits,
+            price_snapshot=package.price,
+            currency_snapshot=package.currency.upper(),
+            stripe_price_id_snapshot=package.stripe_price_id,
+            extra_credit_limit_snapshot=(
+                subscription.plan.extra_credit_limit_per_cycle
+            ),
+            cycle_start=subscription.current_period_start,
+            cycle_end=subscription.current_period_end,
+            stripe_customer_id=stripe_customer_id,
+            request_signature=request_signature,
+        )
+        purchase.stripe_idempotency_key = (
+            f"maried-credit-checkout-{purchase.pk}"
+        )
+        purchase.save()
+
+        return purchase, True
+
+    @staticmethod
+    def _validate_payment(
+        *,
+        purchase,
+        stripe_customer_id,
+        stripe_payment_intent_id,
+        amount_received,
+        currency,
+    ):
+        if (
+            stripe_customer_id
+            and stripe_customer_id
+            != purchase.stripe_customer_id
+        ):
+            raise CreditPurchasePaymentValidationError(
+                "Customer Stripe divergente para compra de créditos."
+            )
+
+        if (
+            amount_received is not None
+            and int(amount_received)
+            != int(purchase.price_snapshot * 100)
+        ):
+            raise CreditPurchasePaymentValidationError(
+                "Valor pago divergente para compra de créditos."
+            )
+
+        if (
+            currency
+            and currency.upper()
+            != purchase.currency_snapshot.upper()
+        ):
+            raise CreditPurchasePaymentValidationError(
+                "Moeda divergente para compra de créditos."
+            )
+
+        if stripe_payment_intent_id:
+            other = (
+                CreditPurchase.objects
+                .filter(
+                    stripe_payment_intent_id=(
+                        stripe_payment_intent_id
+                    ),
+                )
+                .exclude(
+                    pk=purchase.pk,
+                )
+                .first()
+            )
+
+            if other:
+                raise CreditPurchasePaymentValidationError(
+                    "PaymentIntent Stripe já vinculado a outra compra."
+                )
+
+    @classmethod
+    @transaction.atomic
+    def apply_paid_purchase(
+        cls,
+        *,
+        purchase,
+        stripe_customer_id="",
+        stripe_payment_intent_id="",
+        amount_received=None,
+        currency="",
+        event_id="",
+    ):
+        purchase = (
+            CreditPurchase.objects
+            .select_for_update()
+            .select_related(
+                "organization",
+                "package",
+                "subscription",
+            )
+            .get(
+                pk=purchase.pk,
+            )
+        )
+
+        if purchase.status == CreditPurchaseStatus.PAID:
+            return purchase, False
+
+        cls._validate_payment(
+            purchase=purchase,
+            stripe_customer_id=stripe_customer_id,
+            stripe_payment_intent_id=stripe_payment_intent_id,
+            amount_received=amount_received,
+            currency=currency,
+        )
+
+        wallet, _ = (
+            CreditWallet.objects
+            .get_or_create(
+                organization=purchase.organization,
+            )
+        )
+
+        CreditService.add_purchased_credits(
+            wallet,
+            purchase.credits_snapshot,
+            description=(
+                "Compra de créditos avulsos via Stripe."
+            ),
+        )
+
+        purchase.status = CreditPurchaseStatus.PAID
+        purchase.stripe_payment_intent_id = (
+            stripe_payment_intent_id
+            or purchase.stripe_payment_intent_id
+        )
+        purchase.processed_event_id = event_id
+        purchase.paid_at = timezone.now()
+        purchase.error_message = ""
+        purchase.save(
+            update_fields=[
+                "status",
+                "stripe_payment_intent_id",
+                "processed_event_id",
+                "paid_at",
+                "error_message",
+                "updated_at",
+            ]
+        )
+
+        return purchase, True
+
+    @staticmethod
+    @transaction.atomic
+    def cancel_purchase_session(
+        *,
+        purchase,
+        status=CreditPurchaseStatus.CANCELED,
+    ):
+        purchase = (
+            CreditPurchase.objects
+            .select_for_update()
+            .get(
+                pk=purchase.pk,
+            )
+        )
+
+        if purchase.status == CreditPurchaseStatus.PENDING:
+            purchase.status = status
+            purchase.save(
+                update_fields=[
+                    "status",
+                    "updated_at",
+                ]
+            )
+
+        return purchase
+
+
+class SubscriptionDelinquencyService:
+    @classmethod
+    def finalize_expired_grace(
+        cls,
+        *,
+        now=None,
+    ):
+        now = now or timezone.now()
+        processed = 0
+
+        subscriptions = (
+            Subscription.objects
+            .select_related(
+                "organization",
+                "plan",
+            )
+            .filter(
+                status=SubscriptionStatus.PAST_DUE,
+            )
+        )
+
+        for subscription in subscriptions:
+            access = BillingAccessService.evaluate_subscription(
+                subscription,
+                now=now,
+            )
+
+            if access.status != SubscriptionAccessStatus.BLOCKED:
+                continue
+
+            cls.cancel_after_grace(
+                subscription=subscription,
+                now=now,
+            )
+            processed += 1
+
+        return processed
+
+    @staticmethod
+    @transaction.atomic
+    def cancel_after_grace(
+        *,
+        subscription,
+        now=None,
+    ):
+        now = now or timezone.now()
+
+        subscription = (
+            Subscription.objects
+            .select_for_update()
+            .select_related(
+                "organization",
+                "plan",
+            )
+            .get(
+                pk=subscription.pk,
+            )
+        )
+
+        wallet, _ = (
+            CreditWallet.objects
+            .get_or_create(
+                organization=subscription.organization,
+            )
+        )
+
+        CreditService.expire_plan_credits(
+            wallet,
+            description=(
+                "Créditos do plano expirados após fim do período de tolerância."
+            ),
+        )
+
+        subscription.status = SubscriptionStatus.CANCELED
+        subscription.cancel_at_period_end = False
+        subscription.canceled_at = now
+        subscription.save(
+            update_fields=[
+                "status",
+                "cancel_at_period_end",
+                "canceled_at",
                 "updated_at",
             ]
         )

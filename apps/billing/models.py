@@ -95,6 +95,35 @@ class SubscriptionCheckoutAttemptStatus(
     )
 
 
+class CreditPurchaseStatus(
+    models.TextChoices
+):
+    PENDING = (
+        "PENDING",
+        "Pendente",
+    )
+
+    PAID = (
+        "PAID",
+        "Paga",
+    )
+
+    FAILED = (
+        "FAILED",
+        "Falhou",
+    )
+
+    CANCELED = (
+        "CANCELED",
+        "Cancelada",
+    )
+
+    EXPIRED = (
+        "EXPIRED",
+        "Expirada",
+    )
+
+
 # ==========================================================
 # PLANO
 # ==========================================================
@@ -127,6 +156,12 @@ class Plan(
     )
 
     credits_per_cycle = (
+        models.PositiveIntegerField(
+            default=0
+        )
+    )
+
+    extra_credit_limit_per_cycle = (
         models.PositiveIntegerField(
             default=0
         )
@@ -224,6 +259,133 @@ class Plan(
         return (
             f"{self.name} "
             f"({self.credits_per_cycle} créditos)"
+        )
+
+    class Meta:
+        ordering = [
+            "sort_order",
+            "price",
+        ]
+
+
+class CreditPackage(
+    UUIDTimeStampedModel
+):
+    name = models.CharField(
+        max_length=120
+    )
+
+    slug = models.SlugField(
+        max_length=140,
+        unique=True,
+    )
+
+    description = models.TextField(
+        blank=True
+    )
+
+    credits = models.PositiveIntegerField()
+
+    price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+    )
+
+    currency = models.CharField(
+        max_length=3,
+        default="BRL",
+    )
+
+    is_active = models.BooleanField(
+        default=True
+    )
+
+    sort_order = (
+        models.PositiveIntegerField(
+            default=0
+        )
+    )
+
+    stripe_product_id = models.CharField(
+        max_length=255,
+        unique=True,
+        null=True,
+        blank=True,
+    )
+
+    stripe_price_id = models.CharField(
+        max_length=255,
+        unique=True,
+        null=True,
+        blank=True,
+    )
+
+    stripe_price_signature = models.CharField(
+        max_length=80,
+        blank=True,
+    )
+
+    stripe_synced_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
+    stripe_sync_error = models.TextField(
+        blank=True,
+    )
+
+    @property
+    def stripe_ready_for_checkout(self):
+        return (
+            self.is_active
+            and bool(self.stripe_product_id)
+            and bool(self.stripe_price_id)
+            and not self.stripe_sync_error
+        )
+
+    def mark_stripe_sync_error(
+        self,
+        message,
+    ):
+        self.stripe_sync_error = (
+            str(message)[:1000]
+        )
+        self.stripe_synced_at = None
+        self.save(
+            update_fields=[
+                "stripe_sync_error",
+                "stripe_synced_at",
+                "updated_at",
+            ]
+        )
+
+    def mark_stripe_synced(
+        self,
+        *,
+        product_id,
+        price_id,
+        price_signature,
+    ):
+        self.stripe_product_id = product_id
+        self.stripe_price_id = price_id
+        self.stripe_price_signature = price_signature
+        self.stripe_sync_error = ""
+        self.stripe_synced_at = timezone.now()
+        self.save(
+            update_fields=[
+                "stripe_product_id",
+                "stripe_price_id",
+                "stripe_price_signature",
+                "stripe_sync_error",
+                "stripe_synced_at",
+                "updated_at",
+            ]
+        )
+
+    def __str__(self):
+        return (
+            f"{self.name} "
+            f"({self.credits} créditos)"
         )
 
     class Meta:
@@ -361,6 +523,154 @@ class Subscription(
             f"{self.organization} "
             f"→ {self.plan.name}"
         )
+
+class CreditPurchase(
+    UUIDTimeStampedModel
+):
+    organization = models.ForeignKey(
+        "organizations.Organization",
+        on_delete=models.CASCADE,
+        related_name="credit_purchases",
+    )
+
+    package = models.ForeignKey(
+        CreditPackage,
+        on_delete=models.PROTECT,
+        related_name="purchases",
+    )
+
+    subscription = models.ForeignKey(
+        Subscription,
+        on_delete=models.PROTECT,
+        related_name="credit_purchases",
+    )
+
+    plan = models.ForeignKey(
+        Plan,
+        on_delete=models.PROTECT,
+        related_name="credit_purchases",
+    )
+
+    status = models.CharField(
+        max_length=20,
+        choices=CreditPurchaseStatus.choices,
+        default=CreditPurchaseStatus.PENDING,
+    )
+
+    credits_snapshot = models.PositiveIntegerField()
+
+    price_snapshot = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+    )
+
+    currency_snapshot = models.CharField(
+        max_length=3,
+    )
+
+    stripe_price_id_snapshot = models.CharField(
+        max_length=255,
+    )
+
+    extra_credit_limit_snapshot = (
+        models.PositiveIntegerField(
+            default=0
+        )
+    )
+
+    cycle_start = models.DateTimeField()
+
+    cycle_end = models.DateTimeField()
+
+    stripe_customer_id = models.CharField(
+        max_length=255,
+    )
+
+    stripe_checkout_session_id = models.CharField(
+        max_length=255,
+        unique=True,
+        null=True,
+        blank=True,
+    )
+
+    stripe_checkout_url = models.TextField(
+        blank=True,
+    )
+
+    stripe_payment_intent_id = models.CharField(
+        max_length=255,
+        unique=True,
+        null=True,
+        blank=True,
+    )
+
+    stripe_idempotency_key = models.CharField(
+        max_length=255,
+        unique=True,
+    )
+
+    request_signature = models.CharField(
+        max_length=255,
+    )
+
+    expires_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
+    paid_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
+    processed_event_id = models.CharField(
+        max_length=255,
+        blank=True,
+    )
+
+    error_message = models.TextField(
+        blank=True,
+    )
+
+    @property
+    def is_pending_reservation(self):
+        return (
+            self.status == CreditPurchaseStatus.PENDING
+            and (
+                self.expires_at is None
+                or self.expires_at > timezone.now()
+            )
+        )
+
+    class Meta:
+        ordering = [
+            "-created_at",
+        ]
+        indexes = [
+            models.Index(
+                fields=[
+                    "organization",
+                    "subscription",
+                    "status",
+                    "cycle_start",
+                    "cycle_end",
+                ],
+                name="billing_purchase_cycle",
+            ),
+            models.Index(
+                fields=[
+                    "stripe_checkout_session_id",
+                ],
+                name="billing_purchase_session",
+            ),
+            models.Index(
+                fields=[
+                    "stripe_payment_intent_id",
+                ],
+                name="billing_purchase_pi",
+            ),
+        ]
+
 
 class StripeWebhookEvent(
     UUIDTimeStampedModel

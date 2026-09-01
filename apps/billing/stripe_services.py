@@ -16,6 +16,9 @@ from apps.organizations.models import Organization
 
 from .models import (
     BillingCycle,
+    CreditPackage,
+    CreditPurchase,
+    CreditPurchaseStatus,
     Plan,
     SubscriptionCheckoutAttempt,
     SubscriptionCheckoutAttemptStatus,
@@ -24,7 +27,10 @@ from .models import (
     Subscription,
     SubscriptionStatus,
 )
-from .services import SubscriptionService
+from .services import (
+    CreditPurchaseService,
+    SubscriptionService,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -373,6 +379,221 @@ class StripePlanService:
         )
 
 
+class StripeCreditPackageService:
+    INTEGRATION = StripePlanService.INTEGRATION
+
+    @classmethod
+    def sync_package(cls, package):
+        try:
+            return cls._sync_package(
+                package
+            )
+
+        except StripePlanError:
+            raise
+
+        except Exception as exc:
+            raise StripeSyncError(
+                "Não foi possível sincronizar este pacote com o Stripe."
+            ) from exc
+
+    @classmethod
+    def _sync_package(cls, package):
+        StripePlanService.validate_key()
+
+        product_id = cls.ensure_product(
+            package
+        )
+
+        if (
+            product_id
+            and not package.stripe_product_id
+        ):
+            package.stripe_product_id = product_id
+            package.save(
+                update_fields=[
+                    "stripe_product_id",
+                    "updated_at",
+                ]
+            )
+
+        price_signature = cls.price_signature(
+            package
+        )
+        price_id = package.stripe_price_id
+
+        if (
+            not price_id
+            or package.stripe_price_signature
+            != price_signature
+        ):
+            price_id = cls.create_price(
+                package,
+                product_id=product_id,
+                price_signature=price_signature,
+            )
+
+        cls.update_product(
+            package,
+            product_id=product_id,
+        )
+
+        package.mark_stripe_synced(
+            product_id=product_id,
+            price_id=price_id,
+            price_signature=price_signature,
+        )
+
+        return package
+
+    @classmethod
+    def ensure_product(cls, package):
+        if package.stripe_product_id:
+            return package.stripe_product_id
+
+        product = StripePlanService.client().v1.products.create(
+            params={
+                "name": cls.product_name(
+                    package
+                ),
+                "description": (
+                    package.description or None
+                ),
+                "active": package.is_active,
+                "metadata": cls.metadata(
+                    package
+                ),
+            },
+            options={
+                "idempotency_key": (
+                    cls.idempotency_key(
+                        package,
+                        "product",
+                    )
+                ),
+            },
+        )
+
+        product_id = _stripe_value(
+            product,
+            "id",
+        )
+
+        if not product_id:
+            raise StripeSyncError(
+                "Stripe não retornou o Product ID."
+            )
+
+        return product_id
+
+    @classmethod
+    def update_product(
+        cls,
+        package,
+        *,
+        product_id,
+    ):
+        StripePlanService.client().v1.products.update(
+            product_id,
+            params={
+                "name": cls.product_name(
+                    package
+                ),
+                "description": (
+                    package.description or None
+                ),
+                "active": package.is_active,
+                "metadata": cls.metadata(
+                    package
+                ),
+            },
+        )
+
+    @classmethod
+    def create_price(
+        cls,
+        package,
+        *,
+        product_id,
+        price_signature,
+    ):
+        price = StripePlanService.client().v1.prices.create(
+            params={
+                "product": product_id,
+                "currency": package.currency.lower(),
+                "unit_amount": StripePlanService.to_cents(
+                    package.price
+                ),
+                "active": package.is_active,
+                "metadata": {
+                    **cls.metadata(package),
+                    "maried_price_signature": price_signature,
+                },
+            },
+            options={
+                "idempotency_key": (
+                    cls.idempotency_key(
+                        package,
+                        f"price-{price_signature}",
+                    )
+                ),
+            },
+        )
+
+        price_id = _stripe_value(
+            price,
+            "id",
+        )
+
+        if not price_id:
+            raise StripeSyncError(
+                "Stripe não retornou o Price ID."
+            )
+
+        return price_id
+
+    @staticmethod
+    def product_name(package):
+        name = (
+            package.name
+            or package.slug
+            or "Pacote de créditos"
+        )
+
+        return f"MARIED STUDIO - {name}"
+
+    @classmethod
+    def metadata(cls, package):
+        return {
+            "integration": cls.INTEGRATION,
+            "maried_credit_package_id": str(package.pk),
+            "maried_credit_package_slug": package.slug,
+            "maried_credit_package_credits": str(package.credits),
+        }
+
+    @staticmethod
+    def price_signature(package):
+        return "|".join(
+            [
+                package.currency.lower(),
+                str(
+                    StripePlanService.to_cents(
+                        package.price
+                    )
+                ),
+                str(package.credits),
+            ]
+        )
+
+    @staticmethod
+    def idempotency_key(package, operation):
+        slug = slugify(operation) or "sync"
+
+        return (
+            f"maried-credit-package-{package.pk}-{slug}"
+        )
+
+
 class StripeBillingError(StripePlanError):
     pass
 
@@ -390,6 +611,10 @@ class StripeCheckoutRetryRequiredError(StripeBillingError):
 
 
 class StripeCheckoutProviderError(StripeBillingError):
+    pass
+
+
+class StripeCreditPurchaseSessionError(StripeBillingError):
     pass
 
 
@@ -498,6 +723,269 @@ def _stripe_id(
         "id",
         "",
     )
+
+
+def get_credit_purchase_for_payment(
+    *,
+    purchase_id,
+    checkout_session_id="",
+    payment_intent_id="",
+):
+    query = (
+        CreditPurchase.objects
+        .select_related(
+            "organization",
+            "subscription",
+            "package",
+        )
+        .filter(
+            pk=purchase_id,
+        )
+    )
+
+    if checkout_session_id:
+        query = query.filter(
+            stripe_checkout_session_id=checkout_session_id,
+        )
+
+    purchase = query.first()
+
+    if not purchase:
+        raise StripeBillingError(
+            "Compra de créditos não encontrada para pagamento Stripe."
+        )
+
+    if (
+        payment_intent_id
+        and purchase.stripe_payment_intent_id
+        and purchase.stripe_payment_intent_id != payment_intent_id
+    ):
+        raise StripeBillingError(
+            "PaymentIntent Stripe divergente para compra de créditos."
+        )
+
+    return purchase
+
+
+class CreditPurchaseCheckoutService:
+    @classmethod
+    def client(cls):
+        return StripePlanService.client()
+
+    @classmethod
+    def retrieve_session(cls, session_id):
+        try:
+            return (
+                cls.client()
+                .v1
+                .checkout
+                .sessions
+                .retrieve(session_id)
+            )
+
+        except Exception as exc:
+            raise StripeCreditPurchaseSessionError(
+                "Não foi possível consultar a sessão Stripe."
+            ) from exc
+
+    @classmethod
+    def expire_session(cls, session_id):
+        try:
+            return (
+                cls.client()
+                .v1
+                .checkout
+                .sessions
+                .expire(session_id)
+            )
+
+        except Exception as exc:
+            raise StripeCreditPurchaseSessionError(
+                "Não foi possível cancelar a tentativa no Stripe."
+            ) from exc
+
+    @classmethod
+    def sync_purchase_from_session(
+        cls,
+        *,
+        purchase,
+        session=None,
+        event_id="",
+    ):
+        if purchase.status != CreditPurchaseStatus.PENDING:
+            return purchase
+
+        if not purchase.stripe_checkout_session_id:
+            return purchase
+
+        session = session or cls.retrieve_session(
+            purchase.stripe_checkout_session_id
+        )
+
+        session_status = _stripe_value(
+            session,
+            "status",
+            "",
+        )
+        payment_status = _stripe_value(
+            session,
+            "payment_status",
+            "",
+        )
+
+        if (
+            session_status == "complete"
+            and payment_status == "paid"
+        ):
+            purchase, _applied = (
+                CreditPurchaseService
+                .apply_paid_purchase(
+                    purchase=purchase,
+                    stripe_customer_id=_stripe_id(
+                        _stripe_value(
+                            session,
+                            "customer",
+                            "",
+                        )
+                    ),
+                    stripe_payment_intent_id=_stripe_id(
+                        _stripe_value(
+                            session,
+                            "payment_intent",
+                            "",
+                        )
+                    ),
+                    amount_received=_stripe_value(
+                        session,
+                        "amount_total",
+                        None,
+                    ),
+                    currency=_stripe_value(
+                        session,
+                        "currency",
+                        "",
+                    ),
+                    event_id=event_id,
+                )
+            )
+
+            return purchase
+
+        if session_status == "expired":
+            with transaction.atomic():
+                purchase = (
+                    CreditPurchase.objects
+                    .select_for_update()
+                    .get(pk=purchase.pk)
+                )
+
+                if purchase.status == CreditPurchaseStatus.PENDING:
+                    purchase.status = CreditPurchaseStatus.EXPIRED
+                    purchase.error_message = ""
+                    purchase.save(
+                        update_fields=[
+                            "status",
+                            "error_message",
+                            "updated_at",
+                        ]
+                    )
+
+            return purchase
+
+        return purchase
+
+    @classmethod
+    def sync_pending_for_subscription(
+        cls,
+        subscription,
+        *,
+        limit=5,
+    ):
+        if not subscription:
+            return 0
+
+        purchases = (
+            CreditPurchase.objects
+            .filter(
+                subscription=subscription,
+                status=CreditPurchaseStatus.PENDING,
+                stripe_checkout_session_id__isnull=False,
+            )
+            .exclude(
+                stripe_checkout_session_id="",
+            )
+            .order_by("-created_at")[:limit]
+        )
+
+        synced = 0
+
+        for purchase in purchases:
+            try:
+                cls.sync_purchase_from_session(
+                    purchase=purchase
+                )
+                synced += 1
+
+            except StripeCreditPurchaseSessionError:
+                logger.info(
+                    "Credit purchase session sync skipped",
+                    extra={
+                        "credit_purchase_id": str(purchase.pk),
+                    },
+                )
+
+        return synced
+
+    @classmethod
+    def cancel_pending_purchase(
+        cls,
+        *,
+        purchase,
+    ):
+        if purchase.status == CreditPurchaseStatus.PAID:
+            return purchase
+
+        if purchase.status != CreditPurchaseStatus.PENDING:
+            return purchase
+
+        if not purchase.stripe_checkout_session_id:
+            return CreditPurchaseService.cancel_purchase_session(
+                purchase=purchase,
+                status=CreditPurchaseStatus.EXPIRED,
+            )
+
+        session = cls.retrieve_session(
+            purchase.stripe_checkout_session_id
+        )
+        session_status = _stripe_value(
+            session,
+            "status",
+            "",
+        )
+        payment_status = _stripe_value(
+            session,
+            "payment_status",
+            "",
+        )
+
+        if (
+            session_status == "complete"
+            and payment_status == "paid"
+        ):
+            return cls.sync_purchase_from_session(
+                purchase=purchase,
+                session=session,
+            )
+
+        if session_status == "open":
+            session = cls.expire_session(
+                purchase.stripe_checkout_session_id
+            )
+
+        return cls.sync_purchase_from_session(
+            purchase=purchase,
+            session=session,
+        )
 
 
 class StripeBillingService:
@@ -744,6 +1232,151 @@ class StripeBillingService:
         )
 
     @classmethod
+    def create_credit_checkout(
+        cls,
+        *,
+        user,
+        package,
+    ):
+        if user.is_superuser:
+            raise StripeCheckoutUnavailableError(
+                "SuperAdmin não utiliza checkout de cliente."
+            )
+
+        organization = getattr(
+            user,
+            "organization",
+            None,
+        )
+
+        if organization is None:
+            raise StripeCheckoutUnavailableError(
+                "Usuário não possui organização vinculada."
+            )
+
+        package = CreditPackage.objects.get(
+            pk=package.pk,
+        )
+
+        if not package.stripe_ready_for_checkout:
+            raise StripeCheckoutUnavailableError(
+                "Pacote indisponível para pagamento no momento."
+            )
+
+        subscription = (
+            Subscription.objects
+            .select_related("plan")
+            .filter(
+                organization=organization,
+            )
+            .first()
+        )
+
+        if not subscription:
+            raise StripeCheckoutUnavailableError(
+                "Assinatura ativa necessária para comprar créditos extras."
+            )
+
+        customer_id = cls.ensure_customer(
+            organization=organization,
+            user=user,
+        )
+        success_url = (
+            f"{cls.frontend_url()}"
+            "/creditos/sucesso"
+            "?session_id={CHECKOUT_SESSION_ID}"
+        )
+        cancel_url = (
+            f"{cls.frontend_url()}"
+            "/creditos?checkout=cancelled"
+        )
+        request_signature = cls.checkout_request_signature(
+            customer_id=customer_id,
+            price_id=package.stripe_price_id,
+            success_url=success_url,
+            cancel_url=cancel_url,
+        )
+
+        purchase, created = cls.create_or_reuse_credit_purchase(
+            organization=organization,
+            package=package,
+            subscription=subscription,
+            customer_id=customer_id,
+            request_signature=request_signature,
+        )
+
+        if not created:
+            return cls.credit_purchase_response(
+                purchase
+            )
+
+        session = cls.create_credit_checkout_session(
+            purchase=purchase,
+            organization=organization,
+            package=package,
+            customer_id=customer_id,
+            success_url=success_url,
+            cancel_url=cancel_url,
+        )
+
+        cls.update_credit_purchase_from_session(
+            purchase,
+            session,
+        )
+
+        return cls.credit_purchase_response(
+            purchase
+        )
+
+    @classmethod
+    def create_or_reuse_credit_purchase(
+        cls,
+        *,
+        organization,
+        package,
+        subscription,
+        customer_id,
+        request_signature,
+    ):
+        purchase, created = (
+            CreditPurchaseService
+            .create_pending_purchase(
+                organization=organization,
+                package=package,
+                subscription=subscription,
+                stripe_customer_id=customer_id,
+                request_signature=request_signature,
+            )
+        )
+
+        if created:
+            return purchase, created
+
+        synced_purchase = (
+            CreditPurchaseCheckoutService
+            .sync_purchase_from_session(
+                purchase=purchase
+            )
+        )
+
+        if (
+            synced_purchase.status
+            == CreditPurchaseStatus.PENDING
+        ):
+            return synced_purchase, False
+
+        return (
+            CreditPurchaseService
+            .create_pending_purchase(
+                organization=organization,
+                package=package,
+                subscription=subscription,
+                stripe_customer_id=customer_id,
+                request_signature=request_signature,
+            )
+        )
+
+    @classmethod
     def create_checkout_session(
         cls,
         *,
@@ -844,6 +1477,130 @@ class StripeBillingService:
         )
 
     @classmethod
+    def create_credit_checkout_session(
+        cls,
+        *,
+        purchase,
+        organization,
+        package,
+        customer_id,
+        success_url,
+        cancel_url,
+    ):
+        try:
+            return cls.client().v1.checkout.sessions.create(
+                params={
+                    "mode": "payment",
+                    "customer": customer_id,
+                    "line_items": [
+                        {
+                            "price": package.stripe_price_id,
+                            "quantity": 1,
+                        },
+                    ],
+                    "success_url": success_url,
+                    "cancel_url": cancel_url,
+                    "metadata": cls.credit_checkout_metadata(
+                        organization=organization,
+                        package=package,
+                        purchase=purchase,
+                    ),
+                    "payment_intent_data": {
+                        "metadata": cls.credit_checkout_metadata(
+                            organization=organization,
+                            package=package,
+                            purchase=purchase,
+                        ),
+                    },
+                    "integration_identifier": (
+                        cls.integration_identifier()
+                    ),
+                },
+                options={
+                    "idempotency_key": (
+                        purchase.stripe_idempotency_key
+                    ),
+                },
+            )
+
+        except Exception as exc:
+            if cls.is_stripe_idempotency_error(
+                exc
+            ):
+                raise StripeCheckoutRetryRequiredError(
+                    "Não foi possível iniciar o pagamento. Tente novamente."
+                ) from exc
+
+            raise StripeCheckoutProviderError(
+                "Não foi possível iniciar o pagamento. Tente novamente."
+            ) from exc
+
+    @classmethod
+    def update_credit_purchase_from_session(
+        cls,
+        purchase,
+        session,
+    ):
+        url = _stripe_value(
+            session,
+            "url",
+        )
+        session_id = _stripe_value(
+            session,
+            "id",
+        )
+        payment_intent_id = _stripe_id(
+            _stripe_value(
+                session,
+                "payment_intent",
+                "",
+            )
+        )
+
+        if not url or not session_id:
+            raise StripeBillingError(
+                "Stripe não retornou Checkout Session válida."
+            )
+
+        purchase.stripe_checkout_session_id = session_id
+        purchase.stripe_checkout_url = url
+        purchase.stripe_payment_intent_id = (
+            payment_intent_id
+            or purchase.stripe_payment_intent_id
+        )
+        purchase.expires_at = _stripe_timestamp(
+            _stripe_value(
+                session,
+                "expires_at",
+            )
+        )
+        purchase.error_message = ""
+        purchase.save(
+            update_fields=[
+                "stripe_checkout_session_id",
+                "stripe_checkout_url",
+                "stripe_payment_intent_id",
+                "expires_at",
+                "error_message",
+                "updated_at",
+            ]
+        )
+
+    @classmethod
+    def credit_purchase_response(
+        cls,
+        purchase,
+    ):
+        return {
+            "purchase_id": str(purchase.pk),
+            "checkout_session_id": (
+                purchase.stripe_checkout_session_id
+            ),
+            "url": purchase.stripe_checkout_url,
+            "status": purchase.status,
+        }
+
+    @classmethod
     def checkout_attempt_response(
         cls,
         attempt,
@@ -941,6 +1698,21 @@ class StripeBillingService:
         return metadata
 
     @classmethod
+    def credit_checkout_metadata(
+        cls,
+        *,
+        organization,
+        package,
+        purchase,
+    ):
+        return {
+            "integration": cls.INTEGRATION,
+            "maried_organization_id": str(organization.pk),
+            "maried_credit_package_id": str(package.pk),
+            "maried_credit_purchase_id": str(purchase.pk),
+        }
+
+    @classmethod
     def checkout_idempotency_key(
         cls,
         *,
@@ -988,6 +1760,7 @@ class StripeWebhookService:
         "invoice.payment_succeeded",
         "invoice_payment.paid",
         "invoice.payment_failed",
+        "payment_intent.succeeded",
         "customer.subscription.updated",
         "customer.subscription.deleted",
     }
@@ -1088,6 +1861,9 @@ class StripeWebhookService:
                 "invoice.payment_failed": (
                     cls._handle_invoice_payment_failed
                 ),
+                "payment_intent.succeeded": (
+                    cls._handle_payment_intent_succeeded
+                ),
                 "customer.subscription.updated": (
                     cls._handle_subscription_updated
                 ),
@@ -1176,6 +1952,17 @@ class StripeWebhookService:
             "metadata",
             "maried_checkout_attempt_id",
         )
+        purchase_id = _stripe_path(
+            checkout_session,
+            "metadata",
+            "maried_credit_purchase_id",
+        )
+
+        if purchase_id:
+            return cls._handle_credit_checkout_completed(
+                checkout_session,
+                webhook_event=webhook_event,
+            )
 
         subscription = None
 
@@ -1316,6 +2103,162 @@ class StripeWebhookService:
             "stripe_subscription_id": stripe_subscription_id,
             "stripe_invoice_id": invoice_id,
             "cycle_type": cycle_type,
+            "applied": applied,
+        }
+
+    @classmethod
+    def _handle_credit_checkout_completed(
+        cls,
+        checkout_session,
+        *,
+        webhook_event,
+    ):
+        if (
+            _stripe_value(
+                checkout_session,
+                "payment_status",
+                "",
+            )
+            != "paid"
+        ):
+            raise StripeBillingError(
+                "Checkout de créditos concluído sem pagamento confirmado."
+            )
+
+        purchase_id = _stripe_path(
+            checkout_session,
+            "metadata",
+            "maried_credit_purchase_id",
+        )
+        stripe_customer_id = _stripe_id(
+            _stripe_value(
+                checkout_session,
+                "customer",
+                "",
+            )
+        )
+        payment_intent_id = _stripe_id(
+            _stripe_value(
+                checkout_session,
+                "payment_intent",
+                "",
+            )
+        )
+
+        if not purchase_id:
+            raise StripeBillingError(
+                "Checkout de créditos sem compra vinculada."
+            )
+
+        purchase = get_credit_purchase_for_payment(
+            purchase_id=purchase_id,
+            checkout_session_id=_stripe_id(
+                checkout_session
+            ),
+        )
+
+        purchase, applied = (
+            CreditPurchaseService
+            .apply_paid_purchase(
+                purchase=purchase,
+                stripe_customer_id=stripe_customer_id,
+                stripe_payment_intent_id=payment_intent_id,
+                amount_received=_stripe_value(
+                    checkout_session,
+                    "amount_total",
+                    None,
+                ),
+                currency=_stripe_value(
+                    checkout_session,
+                    "currency",
+                    "",
+                ),
+                event_id=webhook_event.stripe_event_id,
+            )
+        )
+
+        return {
+            "organization": purchase.organization,
+            "subscription": purchase.subscription,
+            "stripe_customer_id": stripe_customer_id,
+            "stripe_subscription_id": "",
+            "stripe_invoice_id": "",
+            "cycle_type": "CREDIT_PURCHASE",
+            "applied": applied,
+        }
+
+    @classmethod
+    def _handle_payment_intent_succeeded(
+        cls,
+        payment_intent,
+        *,
+        webhook_event,
+    ):
+        purchase_id = _stripe_path(
+            payment_intent,
+            "metadata",
+            "maried_credit_purchase_id",
+        )
+        payment_intent_id = _stripe_id(
+            payment_intent
+        )
+
+        if purchase_id:
+            purchase = get_credit_purchase_for_payment(
+                purchase_id=purchase_id,
+                payment_intent_id=payment_intent_id,
+            )
+        else:
+            purchase = (
+                CreditPurchase.objects
+                .select_related(
+                    "organization",
+                    "subscription",
+                )
+                .filter(
+                    stripe_payment_intent_id=payment_intent_id,
+                )
+                .first()
+            )
+
+        if not purchase:
+            raise StripeBillingError(
+                "PaymentIntent pago sem compra de créditos vinculada."
+            )
+
+        purchase, applied = (
+            CreditPurchaseService
+            .apply_paid_purchase(
+                purchase=purchase,
+                stripe_customer_id=_stripe_id(
+                    _stripe_value(
+                        payment_intent,
+                        "customer",
+                        "",
+                    )
+                ),
+                stripe_payment_intent_id=payment_intent_id,
+                amount_received=_stripe_value(
+                    payment_intent,
+                    "amount_received",
+                    None,
+                ),
+                currency=_stripe_value(
+                    payment_intent,
+                    "currency",
+                    "",
+                ),
+                event_id=webhook_event.stripe_event_id,
+            )
+        )
+
+        return {
+            "organization": purchase.organization,
+            "subscription": purchase.subscription,
+            "stripe_customer_id": purchase.stripe_customer_id,
+            "stripe_subscription_id": "",
+            "stripe_invoice_id": "",
+            "cycle_type": "CREDIT_PURCHASE",
             "applied": applied,
         }
 

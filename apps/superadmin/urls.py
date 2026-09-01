@@ -7,6 +7,10 @@ from .views import (
     SuperAdminClientDetailView,
     SuperAdminClientListCreateView,
     SuperAdminClientStripeReconcileView,
+    SuperAdminCreditPackageDetailView,
+    SuperAdminCreditPackageListView,
+    SuperAdminCreditPackageStripeSyncView,
+    SuperAdminCreditPurchaseListView,
     SuperAdminCreditWalletListView,
     SuperAdminGenerationDetailView,
     SuperAdminGenerationListView,
@@ -114,6 +118,26 @@ urlpatterns = [
         "credit-wallets/",
         SuperAdminCreditWalletListView.as_view(),
         name="credit-wallets",
+    ),
+    path(
+        "credit-packages/",
+        SuperAdminCreditPackageListView.as_view(),
+        name="credit-packages",
+    ),
+    path(
+        "credit-packages/<uuid:pk>/",
+        SuperAdminCreditPackageDetailView.as_view(),
+        name="credit-package-detail",
+    ),
+    path(
+        "credit-packages/<uuid:pk>/stripe-sync/",
+        SuperAdminCreditPackageStripeSyncView.as_view(),
+        name="credit-package-stripe-sync",
+    ),
+    path(
+        "credit-purchases/",
+        SuperAdminCreditPurchaseListView.as_view(),
+        name="credit-purchases",
     ),
     path(
         "generations/",
