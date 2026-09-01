@@ -13,6 +13,10 @@ import {
 } from "@/providers/credit-wallet-provider";
 
 import {
+  BillingAccessProvider,
+} from "@/providers/billing-access-provider";
+
+import {
   ProfileProvider,
 } from "@/providers/profile-provider";
 
@@ -60,9 +64,13 @@ export default function RootLayout({
 
           <CreditWalletProvider>
 
-            {
-              children
-            }
+            <BillingAccessProvider>
+
+              {
+                children
+              }
+
+            </BillingAccessProvider>
 
           </CreditWalletProvider>
 

@@ -8,7 +8,13 @@ from django.utils import timezone
 from apps.credits.models import CreditWallet
 from apps.credits.services import CreditService
 
-from .models import BillingCycle, Plan, Subscription, SubscriptionStatus
+from .models import (
+    BillingCycle,
+    Plan,
+    StripeInvoiceRecord,
+    Subscription,
+    SubscriptionStatus,
+)
 
 
 class BillingError(Exception):
@@ -337,6 +343,65 @@ class SubscriptionService:
 
     @staticmethod
     @transaction.atomic
+    def create_pending(
+        *,
+        organization,
+        plan,
+    ):
+        plan = (
+            Plan.objects
+            .select_for_update()
+            .get(
+                pk=plan.pk,
+            )
+        )
+
+        SubscriptionService._validate_plan_for_activation(
+            plan
+        )
+
+        subscription = (
+            Subscription.objects
+            .select_for_update()
+            .filter(
+                organization=organization,
+            )
+            .first()
+        )
+
+        if (
+            subscription
+            and subscription.status == SubscriptionStatus.ACTIVE
+        ):
+            raise SubscriptionAlreadyActiveError(
+                "OrganizaÃ§Ã£o jÃ¡ possui assinatura ativa."
+            )
+
+        if subscription is None:
+            subscription = Subscription(
+                organization=organization,
+            )
+
+        subscription.plan = plan
+        subscription.status = SubscriptionStatus.PENDING
+        subscription.price_snapshot = plan.price
+        subscription.credits_snapshot = plan.credits_per_cycle
+        subscription.started_at = None
+        subscription.current_period_start = None
+        subscription.current_period_end = None
+        subscription.next_billing_at = None
+        subscription.cancel_at_period_end = False
+        subscription.canceled_at = None
+        subscription.save()
+
+        SubscriptionService._wallet_for_organization(
+            organization
+        )
+
+        return subscription
+
+    @staticmethod
+    @transaction.atomic
     def renew_current_cycle(
         *,
         subscription,
@@ -403,6 +468,184 @@ class SubscriptionService:
             wallet,
             subscription.credits_snapshot,
             actor=actor,
+        )
+
+        return subscription
+
+    @staticmethod
+    @transaction.atomic
+    def apply_paid_stripe_invoice(
+        *,
+        organization,
+        plan,
+        stripe_invoice_id,
+        stripe_customer_id,
+        stripe_subscription_id,
+        stripe_price_id,
+        stripe_status,
+        period_start,
+        period_end,
+        event_id,
+    ):
+        existing_invoice = (
+            StripeInvoiceRecord.objects
+            .select_related(
+                "subscription",
+            )
+            .filter(
+                stripe_invoice_id=stripe_invoice_id,
+            )
+            .first()
+        )
+
+        if existing_invoice:
+            return (
+                existing_invoice.subscription,
+                existing_invoice.cycle_type,
+                False,
+            )
+
+        plan = (
+            Plan.objects
+            .select_for_update()
+            .get(
+                pk=plan.pk,
+            )
+        )
+
+        subscription = (
+            Subscription.objects
+            .select_for_update()
+            .filter(
+                organization=organization,
+            )
+            .first()
+        )
+
+        is_first_cycle = (
+            subscription is None
+            or not subscription.last_processed_stripe_invoice_id
+        )
+
+        if is_first_cycle:
+            SubscriptionService._validate_plan_for_activation(
+                plan
+            )
+        elif (
+            plan.billing_cycle
+            != BillingCycle.MONTHLY
+        ):
+            raise UnsupportedBillingCycleError(
+                "Somente ciclo mensal Ã© suportado na V1."
+            )
+
+        if subscription is None:
+            subscription = Subscription(
+                organization=organization,
+                started_at=period_start,
+            )
+
+        subscription.plan = plan
+        subscription.status = SubscriptionStatus.ACTIVE
+        subscription.price_snapshot = plan.price
+        subscription.credits_snapshot = plan.credits_per_cycle
+
+        if is_first_cycle:
+            subscription.started_at = (
+                subscription.started_at
+                or period_start
+            )
+
+        subscription.current_period_start = period_start
+        subscription.current_period_end = period_end
+        subscription.next_billing_at = period_end
+        subscription.cancel_at_period_end = False
+        subscription.canceled_at = None
+        subscription.stripe_customer_id = stripe_customer_id
+        subscription.stripe_subscription_id = (
+            stripe_subscription_id
+        )
+        subscription.stripe_price_id = stripe_price_id
+        subscription.stripe_status = stripe_status
+        subscription.last_processed_stripe_invoice_id = (
+            stripe_invoice_id
+        )
+        subscription.save()
+
+        wallet = SubscriptionService._wallet_for_organization(
+            organization
+        )
+
+        CreditService.renew_plan_credits(
+            wallet,
+            subscription.credits_snapshot,
+            description=(
+                "CrÃ©ditos do ciclo pago via Stripe."
+            ),
+        )
+
+        cycle_type = (
+            "FIRST"
+            if is_first_cycle
+            else "RENEWAL"
+        )
+
+        StripeInvoiceRecord.objects.create(
+            stripe_invoice_id=stripe_invoice_id,
+            organization=organization,
+            subscription=subscription,
+            stripe_subscription_id=stripe_subscription_id,
+            stripe_customer_id=stripe_customer_id,
+            stripe_price_id=stripe_price_id,
+            period_start=period_start,
+            period_end=period_end,
+            processed_event_id=event_id,
+            cycle_type=cycle_type,
+        )
+
+        return (
+            subscription,
+            cycle_type,
+            True,
+        )
+
+    @staticmethod
+    @transaction.atomic
+    def mark_stripe_payment_failed(
+        *,
+        stripe_subscription_id,
+        stripe_customer_id="",
+        stripe_status="past_due",
+    ):
+        subscription = (
+            Subscription.objects
+            .select_for_update()
+            .filter(
+                stripe_subscription_id=stripe_subscription_id,
+            )
+            .first()
+        )
+
+        if not subscription:
+            return None
+
+        if subscription.last_processed_stripe_invoice_id:
+            subscription.status = SubscriptionStatus.PAST_DUE
+        else:
+            subscription.status = SubscriptionStatus.PENDING
+
+        subscription.stripe_customer_id = (
+            stripe_customer_id
+            or subscription.stripe_customer_id
+        )
+        subscription.stripe_status = stripe_status
+        subscription.save(
+            update_fields=[
+                "status",
+                "stripe_customer_id",
+                "stripe_status",
+                "updated_at",
+            ]
         )
 
         return subscription

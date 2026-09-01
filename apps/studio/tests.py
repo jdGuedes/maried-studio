@@ -18,7 +18,7 @@ from apps.ai.models import ModelReference
 from apps.ai.providers.openai import GeneratedAsset
 from apps.ai.services.prompt_engine import PromptEngine
 from apps.billing.models import BillingCycle, Plan, Subscription, SubscriptionStatus
-from apps.billing.services import SubscriptionRequiredError
+from apps.billing.services import SubscriptionRequiredError, SubscriptionService
 from apps.credits.models import CreditTransaction, CreditTransactionType
 from apps.credits.models import CreditWallet
 from apps.organizations.models import Organization
@@ -1221,6 +1221,38 @@ class GenerationSubscriptionAccessTests(APITestCase):
         self.assertFalse(
             Generation.objects.filter(
                 idempotency_key="generation-blocked-plan-credits",
+            ).exists()
+        )
+
+        self.assertFalse(
+            CreditTransaction.objects.filter(
+                wallet=self.wallet,
+            ).exists()
+        )
+
+    def test_pending_subscription_rejects_generation_request(self):
+        SubscriptionService.create_pending(
+            organization=self.organization,
+            plan=self.plan,
+        )
+
+        with self.assertRaises(
+            SubscriptionRequiredError
+        ):
+            self.create_request(
+                "generation-pending-subscription"
+            )
+
+        self.wallet.refresh_from_db()
+
+        self.assertEqual(
+            self.wallet.reserved_balance,
+            0,
+        )
+
+        self.assertFalse(
+            Generation.objects.filter(
+                idempotency_key="generation-pending-subscription",
             ).exists()
         )
 

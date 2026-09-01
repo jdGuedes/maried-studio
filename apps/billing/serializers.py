@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from .models import Plan
 from .services import BillingAccessService
 
 
@@ -102,3 +103,48 @@ class CurrentSubscriptionSerializer(serializers.Serializer):
         return cls(
             data
         )
+
+
+class AvailablePlanSerializer(
+    serializers.ModelSerializer
+):
+    class Meta:
+        model = Plan
+        fields = [
+            "id",
+            "name",
+            "description",
+            "price",
+            "billing_cycle",
+            "credits_per_cycle",
+            "stripe_ready_for_checkout",
+        ]
+
+
+class SubscriptionCheckoutSerializer(
+    serializers.Serializer
+):
+    plan_id = serializers.UUIDField()
+
+    def validate_plan_id(
+        self,
+        value,
+    ):
+        try:
+            plan = Plan.objects.get(
+                pk=value,
+            )
+
+        except Plan.DoesNotExist as exc:
+            raise serializers.ValidationError(
+                "Plano indisponÃ­vel para pagamento no momento."
+            ) from exc
+
+        if not plan.stripe_ready_for_checkout:
+            raise serializers.ValidationError(
+                "Plano indisponÃ­vel para pagamento no momento."
+            )
+
+        self.context["plan"] = plan
+
+        return value

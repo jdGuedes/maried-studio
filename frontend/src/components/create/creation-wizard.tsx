@@ -35,6 +35,10 @@ import {
   useCreditWallet,
 } from "@/providers/credit-wallet-provider";
 
+import {
+  useBillingAccess,
+} from "@/providers/billing-access-provider";
+
 import type {
   Generation,
   ModelReference,
@@ -228,6 +232,16 @@ export function CreationWizard({
     setWalletFromGeneration,
   } =
     useCreditWallet();
+
+
+  const {
+    loading:
+      loadingBillingAccess,
+    canOperateStudio,
+    accessMessage,
+    accessCtaLabel,
+  } =
+    useBillingAccess();
 
 
   // =======================================================
@@ -519,6 +533,24 @@ export function CreationWizard({
       );
     };
   }, [preview]);
+
+
+  useEffect(() => {
+    if (
+      loadingBillingAccess ||
+      canOperateStudio
+    ) {
+      return;
+    }
+
+    router.replace(
+      "/assinatura"
+    );
+  }, [
+    loadingBillingAccess,
+    canOperateStudio,
+    router,
+  ]);
 
 
   // =======================================================
@@ -1335,6 +1367,20 @@ export function CreationWizard({
     }
 
     if (
+      !canOperateStudio
+    ) {
+      setGenerationError(
+        accessMessage
+      );
+
+      router.replace(
+        "/assinatura"
+      );
+
+      return;
+    }
+
+    if (
       creationSource ===
         "NEW_PRODUCT" &&
       !file
@@ -1944,6 +1990,62 @@ export function CreationWizard({
   // =======================================================
   // RENDER
   // =======================================================
+
+  if (
+    loadingBillingAccess
+  ) {
+    return (
+      <main className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+        <div className="mx-auto flex min-h-[420px] max-w-[900px] items-center justify-center">
+          <div className="flex items-center gap-3 text-sm text-[var(--maried-cocoa)]">
+            <LoaderCircle
+              size={
+                18
+              }
+              className="animate-spin text-[var(--maried-gold)]"
+            />
+            Verificando assinatura...
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+
+  if (
+    !canOperateStudio
+  ) {
+    return (
+      <main className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+        <div className="mx-auto flex min-h-[420px] max-w-[900px] items-center justify-center">
+          <section className="maried-card max-w-md p-6 text-center">
+            <Sparkles
+              size={
+                28
+              }
+              className="mx-auto text-[var(--maried-gold)]"
+            />
+
+            <h1 className="mt-4 text-lg font-semibold text-[var(--maried-espresso)]">
+              Assinatura necessária
+            </h1>
+
+            <p className="mt-2 text-sm leading-6 text-[var(--maried-cocoa)]">
+              {accessMessage}
+            </p>
+
+            <Link
+              href="/assinatura"
+              className="mt-5 inline-flex h-11 items-center justify-center rounded-xl bg-[var(--maried-gold)] px-5 text-sm font-medium text-white"
+            >
+              {accessCtaLabel}
+            </Link>
+          </section>
+        </div>
+      </main>
+    );
+  }
+
 
   return (
     <main className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8">

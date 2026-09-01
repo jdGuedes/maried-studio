@@ -6,6 +6,7 @@ from .views import (
     SuperAdminClientActivateSubscriptionView,
     SuperAdminClientDetailView,
     SuperAdminClientListCreateView,
+    SuperAdminClientStripeReconcileView,
     SuperAdminCreditWalletListView,
     SuperAdminGenerationDetailView,
     SuperAdminGenerationListView,
@@ -13,6 +14,7 @@ from .views import (
     SuperAdminOrganizationListView,
     SuperAdminPlanDetailView,
     SuperAdminPlanListView,
+    SuperAdminPlanStripeSyncView,
     SuperAdminSceneTemplateDetailView,
     SuperAdminSceneTemplateListCreateView,
     SuperAdminSubscriptionDetailView,
@@ -54,6 +56,11 @@ urlpatterns = [
         name="client-activate-subscription",
     ),
     path(
+        "clients/<uuid:pk>/stripe-reconcile/",
+        SuperAdminClientStripeReconcileView.as_view(),
+        name="client-stripe-reconcile",
+    ),
+    path(
         "organizations/",
         SuperAdminOrganizationListView.as_view(),
         name="organizations",
@@ -82,6 +89,11 @@ urlpatterns = [
         "plans/<uuid:pk>/",
         SuperAdminPlanDetailView.as_view(),
         name="plan-detail",
+    ),
+    path(
+        "plans/<uuid:pk>/stripe-sync/",
+        SuperAdminPlanStripeSyncView.as_view(),
+        name="plan-stripe-sync",
     ),
     path(
         "subscriptions/",

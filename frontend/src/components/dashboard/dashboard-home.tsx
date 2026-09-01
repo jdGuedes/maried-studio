@@ -35,6 +35,10 @@ import {
 } from "@/providers/credit-wallet-provider";
 
 import {
+  useBillingAccess,
+} from "@/providers/billing-access-provider";
+
+import {
   useProfile,
 } from "@/providers/profile-provider";
 
@@ -270,6 +274,13 @@ export function DashboardHome() {
     refreshWallet,
   } =
     useCreditWallet();
+
+
+  const {
+    canOperateStudio,
+    accessCtaLabel,
+  } =
+    useBillingAccess();
 
 
   // ========================================================
@@ -700,7 +711,11 @@ export function DashboardHome() {
 
 
           <motion.a
-            href="/criar"
+            href={
+              canOperateStudio
+                ? "/criar"
+                : "/assinatura"
+            }
 
             whileHover={{
               y:
@@ -721,7 +736,9 @@ export function DashboardHome() {
               }
             />
 
-            Nova criação
+            {canOperateStudio
+              ? "Nova criação"
+              : accessCtaLabel}
 
           </motion.a>
 

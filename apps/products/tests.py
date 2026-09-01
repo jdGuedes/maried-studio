@@ -15,6 +15,7 @@ from PIL import Image
 from rest_framework.test import APITestCase, APITransactionTestCase
 
 from apps.billing.models import BillingCycle, Plan, Subscription, SubscriptionStatus
+from apps.billing.services import SubscriptionService
 from apps.credits.models import CreditTransaction, CreditTransactionType, CreditWallet
 from apps.organizations.models import Organization
 from apps.studio.models import Generation, GeneratedImage, GenerationMode, GenerationStatus
@@ -221,6 +222,31 @@ class ProductSubscriptionAccessTests(APITestCase):
             ),
         ):
             response = self.post_product()
+
+        self.assertEqual(
+            response.status_code,
+            403,
+        )
+
+        self.assertEqual(
+            response.data["code"],
+            "SUBSCRIPTION_REQUIRED",
+        )
+
+        self.assertFalse(
+            Product.objects.filter(
+                organization=self.organization,
+                name="Produto Teste",
+            ).exists()
+        )
+
+    def test_pending_subscription_rejects_product_creation(self):
+        SubscriptionService.create_pending(
+            organization=self.organization,
+            plan=self.plan,
+        )
+
+        response = self.post_product()
 
         self.assertEqual(
             response.status_code,

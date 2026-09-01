@@ -56,6 +56,10 @@ import {
   normalizePage,
 } from "@/lib/pagination";
 
+import {
+  useBillingAccess,
+} from "@/providers/billing-access-provider";
+
 
 // ==========================================================
 // CATEGORIAS
@@ -185,6 +189,12 @@ function ProductsContent() {
     useRef<number | null>(
       null
     );
+
+  const {
+    canOperateStudio,
+    accessCtaLabel,
+  } =
+    useBillingAccess();
 
   const [
     products,
@@ -732,7 +742,11 @@ function ProductsContent() {
 
 
           <Link
-            href="/criar"
+            href={
+              canOperateStudio
+                ? "/criar"
+                : "/assinatura"
+            }
 
             className="flex h-11 items-center justify-center gap-2 rounded-xl bg-[var(--maried-gold)] px-5 text-sm font-medium text-white"
           >
@@ -743,7 +757,9 @@ function ProductsContent() {
               }
             />
 
-            Nova peça
+            {canOperateStudio
+              ? "Nova peça"
+              : accessCtaLabel}
 
           </Link>
 
@@ -1362,7 +1378,11 @@ function ProductsContent() {
 
 
             <Link
-              href="/criar"
+              href={
+                canOperateStudio
+                  ? "/criar"
+                  : "/assinatura"
+              }
 
               className="mt-5 flex h-10 items-center gap-2 rounded-xl bg-[var(--maried-gold)] px-4 text-xs font-medium text-white"
             >
@@ -1373,7 +1393,9 @@ function ProductsContent() {
                 }
               />
 
-              Nova peça
+              {canOperateStudio
+                ? "Nova peça"
+                : accessCtaLabel}
 
             </Link>
 
@@ -1557,7 +1579,9 @@ function ProductsContent() {
 
                       <Link
                         href={
-                          `/criar?product=${selectedProduct.id}`
+                          canOperateStudio
+                            ? `/criar?product=${selectedProduct.id}`
+                            : "/assinatura"
                         }
 
                         className="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[var(--maried-coffee)] text-xs font-medium text-white"
@@ -1569,7 +1593,9 @@ function ProductsContent() {
                           }
                         />
 
-                        Criar nova imagem
+                        {canOperateStudio
+                          ? "Criar nova imagem"
+                          : accessCtaLabel}
 
                       </Link>
 

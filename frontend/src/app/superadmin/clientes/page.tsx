@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useEffect, useState, type FormEvent } from "react";
@@ -126,7 +126,7 @@ export default function SuperAdminClientesPage() {
     try {
       await createSuperAdminClient(form);
       setForm(emptyForm);
-      setMessage("Cliente criado com assinatura e créditos do plano.");
+      setMessage("Cliente criado com plano pendente de pagamento.");
       await load();
     } catch (error) {
       setError(error instanceof Error ? error.message : "Erro ao criar cliente.");
@@ -155,7 +155,7 @@ export default function SuperAdminClientesPage() {
   return (
     <SuperAdminShell
       title="Clientes"
-      subtitle="Contas operacionais da V1: Organization, usuário principal, assinatura e carteira."
+      subtitle="Contas operacionais da V1: Organization, usuÃ¡rio principal, assinatura e carteira."
     >
       <div className="grid gap-5 xl:grid-cols-[360px_1fr]">
         <AdminCard>
@@ -179,7 +179,7 @@ export default function SuperAdminClientesPage() {
                 <option value="">Selecione</option>
                 {activePlans.map((plan) => (
                   <option key={plan.id} value={plan.id}>
-                    {plan.name} · {plan.credits_per_cycle} créditos
+                    {plan.name} Â· {plan.credits_per_cycle} crÃ©ditos
                   </option>
                 ))}
               </select>
@@ -234,7 +234,7 @@ export default function SuperAdminClientesPage() {
                       <th>E-mail</th>
                       <th>Plano</th>
                       <th>Assinatura</th>
-                      <th>Créditos</th>
+                      <th>CrÃ©ditos</th>
                       <th>Conta</th>
                       <th></th>
                     </tr>

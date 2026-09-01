@@ -418,8 +418,52 @@ OPENAI_IMAGE_SIZE = os.getenv(
 
 
 # ============================================================
+# STRIPE
+# ============================================================
+
+STRIPE_SECRET_KEY = (
+    require_env("STRIPE_SECRET_KEY")
+    if IS_PRODUCTION
+    else os.getenv(
+        "STRIPE_SECRET_KEY",
+        "",
+    )
+)
+
+STRIPE_PUBLISHABLE_KEY = os.getenv(
+    "STRIPE_PUBLISHABLE_KEY",
+    "",
+)
+
+STRIPE_WEBHOOK_SECRET = os.getenv(
+    "STRIPE_WEBHOOK_SECRET",
+    "",
+)
+
+STRIPE_CURRENCY = os.getenv(
+    "STRIPE_CURRENCY",
+    "brl",
+).lower()
+
+STRIPE_API_VERSION = os.getenv(
+    "STRIPE_API_VERSION",
+    "2026-07-29.dahlia",
+)
+
+STRIPE_ALLOW_LIVE_MODE = env_bool(
+    "STRIPE_ALLOW_LIVE_MODE",
+    default=False,
+)
+
+
+# ============================================================
 # FRONTEND LOCAL - NEXT.JS
 # ============================================================
+
+FRONTEND_URL = os.getenv(
+    "FRONTEND_URL",
+    "http://localhost:3000",
+).rstrip("/")
 
 CORS_ALLOWED_ORIGINS = env_list(
     "DJANGO_CORS_ALLOWED_ORIGINS",

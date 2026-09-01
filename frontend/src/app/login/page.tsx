@@ -22,6 +22,11 @@ import {
 } from "@/lib/api";
 
 import {
+  canOperateStudioFromSubscription,
+  getCurrentSubscription,
+} from "@/lib/subscription";
+
+import {
   useProfile,
 } from "@/providers/profile-provider";
 
@@ -162,8 +167,24 @@ export default function LoginPage() {
 
       await refreshWallet();
 
+      if (
+        response.user.is_superuser
+      ) {
+        router.replace(
+          "/superadmin"
+        );
+        return;
+      }
+
+      const subscription =
+        await getCurrentSubscription();
+
       router.replace(
-        resolveNextPath()
+        canOperateStudioFromSubscription(
+          subscription
+        )
+          ? resolveNextPath()
+          : "/assinatura"
       );
 
     } catch (error) {

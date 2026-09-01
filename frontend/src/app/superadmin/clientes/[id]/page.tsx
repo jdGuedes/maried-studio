@@ -15,7 +15,7 @@ import {
   adjustSuperAdminCredits,
   getSuperAdminClient,
   getSuperAdminPlans,
-  renewSuperAdminSubscription,
+  reconcileSuperAdminClientStripe,
   updateSuperAdminOrganization,
   updateSuperAdminUser,
   type SuperAdminClientDetail,
@@ -155,9 +155,11 @@ export default function SuperAdminClienteDetalhePage() {
     try {
       await action();
       await load();
-      setMessage(success);
+      if (success) {
+        setMessage(success);
+      }
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Operação não concluída.");
+      setError(error instanceof Error ? error.message : "Operacao nao concluida.");
     } finally {
       setSaving(false);
     }
@@ -178,7 +180,7 @@ export default function SuperAdminClienteDetalhePage() {
       return;
     }
 
-    if (!window.confirm("Confirmar ajuste manual de créditos?")) {
+    if (!window.confirm("Confirmar ajuste manual de creditos?")) {
       return;
     }
 
@@ -193,14 +195,44 @@ export default function SuperAdminClienteDetalhePage() {
         setQuantity("");
         setReason("");
       },
-      "Créditos ajustados com auditoria."
+      "Creditos ajustados com auditoria."
+    );
+  }
+
+  async function handleStripeReconcile() {
+    if (!client) {
+      return;
+    }
+
+    if (
+      !window.confirm(
+        "Consultar o Stripe e sincronizar o estado financeiro desta assinatura?\n\nEsta acao nao cria uma nova cobranca."
+      )
+    ) {
+      return;
+    }
+
+    await runAction(
+      async () => {
+        const result =
+          await reconcileSuperAdminClientStripe(
+            client.id
+          );
+
+        setMessage(
+          result.applied
+            ? "Pagamento encontrado no Stripe e assinatura sincronizada."
+            : "Esta assinatura ja esta sincronizada com o Stripe."
+        );
+      },
+      ""
     );
   }
 
   return (
     <SuperAdminShell
       title={client?.name ?? "Cliente"}
-      subtitle="Ficha operacional: conta, assinatura, créditos e uso."
+      subtitle="Ficha operacional: conta, assinatura, creditos e uso."
     >
       {error ? <StatusMessage text={error} /> : null}
       {message ? <StatusMessage text={message} tone="success" /> : null}
@@ -211,9 +243,9 @@ export default function SuperAdminClienteDetalhePage() {
         <div className="space-y-5">
           <div className="grid gap-3 md:grid-cols-4">
             <MetricCard label="Conta" value={client.is_active ? "Ativa" : "Bloqueada"} />
-            <MetricCard label="Usuário" value={client.user?.is_active ? "Ativo" : "Bloqueado"} />
-            <MetricCard label="Operação" value={client.subscription.operational_status} />
-            <MetricCard label="Disponíveis" value={client.wallet.available_balance} />
+            <MetricCard label="Usuario" value={client.user?.is_active ? "Ativo" : "Bloqueado"} />
+            <MetricCard label="Operacao" value={client.subscription.operational_status} />
+            <MetricCard label="Disponiveis" value={client.wallet.available_balance} />
           </div>
 
           <div className="grid gap-5 xl:grid-cols-2">
@@ -227,7 +259,7 @@ export default function SuperAdminClienteDetalhePage() {
                 <button
                   disabled={saving}
                   onClick={() => {
-                    if (window.confirm("Confirmar alteração de status da conta?")) {
+                    if (window.confirm("Confirmar alteracao de status da conta?")) {
                       void runAction(
                         () => updateSuperAdminOrganization(client.id, { is_active: !client.is_active }).then(() => undefined),
                         "Status da conta atualizado."
@@ -244,17 +276,17 @@ export default function SuperAdminClienteDetalhePage() {
                   <button
                     disabled={saving}
                     onClick={() => {
-                      if (window.confirm("Confirmar alteração de status do usuário?")) {
+                      if (window.confirm("Confirmar alteracao de status do usuario?")) {
                         void runAction(
                           () => updateSuperAdminUser(client.user!.id, { is_active: !client.user!.is_active }).then(() => undefined),
-                          "Status do usuário atualizado."
+                          "Status do usuario atualizado."
                         );
                       }
                     }}
                     className="h-10 rounded-xl border border-[var(--maried-sand)] px-4 text-sm"
                     type="button"
                   >
-                    {client.user.is_active ? "Bloquear usuário" : "Reativar usuário"}
+                    {client.user.is_active ? "Bloquear usuario" : "Reativar usuario"}
                   </button>
                 ) : null}
               </div>
@@ -267,7 +299,7 @@ export default function SuperAdminClienteDetalhePage() {
               <Info label="Operational status" value={client.subscription.operational_status} />
               <Info label="Current period end" value={formatDate(client.subscription.current_period_end)} />
               <Info label="Next billing" value={formatDate(client.subscription.next_billing_at)} />
-              <Info label="Grace até" value={formatDate(client.subscription.grace_until)} />
+              <Info label="Grace ate" value={formatDate(client.subscription.grace_until)} />
 
               <div className="mt-4 flex flex-col gap-2 sm:flex-row">
                 <select
@@ -281,19 +313,15 @@ export default function SuperAdminClienteDetalhePage() {
                 </select>
                 {client.subscription.id ? (
                   <button
-                    disabled={saving}
-                    onClick={() => {
-                      if (window.confirm("Confirmar renovação da assinatura?")) {
-                        void runAction(
-                          () => renewSuperAdminSubscription(client.subscription.id!).then(() => undefined),
-                          "Assinatura renovada."
-                        );
-                      }
-                    }}
+                    disabled
                     className="h-10 rounded-xl bg-[var(--maried-coffee)] px-4 text-sm text-white disabled:opacity-60"
                     type="button"
                   >
-                    Renovar
+                    {client.subscription.status === "ACTIVE"
+                      ? "Renovacao automatica"
+                      : client.subscription.status === "PENDING"
+                        ? "Primeiro pagamento pelo cliente"
+                        : "Regularizacao via Stripe"}
                   </button>
                 ) : (
                   <button
@@ -301,27 +329,39 @@ export default function SuperAdminClienteDetalhePage() {
                     onClick={() => {
                       void runAction(
                         () => activateSuperAdminSubscription(client.id, planId).then(() => undefined),
-                        "Assinatura ativada."
+                        "Plano pendente criado."
                       );
                     }}
                     className="h-10 rounded-xl bg-[var(--maried-coffee)] px-4 text-sm text-white disabled:opacity-60"
                     type="button"
                   >
-                    Ativar
+                    Criar pendencia
                   </button>
                 )}
+                {client.stripe_customer_id ? (
+                  <button
+                    disabled={saving}
+                    onClick={() => {
+                      void handleStripeReconcile();
+                    }}
+                    className="h-10 rounded-xl border border-[var(--maried-sand)] px-4 text-sm disabled:opacity-60"
+                    type="button"
+                  >
+                    Sincronizar com Stripe
+                  </button>
+                ) : null}
               </div>
             </AdminCard>
           </div>
 
           <div className="grid gap-5 xl:grid-cols-2">
             <AdminCard>
-              <h2 className="mb-4 text-sm font-semibold text-[var(--maried-espresso)]">Créditos</h2>
+              <h2 className="mb-4 text-sm font-semibold text-[var(--maried-espresso)]">Creditos</h2>
               <div className="grid gap-3 sm:grid-cols-2">
                 <MetricCard label="Plano" value={client.wallet.plan_balance} />
                 <MetricCard label="Comprados" value={client.wallet.purchased_balance} />
                 <MetricCard label="Reservados" value={client.wallet.reserved_balance} />
-                <MetricCard label="Disponíveis" value={client.wallet.available_balance} />
+                <MetricCard label="Disponiveis" value={client.wallet.available_balance} />
               </div>
             </AdminCard>
 
@@ -333,7 +373,7 @@ export default function SuperAdminClienteDetalhePage() {
                   <Select value={operation} onChange={(value) => setOperation(value as "ADD" | "REMOVE")} options={[["ADD", "Adicionar"], ["REMOVE", "Remover"]]} />
                 </div>
                 <input required type="number" min="1" value={quantity} onChange={(event) => setQuantity(event.target.value)} placeholder="Quantidade" className="h-10 w-full rounded-xl border border-[var(--maried-sand)] px-3 text-sm" />
-                <input required value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Motivo obrigatório" className="h-10 w-full rounded-xl border border-[var(--maried-sand)] px-3 text-sm" />
+                <input required value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Motivo obrigatorio" className="h-10 w-full rounded-xl border border-[var(--maried-sand)] px-3 text-sm" />
                 <button disabled={saving} type="submit" className="h-10 w-full rounded-xl bg-[var(--maried-coffee)] px-4 text-sm text-white disabled:opacity-60">
                   Confirmar ajuste
                 </button>
@@ -344,13 +384,13 @@ export default function SuperAdminClienteDetalhePage() {
           <AdminCard>
             <h2 className="mb-4 text-sm font-semibold text-[var(--maried-espresso)]">Uso</h2>
             <div className="grid gap-3 sm:grid-cols-2">
-              <MetricCard label="Peças" value={client.usage.products_count} />
-              <MetricCard label="Gerações" value={client.usage.generations_count} />
+              <MetricCard label="Pecas" value={client.usage.products_count} />
+              <MetricCard label="Geracoes" value={client.usage.generations_count} />
             </div>
           </AdminCard>
         </div>
       ) : (
-        <EmptyState>Cliente não encontrado.</EmptyState>
+        <EmptyState>Cliente nao encontrado.</EmptyState>
       )}
     </SuperAdminShell>
   );

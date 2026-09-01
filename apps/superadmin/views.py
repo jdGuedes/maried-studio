@@ -10,12 +10,22 @@ from rest_framework.views import APIView
 
 from apps.audit.models import AuditLog
 from apps.accounts.models import UserRole
-from apps.billing.models import Plan, Subscription
+from apps.billing.models import (
+    Plan,
+    Subscription,
+    SubscriptionStatus,
+)
 from apps.billing.services import (
     BillingAccessService,
     BillingError,
     SubscriptionAccessStatus,
     SubscriptionService,
+)
+from apps.billing.stripe_services import (
+    StripePlanError,
+    StripePlanService,
+    StripeReconciliationError,
+    StripeReconciliationService,
 )
 from apps.credits.models import CreditWallet
 from apps.credits.services import CreditService
@@ -82,6 +92,65 @@ def _unique_organization_slug(name):
         suffix += 1
 
     return candidate
+
+
+def _sync_plan_with_stripe(
+    *,
+    request,
+    plan,
+):
+    before_price_id = plan.stripe_price_id
+
+    try:
+        StripePlanService.sync_plan(
+            plan
+        )
+
+    except StripePlanError as exc:
+        plan.mark_stripe_sync_error(
+            str(exc)
+        )
+
+        _audit(
+            request=request,
+            action="PLAN_STRIPE_SYNC_FAILED",
+            entity=plan,
+            metadata={
+                "plan_id": str(plan.pk),
+                "error_type": exc.__class__.__name__,
+            },
+        )
+
+        return exc
+
+    plan.refresh_from_db()
+
+    if (
+        before_price_id
+        and before_price_id
+        != plan.stripe_price_id
+    ):
+        action = "PLAN_STRIPE_PRICE_VERSIONED"
+
+    else:
+        action = "PLAN_STRIPE_SYNCED"
+
+    _audit(
+        request=request,
+        action=action,
+        entity=plan,
+        metadata={
+            "plan_id": str(plan.pk),
+            "stripe_product_id": (
+                plan.stripe_product_id
+            ),
+            "stripe_price_id": (
+                plan.stripe_price_id
+            ),
+        },
+    )
+
+    return None
 
 
 class SuperAdminSummaryView(APIView):
@@ -227,10 +296,9 @@ class SuperAdminClientListCreateView(
                     organization=organization
                 )
 
-                subscription = SubscriptionService.activate(
+                subscription = SubscriptionService.create_pending(
                     organization=organization,
                     plan=plan,
-                    actor=request.user,
                 )
 
                 _audit(
@@ -311,10 +379,9 @@ class SuperAdminClientActivateSubscriptionView(
         plan = serializer.context["plan"]
 
         try:
-            subscription = SubscriptionService.activate(
+            subscription = SubscriptionService.create_pending(
                 organization=organization,
                 plan=plan,
-                actor=request.user,
             )
 
         except BillingError as exc:
@@ -327,7 +394,7 @@ class SuperAdminClientActivateSubscriptionView(
 
         _audit(
             request=request,
-            action="SUPERADMIN_SUBSCRIPTION_ACTIVATED",
+            action="SUPERADMIN_SUBSCRIPTION_PENDING_CREATED",
             entity=subscription,
             organization=organization,
             metadata={
@@ -350,6 +417,112 @@ class SuperAdminClientActivateSubscriptionView(
         )
 
 
+class SuperAdminClientStripeReconcileView(
+    APIView
+):
+    permission_classes = [IsSuperAdmin]
+
+    def post(self, request, pk):
+        organization = get_object_or_404(
+            Organization,
+            pk=pk,
+        )
+
+        try:
+            result = StripeReconciliationService.reconcile(
+                organization=organization,
+                actor=request.user,
+            )
+
+        except StripeReconciliationError as exc:
+            _audit(
+                request=request,
+                action="STRIPE_RECONCILIATION",
+                entity=organization,
+                organization=organization,
+                metadata={
+                    "result": "FAILED",
+                    "code": exc.code,
+                    "stripe_customer_id": (
+                        organization.stripe_customer_id
+                    ),
+                },
+            )
+
+            response_status = (
+                status.HTTP_409_CONFLICT
+                if exc.code in {
+                    "STRIPE_SUBSCRIPTION_AMBIGUOUS",
+                    "STRIPE_PAID_INVOICE_NOT_FOUND",
+                }
+                else status.HTTP_400_BAD_REQUEST
+            )
+
+            return Response(
+                {
+                    "code": exc.code,
+                    "detail": exc.detail,
+                    "reconciled": False,
+                    "applied": False,
+                },
+                status=response_status,
+            )
+
+        organization.refresh_from_db()
+        wallet, _ = CreditWallet.objects.get_or_create(
+            organization=organization
+        )
+        subscription = result.subscription
+        access = BillingAccessService.evaluate_subscription(
+            subscription
+        )
+
+        _audit(
+            request=request,
+            action="STRIPE_RECONCILIATION",
+            entity=organization,
+            organization=organization,
+            metadata={
+                "result": "SUCCESS",
+                "applied": result.applied,
+                "cycle_type": result.cycle_type,
+                "stripe_subscription_id": (
+                    result.stripe_subscription_id
+                ),
+                "stripe_invoice_id": (
+                    result.stripe_invoice_id
+                ),
+                "stripe_subscription_status": (
+                    result.stripe_subscription_status
+                ),
+            },
+        )
+
+        return Response(
+            {
+                "reconciled": result.reconciled,
+                "applied": result.applied,
+                "cycle_type": result.cycle_type,
+                "subscription_status": (
+                    subscription.status
+                    if subscription
+                    else None
+                ),
+                "operational_status": access.status,
+                "plan_balance": wallet.plan_balance,
+                "purchased_balance": wallet.purchased_balance,
+                "stripe_subscription_status": (
+                    result.stripe_subscription_status
+                ),
+                "stripe_invoice_id": result.stripe_invoice_id,
+                "stripe_subscription_id": (
+                    result.stripe_subscription_id
+                ),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
 class SuperAdminSubscriptionRenewView(
     APIView
 ):
@@ -364,46 +537,61 @@ class SuperAdminSubscriptionRenewView(
             pk=pk,
         )
 
-        try:
-            subscription = (
-                SubscriptionService.renew_current_cycle(
-                    subscription=subscription,
-                    actor=request.user,
-                )
+        access = BillingAccessService.evaluate_subscription(
+            subscription
+        )
+
+        if subscription.status == SubscriptionStatus.ACTIVE:
+            code = "STRIPE_AUTOMATIC_RENEWAL"
+            detail = (
+                "A renovaÃ§Ã£o Ã© automÃ¡tica pelo Stripe."
             )
 
-        except BillingError as exc:
-            return Response(
-                {
-                    "detail": str(exc),
-                },
-                status=status.HTTP_400_BAD_REQUEST,
+        elif subscription.status == SubscriptionStatus.PENDING:
+            code = "FIRST_PAYMENT_REQUIRED"
+            detail = (
+                "O primeiro pagamento deve ser iniciado "
+                "pelo Checkout do cliente."
+            )
+
+        elif subscription.status == SubscriptionStatus.PAST_DUE:
+            code = "STRIPE_REGULARIZATION_REQUIRED"
+            detail = (
+                "A regularizaÃ§Ã£o deve ocorrer pelo Stripe "
+                "e somente o webhook confirma o pagamento."
+            )
+
+        else:
+            code = "SUBSCRIPTION_NOT_RENEWABLE"
+            detail = (
+                "Esta assinatura nÃ£o pode ser renovada "
+                "por aÃ§Ã£o local."
             )
 
         _audit(
             request=request,
-            action="SUPERADMIN_SUBSCRIPTION_RENEWED",
+            action="SUPERADMIN_SUBSCRIPTION_RENEWAL_NOT_APPLIED",
             entity=subscription,
             organization=subscription.organization,
             metadata={
                 "plan_id": str(
                     subscription.plan_id
                 ),
-                "operational_status": (
-                    BillingAccessService
-                    .evaluate_subscription(
-                        subscription
-                    )
-                    .status
-                ),
+                "subscription_status": subscription.status,
+                "operational_status": access.status,
+                "code": code,
             },
         )
 
         return Response(
-            SuperAdminSubscriptionSerializer(
-                subscription
-            ).data,
-            status=status.HTTP_200_OK,
+            {
+                "code": code,
+                "detail": detail,
+                "subscription": SuperAdminSubscriptionSerializer(
+                    subscription
+                ).data,
+            },
+            status=status.HTTP_409_CONFLICT,
         )
 
 
@@ -589,6 +777,11 @@ class SuperAdminPlanListView(
             },
         )
 
+        _sync_plan_with_stripe(
+            request=self.request,
+            plan=plan,
+        )
+
 
 class SuperAdminPlanDetailView(
     generics.RetrieveUpdateAPIView
@@ -639,12 +832,52 @@ class SuperAdminPlanDetailView(
             },
         )
 
+        _sync_plan_with_stripe(
+            request=request,
+            plan=plan,
+        )
+
+        plan.refresh_from_db()
+
         return Response(
             SuperAdminPlanSerializer(
                 plan,
                 context={"request": request},
             ).data,
             status=status.HTTP_200_OK,
+        )
+
+
+class SuperAdminPlanStripeSyncView(
+    APIView
+):
+    permission_classes = [IsSuperAdmin]
+
+    def post(self, request, pk):
+        plan = get_object_or_404(
+            Plan,
+            pk=pk,
+        )
+
+        error = _sync_plan_with_stripe(
+            request=request,
+            plan=plan,
+        )
+
+        plan.refresh_from_db()
+
+        response_status = (
+            status.HTTP_400_BAD_REQUEST
+            if error
+            else status.HTTP_200_OK
+        )
+
+        return Response(
+            SuperAdminPlanSerializer(
+                plan,
+                context={"request": request},
+            ).data,
+            status=response_status,
         )
 
 

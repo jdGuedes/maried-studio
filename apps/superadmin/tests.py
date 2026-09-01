@@ -9,6 +9,7 @@ from rest_framework.test import APITestCase
 
 from apps.audit.models import AuditLog
 from apps.billing.services import BillingError
+from apps.billing.stripe_services import StripeReconciliationResult
 from apps.billing.models import (
     BillingCycle,
     Plan,
@@ -254,24 +255,24 @@ class SuperAdminApiTests(APITestCase):
         self.assertTrue(user.check_password("senha-inicial-segura"))
         self.assertNotEqual(user.password, "senha-inicial-segura")
 
-        self.assertEqual(wallet.plan_balance, 50)
+        self.assertEqual(wallet.plan_balance, 0)
         self.assertEqual(wallet.purchased_balance, 0)
-        self.assertEqual(wallet.available_balance, 50)
+        self.assertEqual(wallet.available_balance, 0)
 
         self.assertEqual(subscription.plan, plan)
-        self.assertEqual(subscription.status, SubscriptionStatus.ACTIVE)
+        self.assertEqual(subscription.status, SubscriptionStatus.PENDING)
         self.assertEqual(subscription.credits_snapshot, 50)
-        self.assertIsNotNone(subscription.current_period_start)
-        self.assertIsNotNone(subscription.current_period_end)
+        self.assertIsNone(subscription.current_period_start)
+        self.assertIsNone(subscription.current_period_end)
 
         self.assertEqual(response.data["user"]["email"], user.email)
-        self.assertEqual(response.data["wallet"]["available_balance"], 50)
+        self.assertEqual(response.data["wallet"]["available_balance"], 0)
         self.assertEqual(
             response.data["subscription"]["operational_status"],
-            "ACTIVE",
+            "BLOCKED",
         )
 
-        self.assertTrue(
+        self.assertFalse(
             CreditTransaction.objects.filter(
                 wallet=wallet,
                 type=CreditTransactionType.PLAN_GRANT,
@@ -339,7 +340,7 @@ class SuperAdminApiTests(APITestCase):
         user_count = get_user_model().objects.count()
 
         with patch(
-            "apps.superadmin.views.SubscriptionService.activate",
+            "apps.superadmin.views.SubscriptionService.create_pending",
             side_effect=BillingError("Falha operacional."),
         ):
             response = self.client.post(
@@ -579,6 +580,245 @@ class SuperAdminApiTests(APITestCase):
             ).exists()
         )
 
+    def test_create_plan_syncs_with_stripe_when_available(self):
+        self.auth_superadmin()
+
+        def sync_plan(plan):
+            plan.mark_stripe_synced(
+                product_id="prod_start",
+                price_id="price_start",
+                price_signature="brl|3990|month",
+            )
+
+        with patch(
+            "apps.superadmin.views.StripePlanService.sync_plan",
+            side_effect=sync_plan,
+        ) as sync:
+            response = self.client.post(
+                reverse("superadmin:plans"),
+                {
+                    "name": "START",
+                    "slug": "start-stripe",
+                    "description": "Plano START.",
+                    "price": "39.90",
+                    "billing_cycle": BillingCycle.MONTHLY,
+                    "credits_per_cycle": 20,
+                    "is_active": True,
+                    "sort_order": 10,
+                },
+                format="json",
+            )
+
+        self.assertEqual(
+            response.status_code,
+            201,
+        )
+        self.assertEqual(
+            sync.call_count,
+            1,
+        )
+        self.assertEqual(
+            response.data["stripe_sync_status"],
+            "SYNCED",
+        )
+        self.assertTrue(
+            response.data["stripe_ready_for_checkout"]
+        )
+
+        plan = Plan.objects.get(
+            slug="start-stripe"
+        )
+        self.assertEqual(
+            plan.stripe_product_id,
+            "prod_start",
+        )
+        self.assertTrue(
+            AuditLog.objects.filter(
+                action="PLAN_STRIPE_SYNCED",
+                entity_id=str(plan.pk),
+            ).exists()
+        )
+
+    def test_create_plan_keeps_local_plan_when_stripe_is_not_configured(self):
+        self.auth_superadmin()
+
+        response = self.client.post(
+            reverse("superadmin:plans"),
+            {
+                "name": "Plano Pendente Stripe",
+                "slug": "plano-pendente-stripe",
+                "description": "Plano local.",
+                "price": "39.90",
+                "billing_cycle": BillingCycle.MONTHLY,
+                "credits_per_cycle": 20,
+                "is_active": True,
+                "sort_order": 10,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            201,
+        )
+        self.assertEqual(
+            response.data["stripe_sync_status"],
+            "ERROR",
+        )
+        self.assertFalse(
+            response.data["stripe_ready_for_checkout"]
+        )
+        self.assertNotIn(
+            "sk_",
+            response.data["stripe_sync_error"],
+        )
+
+        plan = Plan.objects.get(
+            slug="plano-pendente-stripe"
+        )
+        self.assertFalse(
+            plan.stripe_price_id
+        )
+        self.assertTrue(
+            AuditLog.objects.filter(
+                action="PLAN_STRIPE_SYNC_FAILED",
+                entity_id=str(plan.pk),
+            ).exists()
+        )
+
+    def test_plan_retry_sync_endpoint_is_superadmin_only(self):
+        url = reverse(
+            "superadmin:plan-stripe-sync",
+            kwargs={
+                "pk": self.plan.pk,
+            },
+        )
+
+        self.client.force_authenticate(
+            self.common_user
+        )
+        response = self.client.post(
+            url,
+            {},
+            format="json",
+        )
+        self.assertEqual(
+            response.status_code,
+            403,
+        )
+
+        User = get_user_model()
+        staff_user = User.objects.create_user(
+            email="staff-not-super@example.com",
+            password="senha-teste",
+            name="Staff",
+            organization=None,
+            is_staff=True,
+            is_superuser=False,
+        )
+        self.client.force_authenticate(
+            staff_user
+        )
+        response = self.client.post(
+            url,
+            {},
+            format="json",
+        )
+        self.assertEqual(
+            response.status_code,
+            403,
+        )
+
+    def test_plan_retry_sync_updates_status_when_stripe_succeeds(self):
+        self.auth_superadmin()
+
+        self.plan.mark_stripe_sync_error(
+            "Falha anterior."
+        )
+
+        def sync_plan(plan):
+            plan.mark_stripe_synced(
+                product_id="prod_retry",
+                price_id="price_retry",
+                price_signature="brl|9990|month",
+            )
+
+        with patch(
+            "apps.superadmin.views.StripePlanService.sync_plan",
+            side_effect=sync_plan,
+        ):
+            response = self.client.post(
+                reverse(
+                    "superadmin:plan-stripe-sync",
+                    kwargs={
+                        "pk": self.plan.pk,
+                    },
+                ),
+                {},
+                format="json",
+            )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+        )
+        self.assertEqual(
+            response.data["stripe_sync_status"],
+            "SYNCED",
+        )
+        self.assertEqual(
+            response.data["stripe_price_id"],
+            "price_retry",
+        )
+
+    def test_price_change_registers_price_version_audit(self):
+        self.auth_superadmin()
+
+        self.plan.mark_stripe_synced(
+            product_id="prod_existing",
+            price_id="price_a",
+            price_signature="brl|9990|month",
+        )
+
+        def sync_plan(plan):
+            plan.mark_stripe_synced(
+                product_id="prod_existing",
+                price_id="price_b",
+                price_signature="brl|15990|month",
+            )
+
+        with patch(
+            "apps.superadmin.views.StripePlanService.sync_plan",
+            side_effect=sync_plan,
+        ):
+            response = self.client.patch(
+                reverse(
+                    "superadmin:plan-detail",
+                    kwargs={
+                        "pk": self.plan.pk,
+                    },
+                ),
+                {
+                    "price": "159.90",
+                },
+                format="json",
+            )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+        )
+        self.assertEqual(
+            response.data["stripe_price_id"],
+            "price_b",
+        )
+        self.assertTrue(
+            AuditLog.objects.filter(
+                action="PLAN_STRIPE_PRICE_VERSIONED",
+                entity_id=str(self.plan.pk),
+            ).exists()
+        )
+
     def test_superadmin_can_read_subscription_detail(self):
         self.auth_superadmin()
 
@@ -650,7 +890,7 @@ class SuperAdminApiTests(APITestCase):
 
         self.assertEqual(response.status_code, 405)
 
-    def test_superadmin_can_activate_subscription_for_client(self):
+    def test_superadmin_creates_pending_subscription_for_client(self):
         self.auth_superadmin()
 
         organization = Organization.objects.create(
@@ -676,21 +916,21 @@ class SuperAdminApiTests(APITestCase):
         organization.refresh_from_db()
         self.assertEqual(
             organization.subscription.status,
-            SubscriptionStatus.ACTIVE,
+            SubscriptionStatus.PENDING,
         )
         self.assertEqual(
             organization.credit_wallet.plan_balance,
-            self.plan.credits_per_cycle,
+            0,
         )
         self.assertTrue(
             AuditLog.objects.filter(
                 organization=organization,
                 user=self.superadmin,
-                action="SUPERADMIN_SUBSCRIPTION_ACTIVATED",
+                action="SUPERADMIN_SUBSCRIPTION_PENDING_CREATED",
             ).exists()
         )
 
-    def test_superadmin_can_renew_subscription_preserving_purchased_credits(self):
+    def test_superadmin_renew_active_subscription_does_not_grant_credits(self):
         self.auth_superadmin()
 
         now = timezone.now()
@@ -728,17 +968,17 @@ class SuperAdminApiTests(APITestCase):
             format="json",
         )
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 409)
 
         self.wallet.refresh_from_db()
         self.subscription.refresh_from_db()
         self.assertEqual(
             self.wallet.plan_balance,
-            self.subscription.credits_snapshot,
+            20,
         )
         self.assertEqual(self.wallet.purchased_balance, 12)
-        self.assertEqual(self.wallet.balance, 112)
-        self.assertGreater(
+        self.assertEqual(self.wallet.balance, 32)
+        self.assertEqual(
             self.subscription.current_period_end,
             now,
         )
@@ -746,9 +986,94 @@ class SuperAdminApiTests(APITestCase):
             AuditLog.objects.filter(
                 organization=self.organization,
                 user=self.superadmin,
-                action="SUPERADMIN_SUBSCRIPTION_RENEWED",
+                action="SUPERADMIN_SUBSCRIPTION_RENEWAL_NOT_APPLIED",
             ).exists()
         )
+
+    def test_stripe_reconcile_endpoint_is_superadmin_only(self):
+        url = reverse(
+            "superadmin:client-stripe-reconcile",
+            kwargs={"pk": self.organization.pk},
+        )
+
+        self.client.force_authenticate(self.common_user)
+        response = self.client.post(url, {}, format="json")
+        self.assertEqual(response.status_code, 403)
+
+        User = get_user_model()
+        staff_user = User.objects.create_user(
+            email="staff-reconcile@example.com",
+            password="senha-teste",
+            name="Staff Reconcile",
+            organization=None,
+            is_staff=True,
+            is_superuser=False,
+        )
+        self.client.force_authenticate(staff_user)
+        response = self.client.post(url, {}, format="json")
+        self.assertEqual(response.status_code, 403)
+
+    def test_superadmin_can_reconcile_stripe_subscription_with_audit(self):
+        self.auth_superadmin()
+
+        self.organization.stripe_customer_id = "cus_reconcile_admin"
+        self.organization.save(
+            update_fields=[
+                "stripe_customer_id",
+                "updated_at",
+            ]
+        )
+        self.subscription.status = SubscriptionStatus.PENDING
+        self.subscription.current_period_start = None
+        self.subscription.current_period_end = None
+        self.subscription.next_billing_at = None
+        self.subscription.save()
+        self.wallet.plan_balance = 25
+        self.wallet.purchased_balance = 10
+        self.wallet.balance = 35
+        self.wallet.save()
+
+        result = StripeReconciliationResult(
+            reconciled=True,
+            applied=True,
+            subscription=self.subscription,
+            plan=self.plan,
+            stripe_subscription_id="sub_reconcile_admin",
+            stripe_subscription_status="active",
+            stripe_invoice_id="in_reconcile_admin",
+            stripe_customer_id="cus_reconcile_admin",
+            stripe_price_id="price_reconcile_admin",
+            cycle_type="FIRST",
+        )
+
+        with patch(
+            "apps.superadmin.views.StripeReconciliationService.reconcile",
+            return_value=result,
+        ) as reconcile:
+            response = self.client.post(
+                reverse(
+                    "superadmin:client-stripe-reconcile",
+                    kwargs={"pk": self.organization.pk},
+                ),
+                {},
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["reconciled"])
+        self.assertTrue(response.data["applied"])
+        self.assertEqual(response.data["plan_balance"], 25)
+        self.assertEqual(response.data["purchased_balance"], 10)
+        self.assertEqual(reconcile.call_count, 1)
+
+        audit = AuditLog.objects.get(
+            organization=self.organization,
+            user=self.superadmin,
+            action="STRIPE_RECONCILIATION",
+        )
+        self.assertEqual(audit.metadata["result"], "SUCCESS")
+        self.assertEqual(audit.metadata["applied"], True)
+        self.assertNotIn("sk_", str(audit.metadata))
 
     def test_superadmin_credit_adjustment_uses_service_and_audit(self):
         self.auth_superadmin()

@@ -685,6 +685,15 @@ export type SuperAdminPlan = {
   credits_per_cycle: number;
   is_active: boolean;
   sort_order: number;
+  stripe_product_id?: string | null;
+  stripe_price_id?: string | null;
+  stripe_synced_at?: string | null;
+  stripe_sync_error?: string;
+  stripe_ready_for_checkout?: boolean;
+  stripe_sync_status?:
+    | "SYNCED"
+    | "PENDING"
+    | "ERROR";
 };
 
 
@@ -715,6 +724,11 @@ export type SuperAdminClientSubscription = {
   current_period_end?: string | null;
   next_billing_at?: string | null;
   cancel_at_period_end?: boolean;
+  stripe_customer_id?: string;
+  stripe_subscription_id?: string | null;
+  stripe_price_id?: string;
+  stripe_status?: string;
+  last_processed_stripe_invoice_id?: string | null;
   operational_status: string;
   grace_until?: string | null;
   days_remaining_in_grace?: number | null;
@@ -829,6 +843,7 @@ export type SuperAdminSceneTemplate = SceneTemplate & {
 export type SuperAdminClientDetail =
   SuperAdminClientListItem & {
     updated_at: string;
+    stripe_customer_id?: string;
     subscription: SuperAdminClientSubscription;
     wallet: SuperAdminClientWallet;
     usage: {
@@ -854,6 +869,22 @@ export type AdjustSuperAdminCreditsInput = {
     | "PLAN"
     | "PURCHASED";
   reason: string;
+};
+
+
+export type SuperAdminStripeReconciliation = {
+  reconciled: boolean;
+  applied: boolean;
+  cycle_type?: string | null;
+  subscription_status?: string | null;
+  operational_status?: string | null;
+  plan_balance?: number;
+  purchased_balance?: number;
+  stripe_subscription_status?: string | null;
+  stripe_invoice_id?: string;
+  stripe_subscription_id?: string;
+  code?: string;
+  detail?: string;
 };
 
 
@@ -1031,6 +1062,42 @@ export async function updateSuperAdminPlan(
 }
 
 
+export async function syncSuperAdminPlanStripe(
+  planId: string
+): Promise<SuperAdminPlan> {
+  await ensureCsrfCookie();
+
+  const response =
+    await fetch(
+      `${API_URL}/api/superadmin/plans/${planId}/stripe-sync/`,
+      {
+        method:
+          "POST",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+
+        headers: {
+          "Content-Type":
+            "application/json",
+
+          ...getCsrfHeaders(),
+        },
+
+        body:
+          JSON.stringify({}),
+      }
+    );
+
+  return parseResponse<SuperAdminPlan>(
+    response
+  );
+}
+
+
 export async function createSuperAdminClient(
   input: CreateSuperAdminClientInput
 ): Promise<SuperAdminClientDetail> {
@@ -1182,6 +1249,42 @@ export async function activateSuperAdminSubscription(
     );
 
   return parseResponse<SuperAdminClientDetail>(
+    response
+  );
+}
+
+
+export async function reconcileSuperAdminClientStripe(
+  organizationId: string
+): Promise<SuperAdminStripeReconciliation> {
+  await ensureCsrfCookie();
+
+  const response =
+    await fetch(
+      `${API_URL}/api/superadmin/clients/${organizationId}/stripe-reconcile/`,
+      {
+        method:
+          "POST",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+
+        headers: {
+          "Content-Type":
+            "application/json",
+
+          ...getCsrfHeaders(),
+        },
+
+        body:
+          JSON.stringify({}),
+      }
+    );
+
+  return parseResponse<SuperAdminStripeReconciliation>(
     response
   );
 }

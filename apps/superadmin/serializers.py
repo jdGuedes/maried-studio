@@ -17,10 +17,11 @@ class SuperAdminOrganizationSerializer(serializers.ModelSerializer):
         model = Organization
         fields = [
             "id", "name", "slug", "is_active", "users_count",
-            "created_at", "updated_at",
+            "stripe_customer_id", "created_at", "updated_at",
         ]
         read_only_fields = [
-            "id", "slug", "users_count", "created_at", "updated_at",
+            "id", "slug", "users_count", "stripe_customer_id",
+            "created_at", "updated_at",
         ]
 
 
@@ -69,14 +70,39 @@ class SuperAdminUserUpdateSerializer(serializers.ModelSerializer):
 
 
 class SuperAdminPlanSerializer(serializers.ModelSerializer):
+    stripe_ready_for_checkout = serializers.BooleanField(
+        read_only=True,
+    )
+    stripe_sync_status = serializers.SerializerMethodField()
+
     class Meta:
         model = Plan
         fields = [
             "id", "name", "slug", "description", "price",
             "billing_cycle", "credits_per_cycle", "is_active",
-            "sort_order", "created_at", "updated_at",
+            "sort_order", "stripe_product_id", "stripe_price_id",
+            "stripe_synced_at", "stripe_sync_error",
+            "stripe_ready_for_checkout", "stripe_sync_status",
+            "created_at", "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = [
+            "id", "stripe_product_id", "stripe_price_id",
+            "stripe_synced_at", "stripe_sync_error",
+            "stripe_ready_for_checkout", "stripe_sync_status",
+            "created_at", "updated_at",
+        ]
+
+    def get_stripe_sync_status(self, obj):
+        if obj.stripe_sync_error:
+            return "ERROR"
+
+        if (
+            obj.stripe_product_id
+            and obj.stripe_price_id
+        ):
+            return "SYNCED"
+
+        return "PENDING"
 
 
 class SuperAdminSubscriptionSerializer(serializers.ModelSerializer):
@@ -99,6 +125,9 @@ class SuperAdminSubscriptionSerializer(serializers.ModelSerializer):
             "plan_name", "status", "price_snapshot", "credits_snapshot",
             "started_at", "current_period_start", "current_period_end",
             "next_billing_at", "cancel_at_period_end", "canceled_at",
+            "stripe_customer_id", "stripe_subscription_id",
+            "stripe_price_id", "stripe_status",
+            "last_processed_stripe_invoice_id",
             "operational_status", "grace_until",
             "days_remaining_in_grace",
             "created_at", "updated_at",
@@ -335,6 +364,7 @@ class SuperAdminClientDetailSerializer(
             "name",
             "slug",
             "is_active",
+            "stripe_customer_id",
             "created_at",
             "updated_at",
             "user",

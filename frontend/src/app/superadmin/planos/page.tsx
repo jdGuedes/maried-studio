@@ -11,6 +11,7 @@ import {
 import {
   createSuperAdminPlan,
   getSuperAdminPlans,
+  syncSuperAdminPlanStripe,
   updateSuperAdminPlan,
   type SuperAdminPlan,
 } from "@/lib/api";
@@ -34,6 +35,7 @@ export default function SuperAdminPlanosPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [syncingId, setSyncingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -90,10 +92,10 @@ export default function SuperAdminPlanosPage() {
     try {
       if (editingId) {
         await updateSuperAdminPlan(editingId, form);
-        setMessage("Plano atualizado. Assinaturas históricas preservam snapshots.");
+        setMessage("Plano atualizado. Sincronização Stripe verificada.");
       } else {
         await createSuperAdminPlan(form);
-        setMessage("Plano criado.");
+        setMessage("Plano criado. Sincronização Stripe verificada.");
       }
 
       setEditingId(null);
@@ -121,6 +123,23 @@ export default function SuperAdminPlanosPage() {
       setError(error instanceof Error ? error.message : "Erro ao alterar status do plano.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function syncStripe(plan: SuperAdminPlan) {
+    setSyncingId(plan.id);
+    setError(null);
+    setMessage(null);
+
+    try {
+      await syncSuperAdminPlanStripe(plan.id);
+      setMessage("Sincronização Stripe verificada.");
+      await load();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Não foi possível sincronizar este plano com o Stripe.");
+      await load();
+    } finally {
+      setSyncingId(null);
     }
   }
 
@@ -168,6 +187,7 @@ export default function SuperAdminPlanosPage() {
                       <th>Ciclo</th>
                       <th>Créditos</th>
                       <th>Status</th>
+                      <th>Stripe</th>
                       <th>Ordem</th>
                       <th></th>
                     </tr>
@@ -180,11 +200,37 @@ export default function SuperAdminPlanosPage() {
                         <td>{plan.billing_cycle}</td>
                         <td>{plan.credits_per_cycle}</td>
                         <td>{plan.is_active ? "Ativo" : "Inativo"}</td>
+                        <td>
+                          <div className="flex flex-col gap-1">
+                            <span className={[
+                              "w-fit rounded-full px-2 py-1 text-[11px] font-medium",
+                              plan.stripe_sync_status === "SYNCED"
+                                ? "bg-green-50 text-green-700"
+                                : plan.stripe_sync_status === "ERROR"
+                                  ? "bg-red-50 text-red-700"
+                                  : "bg-[var(--maried-soft-gold)] text-[var(--maried-coffee)]",
+                            ].join(" ")}>
+                              {plan.stripe_sync_status === "SYNCED"
+                                ? "Sincronizado"
+                                : plan.stripe_sync_status === "ERROR"
+                                  ? "Erro"
+                                  : "Pendente"}
+                            </span>
+                            {plan.stripe_sync_error ? (
+                              <span className="max-w-[220px] text-xs text-red-700">
+                                {plan.stripe_sync_error}
+                              </span>
+                            ) : null}
+                          </div>
+                        </td>
                         <td>{plan.sort_order}</td>
                         <td className="space-x-3 text-right">
                           <button type="button" onClick={() => edit(plan)} className="font-medium text-[var(--maried-gold)]">Editar</button>
                           <button disabled={saving} type="button" onClick={() => void toggle(plan)} className="font-medium text-[var(--maried-gold)] disabled:opacity-60">
                             {plan.is_active ? "Desativar" : "Ativar"}
+                          </button>
+                          <button disabled={syncingId === plan.id} type="button" onClick={() => void syncStripe(plan)} className="font-medium text-[var(--maried-gold)] disabled:opacity-60">
+                            {syncingId === plan.id ? "Sincronizando..." : "Stripe"}
                           </button>
                         </td>
                       </tr>

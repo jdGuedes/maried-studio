@@ -31,6 +31,10 @@ import {
 } from "@/providers/credit-wallet-provider";
 
 import {
+  useBillingAccess,
+} from "@/providers/billing-access-provider";
+
+import {
   useProfile,
 } from "@/providers/profile-provider";
 
@@ -77,6 +81,12 @@ const navItems = [
     label: "Créditos",
     icon: CreditCard,
     href: "/creditos",
+  },
+
+  {
+    label: "Assinatura",
+    icon: CreditCard,
+    href: "/assinatura",
   },
 ];
 
@@ -152,6 +162,12 @@ export function AppShell({
     performLogout,
   } =
     useLogout();
+
+
+  const {
+    canOperateStudio,
+  } =
+    useBillingAccess();
 
 
   // ========================================================
@@ -261,7 +277,14 @@ export function AppShell({
 
           <nav className="mt-12 flex flex-col gap-2">
 
-            {navItems.map(
+            {(canOperateStudio
+              ? navItems
+              : navItems.filter(
+                  (
+                    item
+                  ) =>
+                    item.href !== "/criar"
+                )).map(
               (
                 item
               ) => {
@@ -816,6 +839,8 @@ export function AppShell({
 
           {/* CRIAR */}
 
+          {canOperateStudio ? (
+
           <div className="flex justify-center">
 
             <motion.div
@@ -866,6 +891,27 @@ export function AppShell({
             </motion.div>
 
           </div>
+
+          ) : (
+
+          <MobileNavItem
+            href="/assinatura"
+
+            label="Assinar"
+
+            icon={
+              CreditCard
+            }
+
+            active={
+              isRouteActive(
+                pathname,
+                "/assinatura"
+              )
+            }
+          />
+
+          )}
 
 
           <MobileNavItem
