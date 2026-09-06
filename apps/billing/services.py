@@ -6,6 +6,7 @@ from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
 
+from apps.audit.models import AuditLog
 from apps.credits.models import CreditWallet
 from apps.credits.services import CreditService
 
@@ -14,6 +15,9 @@ from .models import (
     CreditPackage,
     CreditPurchase,
     CreditPurchaseStatus,
+    PaymentDispute,
+    PaymentDisputeOriginType,
+    PaymentDisputeStatus,
     Plan,
     StripeInvoiceRecord,
     Subscription,
@@ -61,6 +65,7 @@ class SubscriptionAccessStatus:
     ACTIVE = "ACTIVE"
     GRACE = "GRACE"
     BLOCKED = "BLOCKED"
+    FINANCIAL_BLOCK = "FINANCIAL_BLOCK"
 
 
 class SubscriptionRequiredError(BillingError):
@@ -83,6 +88,8 @@ class SubscriptionAccess:
     days_remaining_in_grace: int | None = None
     can_create: bool = False
     can_purchase_credits: bool = False
+    can_start_subscription: bool = False
+    financial_blocked: bool = False
     access_reason: str = "SUBSCRIPTION_REQUIRED"
 
     @property
@@ -109,16 +116,37 @@ class BillingAccessService:
         *,
         now=None,
         wallet=None,
+        organization=None,
     ):
         now = now or timezone.now()
         today = BillingAccessService._local_date(
             now
         )
 
+        if organization is None and subscription is not None:
+            organization = subscription.organization
+
+        if (
+            organization is not None
+            and PaymentDisputeService.organization_has_blocking_dispute(
+                organization
+            )
+        ):
+            return SubscriptionAccess(
+                status=SubscriptionAccessStatus.FINANCIAL_BLOCK,
+                subscription=subscription,
+                can_create=False,
+                can_purchase_credits=False,
+                can_start_subscription=False,
+                financial_blocked=True,
+                access_reason="FINANCIAL_BLOCK",
+            )
+
         if subscription is None:
             return SubscriptionAccess(
                 status=SubscriptionAccessStatus.BLOCKED,
                 subscription=None,
+                can_start_subscription=True,
                 access_reason="SUBSCRIPTION_REQUIRED",
             )
 
@@ -153,6 +181,7 @@ class BillingAccessService:
                 grace_until=grace_until,
                 can_create=True,
                 can_purchase_credits=True,
+                can_start_subscription=False,
                 access_reason="ACTIVE",
             )
 
@@ -170,6 +199,7 @@ class BillingAccessService:
                     ).days,
                     can_create=True,
                     can_purchase_credits=False,
+                    can_start_subscription=False,
                     access_reason="GRACE",
                 )
 
@@ -196,6 +226,7 @@ class BillingAccessService:
                 grace_until=grace_until,
                 can_create=True,
                 can_purchase_credits=False,
+                can_start_subscription=False,
                 access_reason="CANCELED_WITH_PURCHASED_CREDITS",
             )
 
@@ -205,6 +236,9 @@ class BillingAccessService:
             grace_until=grace_until,
             can_create=False,
             can_purchase_credits=False,
+            can_start_subscription=(
+                status == SubscriptionStatus.CANCELED
+            ),
             access_reason="SUBSCRIPTION_BLOCKED",
         )
 
@@ -238,6 +272,7 @@ class BillingAccessService:
             subscription,
             now=now,
             wallet=wallet,
+            organization=organization,
         )
 
     @staticmethod
@@ -255,6 +290,212 @@ class BillingAccessService:
             raise SubscriptionRequiredError()
 
         return access
+
+
+class PaymentDisputeService:
+    RESOLVED_STATUSES = {
+        PaymentDisputeStatus.WON,
+        PaymentDisputeStatus.WARNING_CLOSED,
+        PaymentDisputeStatus.PREVENTED,
+    }
+
+    @staticmethod
+    def organization_has_blocking_dispute(organization):
+        return PaymentDispute.objects.filter(
+            organization=organization,
+            status__in=PaymentDispute.BLOCKING_STATUSES,
+        ).exists()
+
+    @classmethod
+    def determine_origin(
+        cls,
+        *,
+        organization,
+        payment_intent_id,
+    ):
+        credit_purchase = None
+        subscription = None
+        origin_type = PaymentDisputeOriginType.UNKNOWN
+
+        if payment_intent_id:
+            credit_purchase = (
+                CreditPurchase.objects
+                .select_related(
+                    "organization",
+                    "subscription",
+                )
+                .filter(
+                    organization=organization,
+                    stripe_payment_intent_id=payment_intent_id,
+                )
+                .first()
+            )
+
+        if credit_purchase:
+            subscription = credit_purchase.subscription
+            origin_type = PaymentDisputeOriginType.CREDIT_PURCHASE
+
+        else:
+            subscription = (
+                Subscription.objects
+                .filter(
+                    organization=organization,
+                )
+                .first()
+            )
+
+            if subscription:
+                origin_type = PaymentDisputeOriginType.SUBSCRIPTION
+
+        return origin_type, subscription, credit_purchase
+
+    @classmethod
+    @transaction.atomic
+    def upsert_from_stripe_dispute(
+        cls,
+        *,
+        organization,
+        stripe_dispute_id,
+        stripe_payment_intent_id="",
+        stripe_charge_id="",
+        stripe_customer_id="",
+        amount=0,
+        currency="",
+        status,
+        reason="",
+        evidence_due_by=None,
+        event_id="",
+        source="WEBHOOK",
+    ):
+        was_blocked = cls.organization_has_blocking_dispute(
+            organization
+        )
+        (
+            origin_type,
+            subscription,
+            credit_purchase,
+        ) = cls.determine_origin(
+            organization=organization,
+            payment_intent_id=stripe_payment_intent_id,
+        )
+
+        dispute, created = (
+            PaymentDispute.objects
+            .select_for_update()
+            .get_or_create(
+                stripe_dispute_id=stripe_dispute_id,
+                defaults={
+                    "organization": organization,
+                    "status": status,
+                },
+            )
+        )
+
+        if (
+            not created
+            and dispute.organization_id != organization.pk
+        ):
+            raise ValueError(
+                "PaymentDispute belongs to another organization."
+            )
+
+        dispute.organization = organization
+        dispute.stripe_payment_intent_id = (
+            stripe_payment_intent_id
+            or dispute.stripe_payment_intent_id
+        )
+        dispute.stripe_charge_id = (
+            stripe_charge_id
+            or dispute.stripe_charge_id
+        )
+        dispute.stripe_customer_id = (
+            stripe_customer_id
+            or dispute.stripe_customer_id
+        )
+        if subscription:
+            dispute.related_subscription = subscription
+
+        if credit_purchase:
+            dispute.related_credit_purchase = credit_purchase
+
+        if (
+            created
+            or origin_type != PaymentDisputeOriginType.UNKNOWN
+        ):
+            dispute.origin_type = origin_type
+        dispute.amount = amount or dispute.amount
+        dispute.currency = (
+            currency.upper()
+            if currency
+            else dispute.currency
+        )
+        dispute.status = status
+        dispute.reason = reason or dispute.reason
+        dispute.evidence_due_by = (
+            evidence_due_by
+            or dispute.evidence_due_by
+        )
+        if event_id:
+            dispute.last_event_id = event_id
+        dispute.resolved_at = (
+            timezone.now()
+            if status in cls.RESOLVED_STATUSES
+            else dispute.resolved_at
+        )
+        dispute.save()
+
+        is_blocked = cls.organization_has_blocking_dispute(
+            organization
+        )
+
+        AuditLog.objects.create(
+            organization=organization,
+            user=None,
+            action=(
+                "PAYMENT_DISPUTE_DETECTED"
+                if created
+                else "PAYMENT_DISPUTE_UPDATED"
+            ),
+            entity_type="PaymentDispute",
+            entity_id=str(dispute.pk),
+            metadata={
+                "stripe_dispute_id": stripe_dispute_id[-8:],
+                "status": dispute.status,
+                "origin_type": dispute.origin_type,
+                "event_id": event_id,
+                "source": source,
+            },
+        )
+
+        if not was_blocked and is_blocked:
+            AuditLog.objects.create(
+                organization=organization,
+                user=None,
+                action="FINANCIAL_BLOCK_APPLIED",
+                entity_type="Organization",
+                entity_id=str(organization.pk),
+                metadata={
+                    "stripe_dispute_id": stripe_dispute_id[-8:],
+                    "event_id": event_id,
+                    "source": source,
+                },
+            )
+
+        if was_blocked and not is_blocked:
+            AuditLog.objects.create(
+                organization=organization,
+                user=None,
+                action="FINANCIAL_BLOCK_REMOVED",
+                entity_type="Organization",
+                entity_id=str(organization.pk),
+                metadata={
+                    "stripe_dispute_id": stripe_dispute_id[-8:],
+                    "event_id": event_id,
+                    "source": source,
+                },
+            )
+
+        return dispute
 
 
 class SubscriptionService:

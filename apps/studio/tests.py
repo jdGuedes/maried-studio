@@ -17,7 +17,15 @@ from rest_framework.test import APITestCase, APITransactionTestCase
 from apps.ai.models import ModelReference
 from apps.ai.providers.openai import GeneratedAsset
 from apps.ai.services.prompt_engine import PromptEngine
-from apps.billing.models import BillingCycle, Plan, Subscription, SubscriptionStatus
+from apps.billing.models import (
+    BillingCycle,
+    PaymentDispute,
+    PaymentDisputeOriginType,
+    PaymentDisputeStatus,
+    Plan,
+    Subscription,
+    SubscriptionStatus,
+)
 from apps.billing.services import SubscriptionRequiredError, SubscriptionService
 from apps.credits.models import CreditTransaction, CreditTransactionType
 from apps.credits.models import CreditWallet
@@ -1314,6 +1322,50 @@ class GenerationSubscriptionAccessTests(APITestCase):
         self.assertFalse(
             Generation.objects.filter(
                 idempotency_key="generation-blocked-purchased-credits",
+            ).exists()
+        )
+
+        self.assertFalse(
+            CreditTransaction.objects.filter(
+                wallet=self.wallet,
+            ).exists()
+        )
+
+    def test_financial_block_rejects_generation_before_credit_reservation(self):
+        self.create_subscription(
+            status=SubscriptionStatus.ACTIVE,
+            period_end=self.at(
+                2026,
+                9,
+                25,
+            ),
+        )
+        PaymentDispute.objects.create(
+            organization=self.organization,
+            stripe_dispute_id="du_generation_block",
+            status=PaymentDisputeStatus.NEEDS_RESPONSE,
+            origin_type=PaymentDisputeOriginType.SUBSCRIPTION,
+            amount=9990,
+            currency="BRL",
+        )
+
+        with self.assertRaises(
+            SubscriptionRequiredError
+        ):
+            self.create_request(
+                "generation-financial-block"
+            )
+
+        self.wallet.refresh_from_db()
+
+        self.assertEqual(
+            self.wallet.reserved_balance,
+            0,
+        )
+
+        self.assertFalse(
+            Generation.objects.filter(
+                idempotency_key="generation-financial-block",
             ).exists()
         )
 

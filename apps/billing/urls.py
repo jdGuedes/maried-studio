@@ -8,7 +8,9 @@ from .views import (
     CreditPurchaseBySessionView,
     CurrentSubscriptionView,
     StripeWebhookView,
+    SubscriptionCancelView,
     SubscriptionCheckoutView,
+    SubscriptionResumeView,
 )
 
 
@@ -25,6 +27,16 @@ urlpatterns = [
         "subscription/",
         CurrentSubscriptionView.as_view(),
         name="current-subscription",
+    ),
+    path(
+        "subscription/cancel/",
+        SubscriptionCancelView.as_view(),
+        name="subscription-cancel",
+    ),
+    path(
+        "subscription/resume/",
+        SubscriptionResumeView.as_view(),
+        name="subscription-resume",
     ),
     path(
         "credit-packages/",

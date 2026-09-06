@@ -14,7 +14,15 @@ from PIL import Image
 
 from rest_framework.test import APITestCase, APITransactionTestCase
 
-from apps.billing.models import BillingCycle, Plan, Subscription, SubscriptionStatus
+from apps.billing.models import (
+    BillingCycle,
+    PaymentDispute,
+    PaymentDisputeOriginType,
+    PaymentDisputeStatus,
+    Plan,
+    Subscription,
+    SubscriptionStatus,
+)
 from apps.billing.services import SubscriptionService
 from apps.credits.models import CreditTransaction, CreditTransactionType, CreditWallet
 from apps.organizations.models import Organization
@@ -244,6 +252,43 @@ class ProductSubscriptionAccessTests(APITestCase):
         SubscriptionService.create_pending(
             organization=self.organization,
             plan=self.plan,
+        )
+
+        response = self.post_product()
+
+        self.assertEqual(
+            response.status_code,
+            403,
+        )
+
+        self.assertEqual(
+            response.data["code"],
+            "SUBSCRIPTION_REQUIRED",
+        )
+
+        self.assertFalse(
+            Product.objects.filter(
+                organization=self.organization,
+                name="Produto Teste",
+            ).exists()
+        )
+
+    def test_financial_block_rejects_product_creation(self):
+        self.create_subscription(
+            status=SubscriptionStatus.ACTIVE,
+            period_end=self.at(
+                2026,
+                9,
+                25,
+            ),
+        )
+        PaymentDispute.objects.create(
+            organization=self.organization,
+            stripe_dispute_id="du_product_block",
+            status=PaymentDisputeStatus.NEEDS_RESPONSE,
+            origin_type=PaymentDisputeOriginType.SUBSCRIPTION,
+            amount=9990,
+            currency="BRL",
         )
 
         response = self.post_product()

@@ -6,6 +6,7 @@ from apps.accounts.models import User
 from apps.billing.models import (
     CreditPackage,
     CreditPurchase,
+    PaymentDispute,
     Plan,
     Subscription,
 )
@@ -558,6 +559,55 @@ class SuperAdminCreditPurchaseSerializer(serializers.ModelSerializer):
             "processed_event_id",
             "created_at", "updated_at",
         ]
+
+
+class SuperAdminPaymentDisputeSerializer(serializers.ModelSerializer):
+    organization_name = serializers.CharField(
+        source="organization.name",
+        read_only=True,
+    )
+    subscription_id = serializers.UUIDField(
+        source="related_subscription_id",
+        read_only=True,
+    )
+    credit_purchase_id = serializers.UUIDField(
+        source="related_credit_purchase_id",
+        read_only=True,
+    )
+    is_blocking = serializers.BooleanField(
+        read_only=True,
+    )
+    stripe_dispute_reference = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PaymentDispute
+        fields = [
+            "id",
+            "organization",
+            "organization_name",
+            "stripe_dispute_reference",
+            "stripe_payment_intent_id",
+            "stripe_charge_id",
+            "stripe_customer_id",
+            "subscription_id",
+            "credit_purchase_id",
+            "origin_type",
+            "amount",
+            "currency",
+            "status",
+            "reason",
+            "evidence_due_by",
+            "resolved_at",
+            "is_blocking",
+            "created_at",
+            "updated_at",
+        ]
+
+    def get_stripe_dispute_reference(self, obj):
+        if not obj.stripe_dispute_id:
+            return ""
+
+        return obj.stripe_dispute_id[-8:]
 
 
 class SuperAdminGenerationSerializer(serializers.ModelSerializer):

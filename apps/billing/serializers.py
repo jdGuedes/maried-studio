@@ -22,6 +22,10 @@ class CurrentSubscriptionSerializer(serializers.Serializer):
 
     can_purchase_credits = serializers.BooleanField()
 
+    can_start_subscription = serializers.BooleanField()
+
+    financial_blocked = serializers.BooleanField()
+
     access_reason = serializers.CharField()
 
     plan_name = serializers.CharField(
@@ -51,6 +55,8 @@ class CurrentSubscriptionSerializer(serializers.Serializer):
     next_billing_at = serializers.DateTimeField(
         allow_null=True
     )
+
+    cancel_at_period_end = serializers.BooleanField()
 
     grace_until = serializers.DateField(
         allow_null=True
@@ -90,6 +96,8 @@ class CurrentSubscriptionSerializer(serializers.Serializer):
             "operational_status": access.status,
             "can_create": access.can_create,
             "can_purchase_credits": access.can_purchase_credits,
+            "can_start_subscription": access.can_start_subscription,
+            "financial_blocked": access.financial_blocked,
             "access_reason": access.access_reason,
             "plan_name": None,
             "plan": None,
@@ -98,6 +106,7 @@ class CurrentSubscriptionSerializer(serializers.Serializer):
             "current_period_start": None,
             "current_period_end": None,
             "next_billing_at": None,
+            "cancel_at_period_end": False,
             "grace_until": access.grace_until,
             "days_remaining_in_grace": (
                 access.days_remaining_in_grace
@@ -139,6 +148,9 @@ class CurrentSubscriptionSerializer(serializers.Serializer):
                     ),
                     "next_billing_at": (
                         subscription.next_billing_at
+                    ),
+                    "cancel_at_period_end": (
+                        subscription.cancel_at_period_end
                     ),
                 }
             )

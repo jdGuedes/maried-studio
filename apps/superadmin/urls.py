@@ -16,6 +16,8 @@ from .views import (
     SuperAdminGenerationListView,
     SuperAdminOrganizationDetailView,
     SuperAdminOrganizationListView,
+    SuperAdminPaymentDisputeDetailView,
+    SuperAdminPaymentDisputeListView,
     SuperAdminPlanDetailView,
     SuperAdminPlanListView,
     SuperAdminPlanStripeSyncView,
@@ -138,6 +140,16 @@ urlpatterns = [
         "credit-purchases/",
         SuperAdminCreditPurchaseListView.as_view(),
         name="credit-purchases",
+    ),
+    path(
+        "financeiro/disputas/",
+        SuperAdminPaymentDisputeListView.as_view(),
+        name="payment-disputes",
+    ),
+    path(
+        "financeiro/disputas/<uuid:pk>/",
+        SuperAdminPaymentDisputeDetailView.as_view(),
+        name="payment-dispute-detail",
     ),
     path(
         "generations/",

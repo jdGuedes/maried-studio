@@ -124,6 +124,69 @@ class CreditPurchaseStatus(
     )
 
 
+class PaymentDisputeOriginType(
+    models.TextChoices
+):
+    SUBSCRIPTION = (
+        "SUBSCRIPTION",
+        "Assinatura",
+    )
+
+    CREDIT_PURCHASE = (
+        "CREDIT_PURCHASE",
+        "Compra de créditos",
+    )
+
+    UNKNOWN = (
+        "UNKNOWN",
+        "Desconhecida",
+    )
+
+
+class PaymentDisputeStatus(
+    models.TextChoices
+):
+    WARNING_NEEDS_RESPONSE = (
+        "warning_needs_response",
+        "Alerta exige resposta",
+    )
+
+    WARNING_UNDER_REVIEW = (
+        "warning_under_review",
+        "Alerta em análise",
+    )
+
+    WARNING_CLOSED = (
+        "warning_closed",
+        "Alerta encerrado",
+    )
+
+    NEEDS_RESPONSE = (
+        "needs_response",
+        "Exige resposta",
+    )
+
+    UNDER_REVIEW = (
+        "under_review",
+        "Em análise",
+    )
+
+    WON = (
+        "won",
+        "Ganha",
+    )
+
+    LOST = (
+        "lost",
+        "Perdida",
+    )
+
+    PREVENTED = (
+        "prevented",
+        "Prevenida",
+    )
+
+
 # ==========================================================
 # PLANO
 # ==========================================================
@@ -668,6 +731,130 @@ class CreditPurchase(
                     "stripe_payment_intent_id",
                 ],
                 name="billing_purchase_pi",
+            ),
+        ]
+
+
+class PaymentDispute(
+    UUIDTimeStampedModel
+):
+    BLOCKING_STATUSES = {
+        PaymentDisputeStatus.WARNING_NEEDS_RESPONSE,
+        PaymentDisputeStatus.WARNING_UNDER_REVIEW,
+        PaymentDisputeStatus.NEEDS_RESPONSE,
+        PaymentDisputeStatus.UNDER_REVIEW,
+        PaymentDisputeStatus.LOST,
+    }
+
+    organization = models.ForeignKey(
+        "organizations.Organization",
+        on_delete=models.CASCADE,
+        related_name="payment_disputes",
+    )
+
+    stripe_dispute_id = models.CharField(
+        max_length=255,
+        unique=True,
+    )
+
+    stripe_payment_intent_id = models.CharField(
+        max_length=255,
+        blank=True,
+    )
+
+    stripe_charge_id = models.CharField(
+        max_length=255,
+        blank=True,
+    )
+
+    stripe_customer_id = models.CharField(
+        max_length=255,
+        blank=True,
+    )
+
+    related_subscription = models.ForeignKey(
+        Subscription,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="payment_disputes",
+    )
+
+    related_credit_purchase = models.ForeignKey(
+        CreditPurchase,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="payment_disputes",
+    )
+
+    origin_type = models.CharField(
+        max_length=30,
+        choices=PaymentDisputeOriginType.choices,
+        default=PaymentDisputeOriginType.UNKNOWN,
+    )
+
+    amount = models.IntegerField(
+        default=0,
+    )
+
+    currency = models.CharField(
+        max_length=3,
+        blank=True,
+    )
+
+    status = models.CharField(
+        max_length=40,
+        choices=PaymentDisputeStatus.choices,
+    )
+
+    reason = models.CharField(
+        max_length=120,
+        blank=True,
+    )
+
+    evidence_due_by = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
+    resolved_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
+    last_event_id = models.CharField(
+        max_length=255,
+        blank=True,
+    )
+
+    @property
+    def is_blocking(self):
+        return self.status in self.BLOCKING_STATUSES
+
+    class Meta:
+        ordering = [
+            "-created_at",
+        ]
+        indexes = [
+            models.Index(
+                fields=[
+                    "organization",
+                    "status",
+                ],
+                name="billing_dispute_org_status",
+            ),
+            models.Index(
+                fields=[
+                    "stripe_payment_intent_id",
+                ],
+                name="billing_dispute_pi",
+            ),
+            models.Index(
+                fields=[
+                    "stripe_charge_id",
+                ],
+                name="billing_dispute_charge",
             ),
         ]
 

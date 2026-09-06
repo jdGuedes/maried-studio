@@ -13,6 +13,7 @@ from apps.accounts.models import UserRole
 from apps.billing.models import (
     CreditPackage,
     CreditPurchase,
+    PaymentDispute,
     Plan,
     Subscription,
     SubscriptionStatus,
@@ -48,6 +49,7 @@ from .serializers import (
     SuperAdminClientDetailSerializer,
     SuperAdminClientListSerializer,
     SuperAdminCreditPackageSerializer,
+    SuperAdminPaymentDisputeSerializer,
     SuperAdminCreditPurchaseSerializer,
     SuperAdminCreditWalletSerializer,
     SuperAdminGenerationSerializer,
@@ -218,6 +220,7 @@ class SuperAdminSummaryView(APIView):
             SubscriptionAccessStatus.ACTIVE: 0,
             SubscriptionAccessStatus.GRACE: 0,
             SubscriptionAccessStatus.BLOCKED: 0,
+            SubscriptionAccessStatus.FINANCIAL_BLOCK: 0,
         }
 
         for subscription in (
@@ -258,6 +261,11 @@ class SuperAdminSummaryView(APIView):
                 "operational_blocked_subscriptions": (
                     subscription_statuses[
                         SubscriptionAccessStatus.BLOCKED
+                    ]
+                ),
+                "financial_blocked_subscriptions": (
+                    subscription_statuses[
+                        SubscriptionAccessStatus.FINANCIAL_BLOCK
                     ]
                 ),
                 "credit_wallets": CreditWallet.objects.count(),
@@ -552,6 +560,8 @@ class SuperAdminClientStripeReconcileView(
                 "stripe_subscription_status": (
                     result.stripe_subscription_status
                 ),
+                "disputes_reconciled": result.disputes_reconciled,
+                "financial_blocked": result.financial_blocked,
             },
         )
 
@@ -575,6 +585,8 @@ class SuperAdminClientStripeReconcileView(
                 "stripe_subscription_id": (
                     result.stripe_subscription_id
                 ),
+                "disputes_reconciled": result.disputes_reconciled,
+                "financial_blocked": result.financial_blocked,
             },
             status=status.HTTP_200_OK,
         )
@@ -1098,6 +1110,40 @@ class SuperAdminCreditPurchaseListView(
             )
             .order_by("-created_at")
         )
+
+
+class SuperAdminPaymentDisputeListView(
+    generics.ListAPIView
+):
+    serializer_class = SuperAdminPaymentDisputeSerializer
+    permission_classes = [IsSuperAdmin]
+
+    def get_queryset(self):
+        return (
+            PaymentDispute.objects
+            .select_related(
+                "organization",
+                "related_subscription",
+                "related_credit_purchase",
+            )
+            .order_by("-created_at")
+        )
+
+
+class SuperAdminPaymentDisputeDetailView(
+    generics.RetrieveAPIView
+):
+    serializer_class = SuperAdminPaymentDisputeSerializer
+    permission_classes = [IsSuperAdmin]
+
+    queryset = (
+        PaymentDispute.objects
+        .select_related(
+            "organization",
+            "related_subscription",
+            "related_credit_purchase",
+        )
+    )
 
 
 class SuperAdminSubscriptionListView(

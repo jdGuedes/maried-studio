@@ -19,6 +19,7 @@ from .models import (
     CreditPackage,
     CreditPurchase,
     CreditPurchaseStatus,
+    PaymentDisputeStatus,
     Plan,
     SubscriptionCheckoutAttempt,
     SubscriptionCheckoutAttemptStatus,
@@ -28,7 +29,9 @@ from .models import (
     SubscriptionStatus,
 )
 from .services import (
+    BillingAccessService,
     CreditPurchaseService,
+    PaymentDisputeService,
     SubscriptionService,
 )
 
@@ -618,6 +621,10 @@ class StripeCreditPurchaseSessionError(StripeBillingError):
     pass
 
 
+class StripeSubscriptionCancellationError(StripeBillingError):
+    pass
+
+
 class StripeReconciliationError(StripeBillingError):
     code = "STRIPE_RECONCILIATION_FAILED"
 
@@ -661,6 +668,8 @@ class StripeReconciliationResult:
     stripe_customer_id: str
     stripe_price_id: str
     cycle_type: str | None = None
+    disputes_reconciled: int = 0
+    financial_blocked: bool = False
 
 
 def _stripe_value(
@@ -988,6 +997,119 @@ class CreditPurchaseCheckoutService:
         )
 
 
+class StripeSubscriptionCancellationService:
+    @classmethod
+    def client(cls):
+        return StripePlanService.client()
+
+    @classmethod
+    def _subscription_for_organization(
+        cls,
+        organization,
+    ):
+        subscription = (
+            Subscription.objects
+            .select_related(
+                "organization",
+                "plan",
+            )
+            .filter(
+                organization=organization,
+            )
+            .first()
+        )
+
+        if (
+            not subscription
+            or not subscription.stripe_subscription_id
+        ):
+            raise StripeSubscriptionCancellationError(
+                "Assinatura Stripe não encontrada."
+            )
+
+        if subscription.status != SubscriptionStatus.ACTIVE:
+            raise StripeSubscriptionCancellationError(
+                "Somente assinatura ativa pode alterar renovação."
+            )
+
+        return subscription
+
+    @classmethod
+    def cancel_at_period_end(
+        cls,
+        *,
+        organization,
+    ):
+        subscription = cls._subscription_for_organization(
+            organization
+        )
+
+        try:
+            stripe_subscription = (
+                cls.client()
+                .v1
+                .subscriptions
+                .update(
+                    subscription.stripe_subscription_id,
+                    params={
+                        "cancel_at_period_end": True,
+                    },
+                )
+            )
+
+        except Exception as exc:
+            raise StripeSubscriptionCancellationError(
+                "Não foi possível cancelar a renovação no Stripe."
+            ) from exc
+
+        return StripeWebhookService.sync_subscription_object(
+            stripe_subscription,
+            fallback_subscription=subscription,
+        )
+
+    @classmethod
+    def resume(
+        cls,
+        *,
+        organization,
+    ):
+        subscription = cls._subscription_for_organization(
+            organization
+        )
+
+        access = BillingAccessService.evaluate_organization(
+            organization
+        )
+
+        if access.financial_blocked:
+            raise StripeSubscriptionCancellationError(
+                "Não é possível manter a assinatura durante bloqueio financeiro."
+            )
+
+        try:
+            stripe_subscription = (
+                cls.client()
+                .v1
+                .subscriptions
+                .update(
+                    subscription.stripe_subscription_id,
+                    params={
+                        "cancel_at_period_end": False,
+                    },
+                )
+            )
+
+        except Exception as exc:
+            raise StripeSubscriptionCancellationError(
+                "Não foi possível manter a assinatura no Stripe."
+            ) from exc
+
+        return StripeWebhookService.sync_subscription_object(
+            stripe_subscription,
+            fallback_subscription=subscription,
+        )
+
+
 class StripeBillingService:
     INTEGRATION = StripePlanService.INTEGRATION
 
@@ -1100,6 +1222,15 @@ class StripeBillingService:
         if organization is None:
             raise StripeCheckoutUnavailableError(
                 "Usuário não possui organização vinculada."
+            )
+
+        access = BillingAccessService.evaluate_organization(
+            organization
+        )
+
+        if access.financial_blocked:
+            raise StripeCheckoutUnavailableError(
+                "Conta bloqueada por contestação financeira."
             )
 
         plan = Plan.objects.get(
@@ -1252,6 +1383,15 @@ class StripeBillingService:
         if organization is None:
             raise StripeCheckoutUnavailableError(
                 "Usuário não possui organização vinculada."
+            )
+
+        access = BillingAccessService.evaluate_organization(
+            organization
+        )
+
+        if access.financial_blocked:
+            raise StripeCheckoutUnavailableError(
+                "Conta bloqueada por contestação financeira."
             )
 
         package = CreditPackage.objects.get(
@@ -1763,6 +1903,11 @@ class StripeWebhookService:
         "payment_intent.succeeded",
         "customer.subscription.updated",
         "customer.subscription.deleted",
+        "charge.dispute.created",
+        "charge.dispute.updated",
+        "charge.dispute.closed",
+        "charge.dispute.funds_withdrawn",
+        "charge.dispute.funds_reinstated",
     }
 
     @classmethod
@@ -1869,6 +2014,15 @@ class StripeWebhookService:
                 ),
                 "customer.subscription.deleted": (
                     cls._handle_subscription_deleted
+                ),
+                "charge.dispute.created": cls._handle_dispute_event,
+                "charge.dispute.updated": cls._handle_dispute_event,
+                "charge.dispute.closed": cls._handle_dispute_event,
+                "charge.dispute.funds_withdrawn": (
+                    cls._handle_dispute_event
+                ),
+                "charge.dispute.funds_reinstated": (
+                    cls._handle_dispute_event
                 ),
             }[event_type]
 
@@ -2012,6 +2166,9 @@ class StripeWebhookService:
         *,
         webhook_event,
     ):
+        invoice = cls._invoice_with_financial_details(
+            invoice
+        )
         invoice_id = _stripe_id(
             invoice
         )
@@ -2371,6 +2528,40 @@ class StripeWebhookService:
             ) from exc
 
     @classmethod
+    def _invoice_with_financial_details(
+        cls,
+        invoice,
+    ):
+        invoice_id = _stripe_id(
+            invoice
+        )
+
+        if not invoice_id:
+            return invoice
+
+        if all(
+            [
+                cls._invoice_subscription_id(
+                    invoice
+                ),
+                cls._invoice_price_id(
+                    invoice
+                ),
+                cls._invoice_period_start(
+                    invoice
+                ),
+                cls._invoice_period_end(
+                    invoice
+                ),
+            ]
+        ):
+            return invoice
+
+        return cls.retrieve_invoice(
+            invoice_id
+        )
+
+    @classmethod
     def _handle_subscription_created(
         cls,
         stripe_subscription,
@@ -2456,11 +2647,290 @@ class StripeWebhookService:
         return result
 
     @classmethod
+    def _handle_dispute_event(
+        cls,
+        dispute_object,
+        *,
+        webhook_event,
+    ):
+        dispute_id = _stripe_id(
+            dispute_object
+        )
+        payment_intent_id = _stripe_id(
+            _stripe_value(
+                dispute_object,
+                "payment_intent",
+                "",
+            )
+        )
+        charge_id = _stripe_id(
+            _stripe_value(
+                dispute_object,
+                "charge",
+                "",
+            )
+        )
+        customer_id = cls._dispute_customer_id(
+            dispute_object
+        )
+        dispute_status = _stripe_value(
+            dispute_object,
+            "status",
+            "",
+        )
+
+        if not dispute_id or not dispute_status:
+            raise StripeBillingError(
+                "Disputa Stripe sem dados mínimos."
+            )
+
+        organization = cls._organization_for_dispute(
+            dispute_object,
+            stripe_customer_id=customer_id,
+            payment_intent_id=payment_intent_id,
+        )
+
+        dispute = (
+            PaymentDisputeService
+            .upsert_from_stripe_dispute(
+                organization=organization,
+                stripe_dispute_id=dispute_id,
+                stripe_payment_intent_id=payment_intent_id,
+                stripe_charge_id=charge_id,
+                stripe_customer_id=customer_id,
+                amount=_stripe_value(
+                    dispute_object,
+                    "amount",
+                    0,
+                ) or 0,
+                currency=_stripe_value(
+                    dispute_object,
+                    "currency",
+                    "",
+                ),
+                status=dispute_status,
+                reason=_stripe_value(
+                    dispute_object,
+                    "reason",
+                    "",
+                ),
+                evidence_due_by=_stripe_timestamp(
+                    _stripe_path(
+                        dispute_object,
+                        "evidence_details",
+                        "due_by",
+                    )
+                ),
+                event_id=webhook_event.stripe_event_id,
+            )
+        )
+
+        return {
+            "organization": organization,
+            "subscription": dispute.related_subscription,
+            "stripe_customer_id": customer_id,
+            "stripe_subscription_id": (
+                dispute.related_subscription.stripe_subscription_id
+                if dispute.related_subscription
+                else ""
+            ),
+            "stripe_invoice_id": "",
+            "cycle_type": "DISPUTE",
+            "applied": dispute.is_blocking,
+        }
+
+    @classmethod
+    def _normalize_dispute(
+        cls,
+        dispute_object,
+    ):
+        dispute_id = _stripe_id(
+            dispute_object
+        )
+        dispute_status = _stripe_value(
+            dispute_object,
+            "status",
+            "",
+        )
+
+        if not dispute_id or not dispute_status:
+            raise StripeBillingError(
+                "Stripe dispute missing required data."
+            )
+
+        return {
+            "stripe_dispute_id": dispute_id,
+            "stripe_payment_intent_id": _stripe_id(
+                _stripe_value(
+                    dispute_object,
+                    "payment_intent",
+                    "",
+                )
+            ),
+            "stripe_charge_id": _stripe_id(
+                _stripe_value(
+                    dispute_object,
+                    "charge",
+                    "",
+                )
+            ),
+            "stripe_customer_id": cls._dispute_customer_id(
+                dispute_object
+            ),
+            "amount": (
+                _stripe_value(
+                    dispute_object,
+                    "amount",
+                    0,
+                )
+                or 0
+            ),
+            "currency": _stripe_value(
+                dispute_object,
+                "currency",
+                "",
+            ),
+            "status": dispute_status,
+            "reason": _stripe_value(
+                dispute_object,
+                "reason",
+                "",
+            ),
+            "evidence_due_by": _stripe_timestamp(
+                _stripe_path(
+                    dispute_object,
+                    "evidence_details",
+                    "due_by",
+                )
+            ),
+        }
+
+    @classmethod
+    def _dispute_customer_id(
+        cls,
+        dispute_object,
+    ):
+        direct_customer = _stripe_id(
+            _stripe_value(
+                dispute_object,
+                "customer",
+                "",
+            )
+        )
+
+        if direct_customer:
+            return direct_customer
+
+        payment_intent_customer = _stripe_id(
+            _stripe_path(
+                dispute_object,
+                "payment_intent",
+                "customer",
+                default="",
+            )
+        )
+
+        if payment_intent_customer:
+            return payment_intent_customer
+
+        return _stripe_id(
+            _stripe_path(
+                dispute_object,
+                "charge",
+                "customer",
+                default="",
+            )
+        )
+
+    @classmethod
+    def _organization_for_dispute(
+        cls,
+        dispute_object,
+        *,
+        stripe_customer_id,
+        payment_intent_id,
+    ):
+        if payment_intent_id:
+            purchase = (
+                CreditPurchase.objects
+                .select_related(
+                    "organization",
+                )
+                .filter(
+                    stripe_payment_intent_id=payment_intent_id,
+                )
+                .first()
+            )
+
+            if purchase:
+                if (
+                    stripe_customer_id
+                    and purchase.stripe_customer_id
+                    and purchase.stripe_customer_id != stripe_customer_id
+                ):
+                    raise StripeBillingError(
+                        "Disputa Stripe possui Customer divergente."
+                    )
+
+                return purchase.organization
+
+        if stripe_customer_id:
+            organization = (
+                Organization.objects
+                .filter(
+                    stripe_customer_id=stripe_customer_id,
+                )
+                .first()
+            )
+
+            if organization:
+                return organization
+
+        organization_id = _stripe_path(
+            dispute_object,
+            "metadata",
+            "maried_organization_id",
+        )
+
+        if organization_id:
+            organization = Organization.objects.get(
+                pk=organization_id,
+            )
+
+            if (
+                stripe_customer_id
+                and organization.stripe_customer_id
+                and organization.stripe_customer_id != stripe_customer_id
+            ):
+                raise StripeBillingError(
+                    "Disputa Stripe não corresponde à Organization."
+                )
+
+            return organization
+
+        raise StripeBillingError(
+            "Disputa Stripe sem Organization segura."
+        )
+
+    @classmethod
+    def sync_subscription_object(
+        cls,
+        stripe_subscription,
+        *,
+        fallback_subscription=None,
+    ):
+        return cls._sync_subscription_status(
+            stripe_subscription,
+            fallback_subscription=fallback_subscription,
+        )["subscription"]
+
+    @classmethod
     def _sync_subscription_status(
         cls,
         stripe_subscription,
         *,
         deleted=False,
+        fallback_subscription=None,
     ):
         stripe_subscription_id = _stripe_value(
             stripe_subscription,
@@ -2478,18 +2948,24 @@ class StripeWebhookService:
             "",
         )
 
-        subscription = (
-            Subscription.objects
-            .filter(
-                stripe_subscription_id=(
-                    stripe_subscription_id
+        subscription = None
+
+        if stripe_subscription_id:
+            subscription = (
+                Subscription.objects
+                .filter(
+                    stripe_subscription_id=(
+                        stripe_subscription_id
+                    )
                 )
+                .select_related(
+                    "organization",
+                )
+                .first()
             )
-            .select_related(
-                "organization",
-            )
-            .first()
-        )
+
+        if subscription is None:
+            subscription = fallback_subscription
 
         if not subscription:
             return {
@@ -2740,12 +3216,44 @@ class StripeReconciliationService:
                 organization=organization,
                 stripe_subscription=stripe_subscription,
             )
-            return cls._apply_invoice(
+            dispute_objects = cls._find_relevant_disputes(
                 organization=organization,
-                local_subscription=local_subscription,
-                stripe_subscription=stripe_subscription,
                 invoice=invoice,
-                actor=actor,
+            )
+
+            with transaction.atomic():
+                result = cls._apply_invoice(
+                    organization=organization,
+                    local_subscription=local_subscription,
+                    stripe_subscription=stripe_subscription,
+                    invoice=invoice,
+                    actor=actor,
+                )
+                disputes_reconciled = cls._apply_disputes(
+                    organization=organization,
+                    dispute_objects=dispute_objects,
+                    validated_reconciliation_organization=organization,
+                )
+
+            access = BillingAccessService.evaluate_organization(
+                organization
+            )
+
+            return StripeReconciliationResult(
+                reconciled=result.reconciled,
+                applied=result.applied,
+                subscription=result.subscription,
+                plan=result.plan,
+                stripe_subscription_id=result.stripe_subscription_id,
+                stripe_subscription_status=(
+                    result.stripe_subscription_status
+                ),
+                stripe_invoice_id=result.stripe_invoice_id,
+                stripe_customer_id=result.stripe_customer_id,
+                stripe_price_id=result.stripe_price_id,
+                cycle_type=result.cycle_type,
+                disputes_reconciled=disputes_reconciled,
+                financial_blocked=access.financial_blocked,
             )
 
         except StripeReconciliationError:
@@ -3047,6 +3555,618 @@ class StripeReconciliationService:
             )
 
         return True
+
+    @classmethod
+    def _find_relevant_disputes(
+        cls,
+        *,
+        organization,
+        invoice,
+    ):
+        (
+            payment_intent_ids,
+            charge_ids,
+            direct_disputes_by_id,
+        ) = (
+            cls._payment_references_for_disputes(
+                organization=organization,
+                invoice=invoice,
+            )
+        )
+        disputes_by_id = dict(direct_disputes_by_id)
+
+        for dispute_object in list(disputes_by_id.values()):
+            cls._validate_dispute_candidate(
+                dispute_object,
+                organization=organization,
+            )
+
+        for payment_intent_id in sorted(payment_intent_ids):
+            for dispute_object in cls.list_disputes(
+                payment_intent_id=payment_intent_id,
+            ):
+                cls._validate_dispute_candidate(
+                    dispute_object,
+                    organization=organization,
+                )
+                disputes_by_id[
+                    _stripe_id(dispute_object)
+                ] = dispute_object
+
+        for charge_id in sorted(charge_ids):
+            for dispute_object in cls.list_disputes(
+                charge_id=charge_id,
+            ):
+                cls._validate_dispute_candidate(
+                    dispute_object,
+                    organization=organization,
+                )
+                disputes_by_id[
+                    _stripe_id(dispute_object)
+                ] = dispute_object
+
+        return list(
+            disputes_by_id.values()
+        )
+
+    @classmethod
+    def _payment_references_for_disputes(
+        cls,
+        *,
+        organization,
+        invoice,
+    ):
+        payment_intent_ids = set()
+        charge_ids = set()
+        dispute_ids = set()
+        payment_intents_by_id = {}
+        charges_by_id = {}
+        disputes_by_id = {}
+
+        cls._add_payment_reference(
+            payment_intent_ids,
+            _stripe_value(
+                invoice,
+                "payment_intent",
+                "",
+            ),
+            payment_intents_by_id,
+            expected_object="payment_intent",
+        )
+        cls._add_payment_reference(
+            charge_ids,
+            _stripe_value(
+                invoice,
+                "charge",
+                "",
+            ),
+            charges_by_id,
+            expected_object="charge",
+        )
+
+        for payment_record in cls._invoice_payment_records(
+            invoice=invoice,
+            has_financial_reference=bool(
+                payment_intent_ids
+                or charge_ids
+            ),
+        ):
+            payment_record_status = _stripe_value(
+                payment_record,
+                "status",
+                "",
+            )
+
+            if (
+                payment_record_status
+                and payment_record_status != "paid"
+            ):
+                continue
+
+            payment = _stripe_value(
+                payment_record,
+                "payment",
+                {},
+            )
+            payment_type = _stripe_value(
+                payment,
+                "type",
+                "",
+            )
+
+            if payment_type and payment_type != "payment_intent":
+                continue
+
+            payment_object_type = _stripe_value(
+                payment,
+                "object",
+                "",
+            )
+
+            if payment_object_type == "payment_intent":
+                cls._add_payment_reference(
+                    payment_intent_ids,
+                    payment,
+                    payment_intents_by_id,
+                    expected_object="payment_intent",
+                )
+            elif payment_object_type == "charge":
+                cls._add_payment_reference(
+                    charge_ids,
+                    payment,
+                    charges_by_id,
+                    expected_object="charge",
+                )
+
+            cls._add_payment_reference(
+                payment_intent_ids,
+                _stripe_path(
+                    payment,
+                    "payment_intent",
+                    default="",
+                ),
+                payment_intents_by_id,
+                expected_object="payment_intent",
+            )
+            cls._add_payment_reference(
+                charge_ids,
+                _stripe_path(
+                    payment,
+                    "charge",
+                    default="",
+                ),
+                charges_by_id,
+                expected_object="charge",
+            )
+
+        for payment_intent_id in list(payment_intent_ids):
+            payment_intent = payment_intents_by_id.get(
+                payment_intent_id
+            ) or cls.retrieve_payment_intent(
+                payment_intent_id
+            )
+            payment_intents_by_id[payment_intent_id] = payment_intent
+            cls._validate_payment_intent_candidate(
+                payment_intent,
+                organization=organization,
+                payment_intent_id=payment_intent_id,
+            )
+            cls._add_payment_reference(
+                charge_ids,
+                _stripe_value(
+                    payment_intent,
+                    "latest_charge",
+                    "",
+                ),
+                charges_by_id,
+                expected_object="charge",
+            )
+
+            for charge in _stripe_path(
+                payment_intent,
+                "charges",
+                "data",
+                default=[],
+            ) or []:
+                cls._add_payment_reference(
+                    charge_ids,
+                    charge,
+                    charges_by_id,
+                    expected_object="charge",
+                )
+
+        for charge_id in list(charge_ids):
+            charge = charges_by_id.get(
+                charge_id
+            ) or cls.retrieve_charge(
+                charge_id
+            )
+            charges_by_id[charge_id] = charge
+            cls._validate_charge_candidate(
+                charge,
+                organization=organization,
+                charge_id=charge_id,
+                payment_intent_ids=payment_intent_ids,
+            )
+            cls._add_payment_reference(
+                payment_intent_ids,
+                _stripe_value(
+                    charge,
+                    "payment_intent",
+                    "",
+                ),
+                payment_intents_by_id,
+                expected_object="payment_intent",
+            )
+            cls._add_payment_reference(
+                dispute_ids,
+                (
+                    _stripe_value(
+                        charge,
+                        "dispute",
+                        "",
+                    )
+                    if _stripe_value(
+                        charge,
+                        "disputed",
+                        None,
+                    ) is not False
+                    else ""
+                ),
+                disputes_by_id,
+                expected_object="dispute",
+            )
+
+        for purchase in (
+            CreditPurchase.objects
+            .filter(
+                organization=organization,
+            )
+            .exclude(
+                stripe_payment_intent_id__isnull=True,
+            )
+            .exclude(
+                stripe_payment_intent_id="",
+            )
+        ):
+            payment_intent_ids.add(
+                purchase.stripe_payment_intent_id
+            )
+
+        for dispute_id in list(dispute_ids):
+            if dispute_id not in disputes_by_id:
+                disputes_by_id[dispute_id] = cls.retrieve_dispute(
+                    dispute_id
+                )
+
+        return payment_intent_ids, charge_ids, disputes_by_id
+
+    @classmethod
+    def _invoice_payment_records(
+        cls,
+        *,
+        invoice,
+        has_financial_reference,
+    ):
+        invoice_payments = _stripe_path(
+            invoice,
+            "payments",
+            "data",
+            default=None,
+        )
+
+        if invoice_payments:
+            return invoice_payments
+
+        if has_financial_reference:
+            return []
+
+        invoice_id = _stripe_id(
+            invoice
+        )
+
+        if not invoice_id:
+            return []
+
+        return cls.list_invoice_payments(
+            invoice_id
+        )
+
+    @classmethod
+    def list_invoice_payments(
+        cls,
+        invoice_id,
+    ):
+        try:
+            response = StripeBillingService.client().v1.invoice_payments.list(
+                params={
+                    "invoice": invoice_id,
+                    "limit": 10,
+                },
+            )
+
+        except Exception as exc:
+            raise StripeReconciliationError(
+                "InvoicePayments Stripe nao puderam ser consultados."
+            ) from exc
+
+        return _stripe_value(
+            response,
+            "data",
+            [],
+        ) or []
+
+    @staticmethod
+    def _add_payment_reference(
+        target,
+        value,
+        objects_by_id=None,
+        *,
+        expected_object="",
+    ):
+        reference_id = _stripe_id(
+            value
+        )
+
+        if reference_id:
+            target.add(
+                reference_id
+            )
+
+        if (
+            reference_id
+            and objects_by_id is not None
+            and expected_object
+            and _stripe_value(value, "object", "") == expected_object
+        ):
+            objects_by_id[reference_id] = value
+
+    @classmethod
+    def retrieve_payment_intent(
+        cls,
+        payment_intent_id,
+    ):
+        try:
+            return StripeBillingService.client().v1.payment_intents.retrieve(
+                payment_intent_id,
+            )
+
+        except Exception as exc:
+            raise StripeReconciliationError(
+                "PaymentIntent Stripe nao pode ser consultado."
+            ) from exc
+
+    @classmethod
+    def retrieve_charge(
+        cls,
+        charge_id,
+    ):
+        try:
+            return StripeBillingService.client().v1.charges.retrieve(
+                charge_id,
+            )
+
+        except Exception as exc:
+            raise StripeReconciliationError(
+                "Charge Stripe nao pode ser consultada."
+            ) from exc
+
+    @classmethod
+    def retrieve_dispute(
+        cls,
+        dispute_id,
+    ):
+        try:
+            return StripeBillingService.client().v1.disputes.retrieve(
+                dispute_id,
+            )
+
+        except Exception as exc:
+            raise StripeReconciliationError(
+                "Stripe dispute could not be retrieved."
+            ) from exc
+
+    @classmethod
+    def _validate_payment_intent_candidate(
+        cls,
+        payment_intent,
+        *,
+        organization,
+        payment_intent_id,
+    ):
+        if _stripe_id(payment_intent) != payment_intent_id:
+            raise StripeReconciliationValidationError(
+                "PaymentIntent Stripe nao corresponde ao ID consultado."
+            )
+
+        customer_id = _stripe_id(
+            _stripe_value(
+                payment_intent,
+                "customer",
+                "",
+            )
+        )
+
+        if customer_id and customer_id != organization.stripe_customer_id:
+            logger.warning(
+                "Stripe PaymentIntent customer mismatch during reconciliation",
+                extra={
+                    "organization_id": str(organization.pk),
+                    "stripe_payment_intent_id": payment_intent_id,
+                },
+            )
+            raise StripeReconciliationValidationError(
+                "PaymentIntent Stripe pertence a outro Customer."
+            )
+
+    @classmethod
+    def _validate_charge_candidate(
+        cls,
+        charge,
+        *,
+        organization,
+        charge_id,
+        payment_intent_ids,
+    ):
+        if _stripe_id(charge) != charge_id:
+            raise StripeReconciliationValidationError(
+                "Charge Stripe nao corresponde ao ID consultado."
+            )
+
+        customer_id = _stripe_id(
+            _stripe_value(
+                charge,
+                "customer",
+                "",
+            )
+        )
+
+        if customer_id and customer_id != organization.stripe_customer_id:
+            logger.warning(
+                "Stripe charge customer mismatch during reconciliation",
+                extra={
+                    "organization_id": str(organization.pk),
+                    "stripe_charge_id": charge_id,
+                },
+            )
+            raise StripeReconciliationValidationError(
+                "Charge Stripe pertence a outro Customer."
+            )
+
+        payment_intent_id = _stripe_id(
+            _stripe_value(
+                charge,
+                "payment_intent",
+                "",
+            )
+        )
+
+        if (
+            payment_intent_id
+            and payment_intent_ids
+            and payment_intent_id not in payment_intent_ids
+        ):
+            raise StripeReconciliationValidationError(
+                "Charge Stripe nao pertence ao PaymentIntent reconciliado."
+            )
+
+    @classmethod
+    def list_disputes(
+        cls,
+        *,
+        payment_intent_id="",
+        charge_id="",
+    ):
+        params = {
+            "limit": 100,
+        }
+
+        if payment_intent_id:
+            params["payment_intent"] = payment_intent_id
+        elif charge_id:
+            params["charge"] = charge_id
+        else:
+            return []
+
+        try:
+            response = StripeBillingService.client().v1.disputes.list(
+                params=params,
+            )
+
+        except Exception as exc:
+            raise StripeReconciliationError(
+                "Stripe disputes could not be consulted."
+            ) from exc
+
+        return _stripe_value(
+            response,
+            "data",
+            [],
+        ) or []
+
+    @classmethod
+    def _validate_dispute_candidate(
+        cls,
+        dispute_object,
+        *,
+        organization,
+    ):
+        customer_id = StripeWebhookService._dispute_customer_id(
+            dispute_object
+        )
+
+        if (
+            customer_id
+            and customer_id != organization.stripe_customer_id
+        ):
+            logger.warning(
+                "Stripe dispute customer mismatch during reconciliation",
+                extra={
+                    "organization_id": str(organization.pk),
+                    "stripe_dispute_id": _stripe_id(dispute_object),
+                },
+            )
+            raise StripeReconciliationValidationError(
+                "Stripe dispute belongs to another Customer."
+            )
+
+    @classmethod
+    def _apply_disputes(
+        cls,
+        *,
+        organization,
+        dispute_objects,
+        validated_reconciliation_organization=None,
+    ):
+        count = 0
+
+        for dispute_object in dispute_objects:
+            dispute_data = StripeWebhookService._normalize_dispute(
+                dispute_object
+            )
+            if validated_reconciliation_organization is not None:
+                if validated_reconciliation_organization.pk != organization.pk:
+                    raise StripeReconciliationValidationError(
+                        "Trusted reconciliation Organization mismatch."
+                    )
+
+                if (
+                    dispute_data["stripe_customer_id"]
+                    and dispute_data["stripe_customer_id"]
+                    != validated_reconciliation_organization.stripe_customer_id
+                ):
+                    logger.warning(
+                        "Trusted Stripe dispute customer mismatch",
+                        extra={
+                            "organization_id": str(organization.pk),
+                            "stripe_dispute_id": dispute_data[
+                                "stripe_dispute_id"
+                            ],
+                        },
+                    )
+                    raise StripeReconciliationValidationError(
+                        "Stripe dispute belongs to another Customer."
+                    )
+
+                logger.info(
+                    "Applying Stripe dispute with validated reconciliation organization",
+                    extra={
+                        "organization_id": str(organization.pk),
+                        "stripe_dispute_id": dispute_data[
+                            "stripe_dispute_id"
+                        ],
+                    },
+                )
+                dispute_organization = validated_reconciliation_organization
+                dispute_data["stripe_customer_id"] = (
+                    dispute_data["stripe_customer_id"]
+                    or validated_reconciliation_organization.stripe_customer_id
+                )
+            else:
+                dispute_organization = StripeWebhookService._organization_for_dispute(
+                    dispute_object,
+                    stripe_customer_id=dispute_data[
+                        "stripe_customer_id"
+                    ],
+                    payment_intent_id=dispute_data[
+                        "stripe_payment_intent_id"
+                    ],
+                )
+
+            if dispute_organization.pk != organization.pk:
+                raise StripeReconciliationValidationError(
+                    "Stripe dispute points to another Organization."
+                )
+
+            PaymentDisputeService.upsert_from_stripe_dispute(
+                organization=organization,
+                **dispute_data,
+                event_id="",
+                source="RECONCILIATION",
+            )
+            count += 1
+
+        return count
 
     @classmethod
     def _apply_invoice(

@@ -1,10 +1,12 @@
 "use client";
 
 import {
+  AlertTriangle,
   CalendarDays,
   Check,
   CreditCard,
   LoaderCircle,
+  X,
 } from "lucide-react";
 
 import {
@@ -15,9 +17,11 @@ import {
 import { AppShell } from "@/components/layout/app-shell";
 
 import {
+  cancelSubscription,
   createSubscriptionCheckout,
   getAvailablePlans,
   getCurrentSubscription,
+  resumeSubscription,
   SubscriptionApiError,
   type AvailablePlan,
   type ClientSubscription,
@@ -37,6 +41,21 @@ function formatPrice(
     }
   ).format(
     Number(value)
+  );
+}
+
+
+function formatDate(
+  value: string | null
+) {
+  if (!value) {
+    return "data não informada";
+  }
+
+  return new Intl.DateTimeFormat(
+    "pt-BR"
+  ).format(
+    new Date(value)
   );
 }
 
@@ -66,6 +85,20 @@ export default function SubscriptionPage() {
     setSubmittingPlanId,
   ] = useState<string | null>(
     null
+  );
+
+  const [
+    subscriptionAction,
+    setSubscriptionAction,
+  ] = useState<"cancel" | "resume" | null>(
+    null
+  );
+
+  const [
+    showCancelConfirm,
+    setShowCancelConfirm,
+  ] = useState(
+    false
   );
 
   const [
@@ -171,9 +204,60 @@ export default function SubscriptionPage() {
   }
 
 
+  async function cancelRenewal() {
+    if (subscriptionAction) {
+      return;
+    }
+
+    setSubscriptionAction("cancel");
+    setError(null);
+
+    try {
+      const data = await cancelSubscription();
+      setSubscription(data);
+      setShowCancelConfirm(false);
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível cancelar a renovação."
+      );
+    } finally {
+      setSubscriptionAction(null);
+    }
+  }
+
+
+  async function resumeRenewal() {
+    if (subscriptionAction) {
+      return;
+    }
+
+    setSubscriptionAction("resume");
+    setError(null);
+
+    try {
+      setSubscription(
+        await resumeSubscription()
+      );
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível manter a assinatura."
+      );
+    } finally {
+      setSubscriptionAction(null);
+    }
+  }
+
+
   const hasOperationalAccess =
     subscription?.operational_status ===
     "ACTIVE";
+
+  const isFinancialBlocked =
+    subscription?.financial_blocked ?? false;
 
   const isPendingFirstPayment =
     subscription?.status === "PENDING" &&
@@ -200,7 +284,9 @@ export default function SubscriptionPage() {
           ) =>
             plan.id === subscription?.plan?.id
         )
-      : hasOperationalAccess || isPaymentRecoveryState
+      : hasOperationalAccess ||
+        isPaymentRecoveryState ||
+        !subscription?.can_start_subscription
         ? []
         : plans;
 
@@ -227,7 +313,66 @@ export default function SubscriptionPage() {
 
           {hasOperationalAccess ? (
             <div className="mt-6 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-              Sua assinatura esta ativa. A renovacao e automatica pelo Stripe.
+              {subscription?.cancel_at_period_end ? (
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <span>
+                    Seu plano será encerrado em {formatDate(subscription.current_period_end)}.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void resumeRenewal()}
+                    disabled={subscriptionAction !== null || isFinancialBlocked}
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--maried-gold)] px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {subscriptionAction === "resume" ? (
+                      <LoaderCircle size={16} className="animate-spin" />
+                    ) : (
+                      <Check size={16} />
+                    )}
+                    Manter assinatura
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <span>
+                    Sua assinatura está ativa. A renovação é automática pelo Stripe.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowCancelConfirm(true)}
+                    disabled={subscriptionAction !== null}
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-green-300 bg-white px-4 text-sm font-medium text-green-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <X size={16} />
+                    Cancelar renovação
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : null}
+
+          {isFinancialBlocked ? (
+            <div className="mt-6 flex flex-col gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 sm:flex-row">
+              <AlertTriangle size={18} className="mt-0.5 shrink-0" />
+              <div className="flex-1">
+                <p className="font-medium">
+                  Sua conta possui uma contestação financeira em análise.
+                </p>
+                <p className="mt-1 text-red-700">
+                  Você ainda pode consultar seus dados e encerrar futuras cobranças, mas novas criações, assinaturas e compras de créditos ficam indisponíveis até a regularização.
+                </p>
+              </div>
+              {subscription?.status === "ACTIVE" && !subscription.cancel_at_period_end ? (
+                <button
+                  type="button"
+                  onClick={() => setShowCancelConfirm(true)}
+                  disabled={subscriptionAction !== null}
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-red-300 bg-white px-4 text-sm font-medium text-red-800 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <X size={16} />
+                  Cancelar renovação
+                </button>
+              ) : null}
             </div>
           ) : null}
 
@@ -316,6 +461,40 @@ export default function SubscriptionPage() {
             <p className="mt-6 rounded-xl border border-[var(--maried-sand)] bg-white px-4 py-3 text-sm text-[var(--maried-cocoa)]">
               Nenhum plano esta disponivel para pagamento no momento.
             </p>
+          ) : null}
+
+          {showCancelConfirm ? (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4">
+              <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+                <h2 className="text-lg font-semibold text-[var(--maried-espresso)]">
+                  Cancelar renovação
+                </h2>
+                <p className="mt-3 text-sm leading-6 text-[var(--maried-cocoa)]">
+                  Seu plano continuará ativo até o fim do período já pago. Depois dessa data, não haverá nova cobrança automática.
+                </p>
+                <div className="mt-6 flex justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowCancelConfirm(false)}
+                    disabled={subscriptionAction !== null}
+                    className="h-10 rounded-xl border border-[var(--maried-sand)] px-4 text-sm font-medium text-[var(--maried-cocoa)] disabled:opacity-60"
+                  >
+                    Voltar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void cancelRenewal()}
+                    disabled={subscriptionAction !== null}
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--maried-gold)] px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {subscriptionAction === "cancel" ? (
+                      <LoaderCircle size={16} className="animate-spin" />
+                    ) : null}
+                    Cancelar renovação
+                  </button>
+                </div>
+              </div>
+            </div>
           ) : null}
         </div>
       </main>

@@ -12,11 +12,15 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from apps.audit.models import AuditLog
 from apps.billing.models import (
     BillingCycle,
     CreditPackage,
     CreditPurchase,
     CreditPurchaseStatus,
+    PaymentDispute,
+    PaymentDisputeOriginType,
+    PaymentDisputeStatus,
     Plan,
     SubscriptionCheckoutAttempt,
     SubscriptionCheckoutAttemptStatus,
@@ -31,6 +35,7 @@ from apps.billing.services import (
     CreditPurchaseNotAllowedError,
     CreditPurchaseService,
     InactivePlanError,
+    PaymentDisputeService,
     SubscriptionDelinquencyService,
     SubscriptionAccessStatus,
     SubscriptionRequiredError,
@@ -40,6 +45,7 @@ from apps.billing.stripe_services import (
     CreditPurchaseCheckoutService,
     StripeBillingError,
     StripeBillingService,
+    StripeCheckoutUnavailableError,
     StripeConfigurationError,
     StripeCreditPackageService,
     StripeCreditPurchaseSessionError,
@@ -47,6 +53,7 @@ from apps.billing.stripe_services import (
     StripePlanService,
     StripeReconciliationError,
     StripeReconciliationService,
+    StripeSubscriptionCancellationService,
     StripeSyncError,
     StripeWebhookService,
 )
@@ -173,6 +180,29 @@ class FakeStripeObject:
         object_id,
     ):
         self.id = object_id
+
+
+def _test_stripe_id(value):
+    if isinstance(
+        value,
+        str,
+    ):
+        return value
+
+    if isinstance(
+        value,
+        dict,
+    ):
+        return value.get(
+            "id",
+            "",
+        )
+
+    return getattr(
+        value,
+        "id",
+        "",
+    )
 
 
 class FakeStripeProducts:
@@ -1142,6 +1172,66 @@ class BillingAccessServiceTests(TestCase):
             SubscriptionAccessStatus.BLOCKED,
         )
 
+    def test_financial_block_has_priority_over_active_access(self):
+        subscription = self.create_subscription(
+            status=SubscriptionStatus.ACTIVE,
+        )
+        PaymentDispute.objects.create(
+            organization=self.organization,
+            stripe_dispute_id="du_block_active",
+            status=PaymentDisputeStatus.NEEDS_RESPONSE,
+            origin_type=PaymentDisputeOriginType.SUBSCRIPTION,
+            amount=9990,
+            currency="BRL",
+        )
+
+        access = self.evaluate(
+            subscription,
+            2026,
+            8,
+            24,
+        )
+
+        self.assertEqual(
+            access.status,
+            SubscriptionAccessStatus.FINANCIAL_BLOCK,
+        )
+        self.assertTrue(access.financial_blocked)
+        self.assertFalse(access.can_create)
+        self.assertFalse(access.can_purchase_credits)
+        self.assertFalse(access.can_start_subscription)
+
+    def test_financial_block_denies_canceled_with_purchased_credits(self):
+        subscription = self.create_subscription(
+            status=SubscriptionStatus.CANCELED,
+        )
+        CreditWallet.objects.create(
+            organization=self.organization,
+            purchased_balance=100,
+            balance=100,
+        )
+        PaymentDispute.objects.create(
+            organization=self.organization,
+            stripe_dispute_id="du_block_purchased",
+            status=PaymentDisputeStatus.UNDER_REVIEW,
+            origin_type=PaymentDisputeOriginType.CREDIT_PURCHASE,
+            amount=1990,
+            currency="BRL",
+        )
+
+        access = self.evaluate(
+            subscription,
+            2026,
+            8,
+            24,
+        )
+
+        self.assertEqual(
+            access.status,
+            SubscriptionAccessStatus.FINANCIAL_BLOCK,
+        )
+        self.assertFalse(access.can_create)
+
     def test_non_operational_statuses_are_blocked(self):
         for subscription_status in (
             SubscriptionStatus.PENDING,
@@ -1660,6 +1750,116 @@ class FakeStripeInvoices:
         }
 
 
+class FakeStripeInvoicePayments:
+    def __init__(
+        self,
+        *,
+        invoice_payments=None,
+        list_side_effect=None,
+    ):
+        self.invoice_payments = invoice_payments or []
+        self.list_side_effect = list_side_effect
+        self.list_calls = []
+
+    def list(self, *, params=None):
+        params = params or {}
+        self.list_calls.append(
+            {
+                "params": params,
+            }
+        )
+
+        if self.list_side_effect:
+            raise self.list_side_effect
+
+        filtered = self.invoice_payments
+
+        if params.get("invoice"):
+            filtered = [
+                invoice_payment
+                for invoice_payment in filtered
+                if _test_stripe_id(
+                    invoice_payment.get(
+                        "invoice"
+                    )
+                ) == params["invoice"]
+            ]
+
+        return {
+            "data": filtered,
+        }
+
+
+class FakeStripePaymentIntents:
+    def __init__(
+        self,
+        *,
+        payment_intents=None,
+        retrieve_side_effect=None,
+    ):
+        self.payment_intents = payment_intents or {}
+        self.retrieve_side_effect = retrieve_side_effect
+        self.retrieve_calls = []
+
+    def retrieve(self, payment_intent_id, *, params=None):
+        self.retrieve_calls.append(
+            {
+                "payment_intent_id": payment_intent_id,
+                "params": params,
+            }
+        )
+
+        if self.retrieve_side_effect:
+            raise self.retrieve_side_effect
+
+        payment_intent = self.payment_intents.get(
+            payment_intent_id
+        )
+
+        if payment_intent is not None:
+            return payment_intent
+
+        return {
+            "id": payment_intent_id,
+            "object": "payment_intent",
+        }
+
+
+class FakeStripeCharges:
+    def __init__(
+        self,
+        *,
+        charges=None,
+        retrieve_side_effect=None,
+    ):
+        self.charges = charges or {}
+        self.retrieve_side_effect = retrieve_side_effect
+        self.retrieve_calls = []
+
+    def retrieve(self, charge_id, *, params=None):
+        self.retrieve_calls.append(
+            {
+                "charge_id": charge_id,
+                "params": params,
+            }
+        )
+
+        if self.retrieve_side_effect:
+            raise self.retrieve_side_effect
+
+        charge = self.charges.get(
+            charge_id
+        )
+
+        if charge is not None:
+            return charge
+
+        return {
+            "id": charge_id,
+            "object": "charge",
+        }
+
+
 class FakeStripeSubscriptions:
     def __init__(
         self,
@@ -1668,13 +1868,18 @@ class FakeStripeSubscriptions:
         subscriptions=None,
         retrieve_side_effect=None,
         list_side_effect=None,
+        update_response=None,
+        update_side_effect=None,
     ):
         self.subscription = subscription
         self.subscriptions = subscriptions or []
         self.retrieve_side_effect = retrieve_side_effect
         self.list_side_effect = list_side_effect
+        self.update_response = update_response
+        self.update_side_effect = update_side_effect
         self.retrieve_calls = []
         self.list_calls = []
+        self.update_calls = []
 
     def retrieve(self, subscription_id, *, params=None):
         self.retrieve_calls.append(
@@ -1703,6 +1908,104 @@ class FakeStripeSubscriptions:
             "data": self.subscriptions,
         }
 
+    def update(self, subscription_id, *, params=None):
+        self.update_calls.append(
+            {
+                "subscription_id": subscription_id,
+                "params": params,
+            }
+        )
+
+        if self.update_side_effect:
+            raise self.update_side_effect
+
+        if self.update_response is not None:
+            return self.update_response
+
+        subscription = FakeStripeObject(subscription_id)
+        subscription.customer = "cus_test"
+        subscription.status = "active"
+        subscription.cancel_at_period_end = bool(
+            (params or {}).get(
+                "cancel_at_period_end",
+                False,
+            )
+        )
+        return subscription
+
+
+class FakeStripeDisputes:
+    def __init__(
+        self,
+        *,
+        disputes=None,
+        retrieve_disputes=None,
+        retrieve_side_effect=None,
+        list_side_effect=None,
+    ):
+        self.disputes = disputes or []
+        self.retrieve_disputes = retrieve_disputes or {}
+        self.retrieve_side_effect = retrieve_side_effect
+        self.list_side_effect = list_side_effect
+        self.retrieve_calls = []
+        self.list_calls = []
+
+    def retrieve(self, dispute_id, *, params=None):
+        self.retrieve_calls.append(
+            {
+                "dispute_id": dispute_id,
+                "params": params,
+            }
+        )
+
+        if self.retrieve_side_effect:
+            raise self.retrieve_side_effect
+
+        if dispute_id in self.retrieve_disputes:
+            return self.retrieve_disputes[dispute_id]
+
+        for dispute in self.disputes:
+            if _test_stripe_id(dispute) == dispute_id:
+                return dispute
+
+        return {
+            "id": dispute_id,
+            "object": "dispute",
+        }
+
+    def list(self, *, params=None):
+        params = params or {}
+        self.list_calls.append(
+            {
+                "params": params,
+            }
+        )
+
+        if self.list_side_effect:
+            raise self.list_side_effect
+
+        filtered = self.disputes
+
+        if params.get("payment_intent"):
+            filtered = [
+                dispute
+                for dispute in filtered
+                if _test_stripe_id(dispute.get("payment_intent"))
+                == params["payment_intent"]
+            ]
+
+        if params.get("charge"):
+            filtered = [
+                dispute
+                for dispute in filtered
+                if _test_stripe_id(dispute.get("charge"))
+                == params["charge"]
+            ]
+
+        return {
+            "data": filtered,
+        }
+
 
 class FakeStripeV1Billing:
     def __init__(
@@ -1713,10 +2016,22 @@ class FakeStripeV1Billing:
         invoices=None,
         invoice_side_effect=None,
         invoice_list_side_effect=None,
+        invoice_payments=None,
+        invoice_payment_list_side_effect=None,
         subscription=None,
         subscriptions=None,
         subscription_retrieve_side_effect=None,
         subscription_list_side_effect=None,
+        subscription_update_response=None,
+        subscription_update_side_effect=None,
+        payment_intents=None,
+        payment_intent_retrieve_side_effect=None,
+        charges=None,
+        charge_retrieve_side_effect=None,
+        disputes=None,
+        retrieve_disputes=None,
+        dispute_retrieve_side_effect=None,
+        dispute_list_side_effect=None,
         checkout_retrieve_response=None,
         checkout_retrieve_side_effect=None,
         checkout_expire_response=None,
@@ -1736,11 +2051,31 @@ class FakeStripeV1Billing:
             side_effect=invoice_side_effect,
             list_side_effect=invoice_list_side_effect,
         )
+        self.invoice_payments = FakeStripeInvoicePayments(
+            invoice_payments=invoice_payments,
+            list_side_effect=invoice_payment_list_side_effect,
+        )
+        self.payment_intents = FakeStripePaymentIntents(
+            payment_intents=payment_intents,
+            retrieve_side_effect=payment_intent_retrieve_side_effect,
+        )
+        self.charges = FakeStripeCharges(
+            charges=charges,
+            retrieve_side_effect=charge_retrieve_side_effect,
+        )
         self.subscriptions = FakeStripeSubscriptions(
             subscription=subscription,
             subscriptions=subscriptions,
             retrieve_side_effect=subscription_retrieve_side_effect,
             list_side_effect=subscription_list_side_effect,
+            update_response=subscription_update_response,
+            update_side_effect=subscription_update_side_effect,
+        )
+        self.disputes = FakeStripeDisputes(
+            disputes=disputes,
+            retrieve_disputes=retrieve_disputes,
+            retrieve_side_effect=dispute_retrieve_side_effect,
+            list_side_effect=dispute_list_side_effect,
         )
 
 
@@ -1753,10 +2088,22 @@ class FakeStripeBillingClient:
         invoices=None,
         invoice_side_effect=None,
         invoice_list_side_effect=None,
+        invoice_payments=None,
+        invoice_payment_list_side_effect=None,
         subscription=None,
         subscriptions=None,
         subscription_retrieve_side_effect=None,
         subscription_list_side_effect=None,
+        subscription_update_response=None,
+        subscription_update_side_effect=None,
+        payment_intents=None,
+        payment_intent_retrieve_side_effect=None,
+        charges=None,
+        charge_retrieve_side_effect=None,
+        disputes=None,
+        retrieve_disputes=None,
+        dispute_retrieve_side_effect=None,
+        dispute_list_side_effect=None,
         checkout_retrieve_response=None,
         checkout_retrieve_side_effect=None,
         checkout_expire_response=None,
@@ -1768,6 +2115,10 @@ class FakeStripeBillingClient:
             invoices=invoices,
             invoice_side_effect=invoice_side_effect,
             invoice_list_side_effect=invoice_list_side_effect,
+            invoice_payments=invoice_payments,
+            invoice_payment_list_side_effect=(
+                invoice_payment_list_side_effect
+            ),
             subscription=subscription,
             subscriptions=subscriptions,
             subscription_retrieve_side_effect=(
@@ -1776,6 +2127,18 @@ class FakeStripeBillingClient:
             subscription_list_side_effect=(
                 subscription_list_side_effect
             ),
+            subscription_update_response=subscription_update_response,
+            subscription_update_side_effect=subscription_update_side_effect,
+            payment_intents=payment_intents,
+            payment_intent_retrieve_side_effect=(
+                payment_intent_retrieve_side_effect
+            ),
+            charges=charges,
+            charge_retrieve_side_effect=charge_retrieve_side_effect,
+            disputes=disputes,
+            retrieve_disputes=retrieve_disputes,
+            dispute_retrieve_side_effect=dispute_retrieve_side_effect,
+            dispute_list_side_effect=dispute_list_side_effect,
             checkout_retrieve_response=checkout_retrieve_response,
             checkout_retrieve_side_effect=checkout_retrieve_side_effect,
             checkout_expire_response=checkout_expire_response,
@@ -2159,6 +2522,213 @@ class StripeCheckoutApiTests(APITestCase):
         )
 
 
+@override_settings(
+    STRIPE_SECRET_KEY="sk_test_123",
+    STRIPE_CURRENCY="brl",
+    STRIPE_ALLOW_LIVE_MODE=False,
+)
+class StripeSubscriptionCancellationTests(APITestCase):
+    def setUp(self):
+        self.organization = Organization.objects.create(
+            name="Cliente Cancelar",
+            slug="cliente-cancelar",
+            stripe_customer_id="cus_cancelar",
+        )
+        self.user = get_user_model().objects.create_user(
+            email="cancelar@example.com",
+            password="senha-teste",
+            name="Cliente Cancelar",
+            organization=self.organization,
+        )
+        self.plan = Plan.objects.create(
+            name="Plano Cancelar",
+            slug="plano-cancelar",
+            description="Plano teste.",
+            price=Decimal("79.90"),
+            billing_cycle=BillingCycle.MONTHLY,
+            credits_per_cycle=30,
+            extra_credit_limit_per_cycle=10,
+            is_active=True,
+            stripe_product_id="prod_cancelar",
+            stripe_price_id="price_cancelar",
+            stripe_price_signature="brl|7990|month",
+        )
+        now = timezone.now()
+        self.subscription = Subscription.objects.create(
+            organization=self.organization,
+            plan=self.plan,
+            status=SubscriptionStatus.ACTIVE,
+            price_snapshot=self.plan.price,
+            credits_snapshot=self.plan.credits_per_cycle,
+            started_at=now,
+            current_period_start=now,
+            current_period_end=now + timezone.timedelta(days=20),
+            next_billing_at=now + timezone.timedelta(days=20),
+            stripe_customer_id="cus_cancelar",
+            stripe_subscription_id="sub_cancelar",
+            stripe_status="active",
+        )
+        CreditWallet.objects.create(
+            organization=self.organization,
+            plan_balance=30,
+            balance=30,
+        )
+        self.client.force_authenticate(self.user)
+
+    def stripe_subscription(self, cancel_at_period_end):
+        subscription = FakeStripeObject("sub_cancelar")
+        subscription.customer = "cus_cancelar"
+        subscription.status = "active"
+        subscription.cancel_at_period_end = cancel_at_period_end
+        return subscription
+
+    def test_cancel_sets_stripe_cancel_at_period_end_and_keeps_active(self):
+        fake_client = FakeStripeBillingClient(
+            subscription_update_response=self.stripe_subscription(True)
+        )
+
+        with patch.object(
+            StripePlanService,
+            "client",
+            return_value=fake_client,
+        ):
+            response = self.client.post(
+                reverse("billing:subscription-cancel"),
+                {},
+                format="json",
+            )
+
+        self.subscription.refresh_from_db()
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            fake_client.v1.subscriptions.update_calls[0]["params"],
+            {"cancel_at_period_end": True},
+        )
+        self.assertEqual(
+            self.subscription.status,
+            SubscriptionStatus.ACTIVE,
+        )
+        self.assertTrue(self.subscription.cancel_at_period_end)
+        self.assertTrue(response.data["can_create"])
+
+    def test_resume_sets_stripe_cancel_at_period_end_false(self):
+        self.subscription.cancel_at_period_end = True
+        self.subscription.save(
+            update_fields=[
+                "cancel_at_period_end",
+                "updated_at",
+            ]
+        )
+        fake_client = FakeStripeBillingClient(
+            subscription_update_response=self.stripe_subscription(False)
+        )
+
+        with patch.object(
+            StripePlanService,
+            "client",
+            return_value=fake_client,
+        ):
+            response = self.client.post(
+                reverse("billing:subscription-resume"),
+                {},
+                format="json",
+            )
+
+        self.subscription.refresh_from_db()
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            fake_client.v1.subscriptions.update_calls[0]["params"],
+            {"cancel_at_period_end": False},
+        )
+        self.assertFalse(self.subscription.cancel_at_period_end)
+
+    def test_cancel_stripe_failure_does_not_mark_local_cancel(self):
+        fake_client = FakeStripeBillingClient(
+            subscription_update_side_effect=RuntimeError("stripe down")
+        )
+
+        with patch.object(
+            StripePlanService,
+            "client",
+            return_value=fake_client,
+        ):
+            response = self.client.post(
+                reverse("billing:subscription-cancel"),
+                {},
+                format="json",
+            )
+
+        self.subscription.refresh_from_db()
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(self.subscription.cancel_at_period_end)
+
+    def test_cancel_is_allowed_during_financial_block(self):
+        PaymentDispute.objects.create(
+            organization=self.organization,
+            stripe_dispute_id="du_cancel_allowed",
+            status=PaymentDisputeStatus.NEEDS_RESPONSE,
+            origin_type=PaymentDisputeOriginType.SUBSCRIPTION,
+            amount=7990,
+            currency="BRL",
+        )
+        fake_client = FakeStripeBillingClient(
+            subscription_update_response=self.stripe_subscription(True)
+        )
+
+        with patch.object(
+            StripePlanService,
+            "client",
+            return_value=fake_client,
+        ):
+            response = self.client.post(
+                reverse("billing:subscription-cancel"),
+                {},
+                format="json",
+            )
+
+        self.subscription.refresh_from_db()
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(self.subscription.cancel_at_period_end)
+        self.assertTrue(response.data["financial_blocked"])
+
+    def test_resume_is_blocked_during_financial_block(self):
+        self.subscription.cancel_at_period_end = True
+        self.subscription.save(
+            update_fields=[
+                "cancel_at_period_end",
+                "updated_at",
+            ]
+        )
+        PaymentDispute.objects.create(
+            organization=self.organization,
+            stripe_dispute_id="du_resume_blocked",
+            status=PaymentDisputeStatus.NEEDS_RESPONSE,
+            origin_type=PaymentDisputeOriginType.SUBSCRIPTION,
+            amount=7990,
+            currency="BRL",
+        )
+        fake_client = FakeStripeBillingClient()
+
+        with patch.object(
+            StripePlanService,
+            "client",
+            return_value=fake_client,
+        ):
+            response = self.client.post(
+                reverse("billing:subscription-resume"),
+                {},
+                format="json",
+            )
+
+        self.subscription.refresh_from_db()
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertTrue(self.subscription.cancel_at_period_end)
+        self.assertEqual(
+            fake_client.v1.subscriptions.update_calls,
+            [],
+        )
+
+
 class StripeWebhookTests(TestCase):
     def setUp(self):
         self.organization = Organization.objects.create(
@@ -2311,6 +2881,47 @@ class StripeWebhookTests(TestCase):
             },
         }
 
+    def dispute_event(
+        self,
+        *,
+        event_id="evt_dispute_created",
+        event_type="charge.dispute.created",
+        dispute_id="du_webhook",
+        dispute_status=PaymentDisputeStatus.NEEDS_RESPONSE,
+        payment_intent_id="pi_dispute",
+        charge_id="ch_dispute",
+        customer_id="cus_webhook",
+        amount=3990,
+    ):
+        return {
+            "id": event_id,
+            "type": event_type,
+            "data": {
+                "object": {
+                    "id": dispute_id,
+                    "object": "dispute",
+                    "payment_intent": payment_intent_id,
+                    "charge": {
+                        "id": charge_id,
+                        "customer": customer_id,
+                    },
+                    "amount": amount,
+                    "currency": "brl",
+                    "status": dispute_status,
+                    "reason": "fraudulent",
+                    "evidence_details": {
+                        "due_by": self.timestamp(
+                            self.at(
+                                2026,
+                                2,
+                                10,
+                            )
+                        ),
+                    },
+                },
+            },
+        }
+
     def test_first_invoice_paid_activates_subscription_and_grants_credits(self):
         result = StripeWebhookService.process_event(self.invoice_event())
 
@@ -2322,6 +2933,74 @@ class StripeWebhookTests(TestCase):
         self.assertEqual(subscription.stripe_subscription_id, "sub_webhook")
         self.assertEqual(wallet.plan_balance, 25)
         self.assertEqual(wallet.purchased_balance, 0)
+
+    def test_slim_invoice_paid_retrieves_invoice_and_activates_without_reconcile(self):
+        Subscription.objects.create(
+            organization=self.organization,
+            plan=self.plan,
+            status=SubscriptionStatus.PENDING,
+            price_snapshot=self.plan.price,
+            credits_snapshot=self.plan.credits_per_cycle,
+        )
+        CreditWallet.objects.create(
+            organization=self.organization,
+            plan_balance=0,
+            purchased_balance=0,
+            balance=0,
+        )
+        invoice = self.invoice_event(
+            invoice_id="in_slim_first",
+            event_id="evt_slim_first",
+        )["data"]["object"]
+        fake_client = FakeStripeBillingClient(
+            invoice=invoice,
+        )
+
+        with patch.object(
+            StripeBillingService,
+            "client",
+            return_value=fake_client,
+        ), patch.object(
+            StripeReconciliationService,
+            "reconcile",
+            side_effect=AssertionError(
+                "SuperAdmin reconciliation is not the normal flow."
+            ),
+        ) as reconcile_mock:
+            result = StripeWebhookService.process_event(
+                {
+                    "id": "evt_slim_first",
+                    "type": "invoice.paid",
+                    "data": {
+                        "object": {
+                            "id": "in_slim_first",
+                            "object": "invoice",
+                            "customer": "cus_webhook",
+                            "status": "paid",
+                        },
+                    },
+                }
+            )
+
+        subscription = Subscription.objects.get(
+            organization=self.organization
+        )
+        wallet = CreditWallet.objects.get(
+            organization=self.organization
+        )
+
+        self.assertTrue(result["processed"])
+        self.assertEqual(result["cycle_type"], "FIRST")
+        self.assertEqual(
+            subscription.status,
+            SubscriptionStatus.ACTIVE,
+        )
+        self.assertEqual(wallet.plan_balance, 25)
+        self.assertFalse(reconcile_mock.called)
+        self.assertEqual(
+            fake_client.v1.invoices.retrieve_calls[0]["invoice_id"],
+            "in_slim_first",
+        )
 
     def test_invoice_payment_paid_with_expanded_invoice_activates_once(self):
         invoice = self.invoice_event(
@@ -2698,6 +3377,354 @@ class StripeWebhookTests(TestCase):
         self.assertEqual(subscription.status, SubscriptionStatus.ACTIVE)
         self.assertEqual(access.status, SubscriptionAccessStatus.ACTIVE)
 
+    def test_dispute_created_blocks_organization(self):
+        Subscription.objects.create(
+            organization=self.organization,
+            plan=self.plan,
+            status=SubscriptionStatus.ACTIVE,
+            price_snapshot=self.plan.price,
+            credits_snapshot=self.plan.credits_per_cycle,
+            stripe_customer_id="cus_webhook",
+            stripe_subscription_id="sub_webhook",
+        )
+
+        result = StripeWebhookService.process_event(
+            self.dispute_event()
+        )
+
+        dispute = PaymentDispute.objects.get(
+            stripe_dispute_id="du_webhook"
+        )
+        access = BillingAccessService.evaluate_organization(
+            self.organization
+        )
+
+        self.assertTrue(result["processed"])
+        self.assertTrue(result["applied"])
+        self.assertEqual(
+            dispute.status,
+            PaymentDisputeStatus.NEEDS_RESPONSE,
+        )
+        self.assertTrue(dispute.is_blocking)
+        self.assertTrue(access.financial_blocked)
+        self.assertEqual(
+            access.status,
+            SubscriptionAccessStatus.FINANCIAL_BLOCK,
+        )
+        self.assertTrue(
+            AuditLog.objects.filter(
+                action="FINANCIAL_BLOCK_APPLIED",
+                entity_id=str(self.organization.pk),
+            ).exists()
+        )
+
+    def test_duplicate_dispute_event_is_idempotent(self):
+        event = self.dispute_event(
+            event_id="evt_duplicate_dispute",
+            dispute_id="du_duplicate",
+        )
+
+        first = StripeWebhookService.process_event(event)
+        second = StripeWebhookService.process_event(event)
+
+        self.assertTrue(first["applied"])
+        self.assertTrue(second["duplicate"])
+        self.assertEqual(
+            PaymentDispute.objects.filter(
+                stripe_dispute_id="du_duplicate",
+            ).count(),
+            1,
+        )
+
+    def test_dispute_update_reuses_existing_local_record(self):
+        StripeWebhookService.process_event(
+            self.dispute_event(
+                event_id="evt_dispute_open",
+                dispute_id="du_update",
+                dispute_status=PaymentDisputeStatus.NEEDS_RESPONSE,
+            )
+        )
+
+        StripeWebhookService.process_event(
+            self.dispute_event(
+                event_id="evt_dispute_update",
+                event_type="charge.dispute.updated",
+                dispute_id="du_update",
+                dispute_status=PaymentDisputeStatus.UNDER_REVIEW,
+            )
+        )
+
+        dispute = PaymentDispute.objects.get(
+            stripe_dispute_id="du_update"
+        )
+        self.assertEqual(
+            PaymentDispute.objects.filter(
+                stripe_dispute_id="du_update",
+            ).count(),
+            1,
+        )
+        self.assertEqual(
+            dispute.status,
+            PaymentDisputeStatus.UNDER_REVIEW,
+        )
+
+    def test_won_dispute_removes_block_when_no_other_blocking_dispute(self):
+        StripeWebhookService.process_event(
+            self.dispute_event(
+                event_id="evt_dispute_created_won",
+                dispute_id="du_won",
+                dispute_status=PaymentDisputeStatus.NEEDS_RESPONSE,
+            )
+        )
+
+        StripeWebhookService.process_event(
+            self.dispute_event(
+                event_id="evt_dispute_closed_won",
+                event_type="charge.dispute.closed",
+                dispute_id="du_won",
+                dispute_status=PaymentDisputeStatus.WON,
+            )
+        )
+
+        dispute = PaymentDispute.objects.get(
+            stripe_dispute_id="du_won"
+        )
+        access = BillingAccessService.evaluate_organization(
+            self.organization
+        )
+
+        self.assertFalse(dispute.is_blocking)
+        self.assertIsNotNone(dispute.resolved_at)
+        self.assertFalse(access.financial_blocked)
+        self.assertTrue(
+            AuditLog.objects.filter(
+                action="FINANCIAL_BLOCK_REMOVED",
+                entity_id=str(self.organization.pk),
+            ).exists()
+        )
+
+    def test_won_dispute_does_not_remove_block_when_another_dispute_blocks(self):
+        StripeWebhookService.process_event(
+            self.dispute_event(
+                event_id="evt_dispute_a_open",
+                dispute_id="du_multi_a",
+                dispute_status=PaymentDisputeStatus.NEEDS_RESPONSE,
+            )
+        )
+        StripeWebhookService.process_event(
+            self.dispute_event(
+                event_id="evt_dispute_b_open",
+                dispute_id="du_multi_b",
+                dispute_status=PaymentDisputeStatus.UNDER_REVIEW,
+            )
+        )
+
+        StripeWebhookService.process_event(
+            self.dispute_event(
+                event_id="evt_dispute_a_won",
+                event_type="charge.dispute.closed",
+                dispute_id="du_multi_a",
+                dispute_status=PaymentDisputeStatus.WON,
+            )
+        )
+
+        access = BillingAccessService.evaluate_organization(
+            self.organization
+        )
+
+        self.assertTrue(access.financial_blocked)
+        self.assertTrue(
+            PaymentDispute.objects.get(
+                stripe_dispute_id="du_multi_b",
+            ).is_blocking
+        )
+
+    def test_lost_dispute_keeps_financial_block_and_does_not_change_wallet(self):
+        wallet = CreditWallet.objects.create(
+            organization=self.organization,
+            plan_balance=0,
+            purchased_balance=7,
+            balance=7,
+        )
+
+        StripeWebhookService.process_event(
+            self.dispute_event(
+                event_id="evt_dispute_lost",
+                event_type="charge.dispute.closed",
+                dispute_id="du_lost",
+                dispute_status=PaymentDisputeStatus.LOST,
+            )
+        )
+
+        wallet.refresh_from_db()
+        access = BillingAccessService.evaluate_organization(
+            self.organization
+        )
+        dispute = PaymentDispute.objects.get(
+            stripe_dispute_id="du_lost"
+        )
+
+        self.assertTrue(dispute.is_blocking)
+        self.assertTrue(access.financial_blocked)
+        self.assertEqual(wallet.purchased_balance, 7)
+        self.assertEqual(wallet.balance, 7)
+
+    def test_credit_purchase_dispute_is_linked_by_payment_intent(self):
+        package = CreditPackage.objects.create(
+            name="Pacote Webhook",
+            slug="pacote-webhook",
+            credits=20,
+            price=Decimal("29.90"),
+            stripe_product_id="prod_pack_webhook",
+            stripe_price_id="price_pack_webhook",
+            stripe_price_signature="brl|2990",
+            is_active=True,
+        )
+        purchase = CreditPurchase.objects.create(
+            organization=self.organization,
+            package=package,
+            subscription=Subscription.objects.create(
+                organization=self.organization,
+                plan=self.plan,
+                status=SubscriptionStatus.ACTIVE,
+                price_snapshot=self.plan.price,
+                credits_snapshot=self.plan.credits_per_cycle,
+                stripe_customer_id="cus_webhook",
+            ),
+            plan=self.plan,
+            status=CreditPurchaseStatus.PAID,
+            credits_snapshot=20,
+            price_snapshot=Decimal("29.90"),
+            currency_snapshot="BRL",
+            stripe_price_id_snapshot="price_pack_webhook",
+            extra_credit_limit_snapshot=20,
+            cycle_start=self.at(
+                2026,
+                1,
+                1,
+            ),
+            cycle_end=self.at(
+                2026,
+                2,
+                1,
+            ),
+            stripe_customer_id="cus_webhook",
+            stripe_checkout_session_id="cs_pack_webhook",
+            stripe_checkout_url="https://checkout.stripe.test/pack",
+            stripe_payment_intent_id="pi_pack_webhook",
+            stripe_idempotency_key="pack-webhook-key",
+            request_signature="pack-webhook-signature",
+            paid_at=timezone.now(),
+        )
+
+        StripeWebhookService.process_event(
+            self.dispute_event(
+                event_id="evt_dispute_pack",
+                dispute_id="du_pack",
+                payment_intent_id="pi_pack_webhook",
+                amount=2990,
+            )
+        )
+
+        dispute = PaymentDispute.objects.get(
+            stripe_dispute_id="du_pack"
+        )
+
+        self.assertEqual(
+            dispute.origin_type,
+            PaymentDisputeOriginType.CREDIT_PURCHASE,
+        )
+        self.assertEqual(
+            dispute.related_credit_purchase,
+            purchase,
+        )
+
+    def test_dispute_with_unknown_customer_is_not_attached_to_wrong_org(self):
+        Organization.objects.create(
+            name="Cliente Errado",
+            slug="cliente-errado-dispute",
+            stripe_customer_id="cus_wrong",
+        )
+
+        with self.assertRaises(StripeBillingError):
+            StripeWebhookService.process_event(
+                self.dispute_event(
+                    event_id="evt_dispute_unknown_customer",
+                    dispute_id="du_unknown_customer",
+                    customer_id="cus_unknown",
+                )
+            )
+
+        self.assertFalse(
+            PaymentDispute.objects.filter(
+                stripe_dispute_id="du_unknown_customer",
+            ).exists()
+        )
+
+    def test_invoice_paid_then_dispute_keeps_active_subscription_blocked(self):
+        StripeWebhookService.process_event(
+            self.invoice_event(
+                event_id="evt_order_invoice",
+                invoice_id="in_order_invoice",
+            )
+        )
+
+        StripeWebhookService.process_event(
+            self.dispute_event(
+                event_id="evt_order_dispute",
+                dispute_id="du_order_invoice_first",
+            )
+        )
+
+        subscription = Subscription.objects.get(
+            organization=self.organization
+        )
+        wallet = CreditWallet.objects.get(
+            organization=self.organization
+        )
+        access = BillingAccessService.evaluate_organization(
+            self.organization
+        )
+
+        self.assertEqual(
+            subscription.status,
+            SubscriptionStatus.ACTIVE,
+        )
+        self.assertEqual(wallet.plan_balance, 25)
+        self.assertTrue(access.financial_blocked)
+
+    def test_dispute_then_invoice_paid_keeps_financial_block(self):
+        StripeWebhookService.process_event(
+            self.dispute_event(
+                event_id="evt_order_dispute_first",
+                dispute_id="du_order_dispute_first",
+            )
+        )
+
+        StripeWebhookService.process_event(
+            self.invoice_event(
+                event_id="evt_order_invoice_after",
+                invoice_id="in_order_invoice_after",
+            )
+        )
+
+        subscription = Subscription.objects.get(
+            organization=self.organization
+        )
+        wallet = CreditWallet.objects.get(
+            organization=self.organization
+        )
+        access = BillingAccessService.evaluate_organization(
+            self.organization
+        )
+
+        self.assertEqual(
+            subscription.status,
+            SubscriptionStatus.ACTIVE,
+        )
+        self.assertEqual(wallet.plan_balance, 25)
+        self.assertTrue(access.financial_blocked)
+
 
 @override_settings(
     STRIPE_SECRET_KEY="sk_test_reconcile",
@@ -2785,6 +3812,8 @@ class StripeReconciliationServiceTests(TestCase):
         customer_id="cus_reconcile",
         price_id="price_reconcile",
         status="paid",
+        payment_intent_id="pi_reconcile",
+        charge_id="ch_reconcile",
         period_start=None,
         period_end=None,
         organization_id=None,
@@ -2821,6 +3850,71 @@ class StripeReconciliationServiceTests(TestCase):
                         },
                     },
                 ],
+            },
+            "payments": {
+                "data": [
+                    {
+                        "status": "paid",
+                        "payment": {
+                            "type": "payment_intent",
+                            "payment_intent": payment_intent_id,
+                            "charge": charge_id,
+                        },
+                    },
+                ],
+            },
+        }
+
+    def dispute(
+        self,
+        *,
+        dispute_id="du_reconcile",
+        payment_intent_id="pi_reconcile",
+        charge_id="ch_reconcile",
+        customer_id="cus_reconcile",
+        dispute_status=PaymentDisputeStatus.NEEDS_RESPONSE,
+        amount=3990,
+    ):
+        return {
+            "id": dispute_id,
+            "object": "dispute",
+            "payment_intent": payment_intent_id,
+            "charge": {
+                "id": charge_id,
+                "customer": customer_id,
+            },
+            "amount": amount,
+            "currency": "brl",
+            "status": dispute_status,
+            "reason": "fraudulent",
+            "evidence_details": {
+                "due_by": self.timestamp(
+                    self.at(
+                        2026,
+                        9,
+                        10,
+                    )
+                ),
+            },
+        }
+
+    def invoice_payment(
+        self,
+        *,
+        invoice_payment_id="ip_reconcile",
+        invoice_id="in_reconcile",
+        status="paid",
+        payment_type="payment_intent",
+        payment_intent_id="pi_reconcile",
+    ):
+        return {
+            "id": invoice_payment_id,
+            "object": "invoice_payment",
+            "invoice": invoice_id,
+            "status": status,
+            "payment": {
+                "type": payment_type,
+                "payment_intent": payment_intent_id,
             },
         }
 
@@ -2907,6 +4001,902 @@ class StripeReconciliationServiceTests(TestCase):
         self.assertEqual(self.wallet.plan_balance, 25)
         self.assertEqual(self.wallet.purchased_balance, 10)
         self.assertEqual(self.wallet.balance, 35)
+
+    def test_reconcile_recovers_missing_subscription_dispute(self):
+        result = self.reconcile(
+            self.fake_client(
+                subscriptions=[self.stripe_subscription()],
+                invoices=[self.invoice()],
+                disputes=[self.dispute()],
+            )
+        )
+
+        dispute = PaymentDispute.objects.get(
+            stripe_dispute_id="du_reconcile"
+        )
+        access = BillingAccessService.evaluate_organization(
+            self.organization
+        )
+
+        self.subscription.refresh_from_db()
+        self.wallet.refresh_from_db()
+        self.assertTrue(result.applied)
+        self.assertEqual(result.disputes_reconciled, 1)
+        self.assertTrue(result.financial_blocked)
+        self.assertEqual(
+            self.subscription.status,
+            SubscriptionStatus.ACTIVE,
+        )
+        self.assertEqual(self.wallet.plan_balance, 25)
+        self.assertEqual(
+            dispute.origin_type,
+            PaymentDisputeOriginType.SUBSCRIPTION,
+        )
+        self.assertTrue(dispute.is_blocking)
+        self.assertTrue(access.financial_blocked)
+
+    def test_reconcile_uses_invoice_payments_when_invoice_payments_is_none(self):
+        invoice = self.invoice()
+        invoice["payments"] = None
+        fake_client = self.fake_client(
+            subscriptions=[self.stripe_subscription()],
+            invoices=[invoice],
+            invoice_payments=[
+                self.invoice_payment(),
+            ],
+            payment_intents={
+                "pi_reconcile": {
+                    "id": "pi_reconcile",
+                    "object": "payment_intent",
+                    "customer": "cus_reconcile",
+                    "latest_charge": "ch_reconcile",
+                },
+            },
+            charges={
+                "ch_reconcile": {
+                    "id": "ch_reconcile",
+                    "object": "charge",
+                    "customer": "cus_reconcile",
+                    "payment_intent": "pi_reconcile",
+                    "disputed": True,
+                    "dispute": "du_reconcile",
+                },
+            },
+            retrieve_disputes={
+                "du_reconcile": self.dispute(),
+            },
+        )
+
+        result = self.reconcile(fake_client)
+
+        dispute = PaymentDispute.objects.get(
+            stripe_dispute_id="du_reconcile"
+        )
+        self.subscription.refresh_from_db()
+        self.wallet.refresh_from_db()
+        self.assertEqual(
+            fake_client.v1.invoice_payments.list_calls[0]["params"],
+            {
+                "invoice": "in_reconcile",
+                "limit": 10,
+            },
+        )
+        self.assertEqual(result.disputes_reconciled, 1)
+        self.assertTrue(result.financial_blocked)
+        self.assertEqual(
+            self.subscription.status,
+            SubscriptionStatus.ACTIVE,
+        )
+        self.assertEqual(self.wallet.plan_balance, 25)
+        self.assertEqual(dispute.amount, 3990)
+
+    def test_reconcile_applies_dispute_with_validated_chain_without_dispute_customer(self):
+        invoice = self.invoice()
+        invoice["payments"] = None
+        fake_client = self.fake_client(
+            subscriptions=[self.stripe_subscription()],
+            invoices=[invoice],
+            invoice_payments=[
+                self.invoice_payment(),
+            ],
+            payment_intents={
+                "pi_reconcile": {
+                    "id": "pi_reconcile",
+                    "object": "payment_intent",
+                    "customer": "cus_reconcile",
+                    "latest_charge": "ch_reconcile",
+                },
+            },
+            charges={
+                "ch_reconcile": {
+                    "id": "ch_reconcile",
+                    "object": "charge",
+                    "customer": "cus_reconcile",
+                    "payment_intent": "pi_reconcile",
+                    "disputed": True,
+                    "dispute": "du_trusted_context",
+                },
+            },
+            retrieve_disputes={
+                "du_trusted_context": self.dispute(
+                    dispute_id="du_trusted_context",
+                    customer_id="",
+                ),
+            },
+        )
+
+        result = self.reconcile(fake_client)
+
+        dispute = PaymentDispute.objects.get(
+            stripe_dispute_id="du_trusted_context"
+        )
+        self.subscription.refresh_from_db()
+        self.wallet.refresh_from_db()
+
+        self.assertEqual(result.disputes_reconciled, 1)
+        self.assertTrue(result.financial_blocked)
+        self.assertEqual(dispute.organization, self.organization)
+        self.assertEqual(
+            dispute.origin_type,
+            PaymentDisputeOriginType.SUBSCRIPTION,
+        )
+        self.assertEqual(dispute.related_subscription, self.subscription)
+        self.assertEqual(dispute.stripe_customer_id, "cus_reconcile")
+        self.assertEqual(dispute.amount, 3990)
+        self.assertEqual(
+            self.subscription.status,
+            SubscriptionStatus.ACTIVE,
+        )
+        self.assertEqual(self.wallet.plan_balance, 25)
+        self.assertEqual(self.wallet.purchased_balance, 0)
+
+    def test_apply_disputes_without_trusted_context_keeps_webhook_safety(self):
+        with self.assertRaises(StripeBillingError):
+            StripeReconciliationService._apply_disputes(
+                organization=self.organization,
+                dispute_objects=[
+                    self.dispute(
+                        dispute_id="du_without_trusted_context",
+                        customer_id="",
+                    ),
+                ],
+            )
+
+        self.assertFalse(PaymentDispute.objects.exists())
+
+    def test_reconcile_ignores_unpaid_or_unsupported_invoice_payments(self):
+        invoice = self.invoice()
+        invoice["payments"] = None
+        result = self.reconcile(
+            self.fake_client(
+                subscriptions=[self.stripe_subscription()],
+                invoices=[invoice],
+                invoice_payments=[
+                    self.invoice_payment(
+                        invoice_payment_id="ip_unpaid",
+                        status="open",
+                    ),
+                    self.invoice_payment(
+                        invoice_payment_id="ip_unsupported",
+                        payment_type="unknown",
+                    ),
+                ],
+            )
+        )
+
+        self.wallet.refresh_from_db()
+        self.assertEqual(result.disputes_reconciled, 0)
+        self.assertFalse(result.financial_blocked)
+        self.assertFalse(PaymentDispute.objects.exists())
+        self.assertEqual(self.wallet.plan_balance, 25)
+
+    def test_reconcile_duplicate_invoice_payments_do_not_duplicate_dispute(self):
+        invoice = self.invoice()
+        invoice["payments"] = None
+        fake_client = self.fake_client(
+            subscriptions=[self.stripe_subscription()],
+            invoices=[invoice],
+            invoice_payments=[
+                self.invoice_payment(
+                    invoice_payment_id="ip_duplicate_a",
+                ),
+                self.invoice_payment(
+                    invoice_payment_id="ip_duplicate_b",
+                ),
+            ],
+            payment_intents={
+                "pi_reconcile": {
+                    "id": "pi_reconcile",
+                    "object": "payment_intent",
+                    "customer": "cus_reconcile",
+                    "latest_charge": "ch_reconcile",
+                },
+            },
+            charges={
+                "ch_reconcile": {
+                    "id": "ch_reconcile",
+                    "object": "charge",
+                    "customer": "cus_reconcile",
+                    "payment_intent": "pi_reconcile",
+                    "disputed": True,
+                    "dispute": "du_duplicate_invoice_payment",
+                },
+            },
+            retrieve_disputes={
+                "du_duplicate_invoice_payment": self.dispute(
+                    dispute_id="du_duplicate_invoice_payment",
+                ),
+            },
+        )
+
+        self.reconcile(fake_client)
+
+        self.assertEqual(
+            len(fake_client.v1.payment_intents.retrieve_calls),
+            1,
+        )
+        self.assertEqual(PaymentDispute.objects.count(), 1)
+
+    def test_reconcile_multiple_invoice_payments_processes_valid_dispute(self):
+        invoice = self.invoice()
+        invoice["payments"] = None
+        result = self.reconcile(
+            self.fake_client(
+                subscriptions=[self.stripe_subscription()],
+                invoices=[invoice],
+                invoice_payments=[
+                    self.invoice_payment(
+                        invoice_payment_id="ip_unpaid",
+                        status="open",
+                        payment_intent_id="pi_unpaid",
+                    ),
+                    self.invoice_payment(
+                        invoice_payment_id="ip_clear",
+                        payment_intent_id="pi_clear",
+                    ),
+                    self.invoice_payment(
+                        invoice_payment_id="ip_blocking",
+                        payment_intent_id="pi_blocking",
+                    ),
+                ],
+                payment_intents={
+                    "pi_clear": {
+                        "id": "pi_clear",
+                        "object": "payment_intent",
+                        "customer": "cus_reconcile",
+                        "latest_charge": "ch_clear",
+                    },
+                    "pi_blocking": {
+                        "id": "pi_blocking",
+                        "object": "payment_intent",
+                        "customer": "cus_reconcile",
+                        "latest_charge": "ch_blocking",
+                    },
+                },
+                charges={
+                    "ch_clear": {
+                        "id": "ch_clear",
+                        "object": "charge",
+                        "customer": "cus_reconcile",
+                        "payment_intent": "pi_clear",
+                        "disputed": False,
+                    },
+                    "ch_blocking": {
+                        "id": "ch_blocking",
+                        "object": "charge",
+                        "customer": "cus_reconcile",
+                        "payment_intent": "pi_blocking",
+                        "disputed": True,
+                        "dispute": "du_blocking_invoice_payment",
+                    },
+                },
+                retrieve_disputes={
+                    "du_blocking_invoice_payment": self.dispute(
+                        dispute_id="du_blocking_invoice_payment",
+                        payment_intent_id="pi_blocking",
+                        charge_id="ch_blocking",
+                    ),
+                },
+            )
+        )
+
+        self.assertEqual(result.disputes_reconciled, 1)
+        self.assertTrue(result.financial_blocked)
+        self.assertEqual(PaymentDispute.objects.count(), 1)
+
+    def test_reconcile_disputed_false_charge_does_not_create_dispute(self):
+        invoice = self.invoice()
+        invoice["payments"] = None
+        result = self.reconcile(
+            self.fake_client(
+                subscriptions=[self.stripe_subscription()],
+                invoices=[invoice],
+                invoice_payments=[
+                    self.invoice_payment(),
+                ],
+                payment_intents={
+                    "pi_reconcile": {
+                        "id": "pi_reconcile",
+                        "object": "payment_intent",
+                        "customer": "cus_reconcile",
+                        "latest_charge": "ch_reconcile",
+                    },
+                },
+                charges={
+                    "ch_reconcile": {
+                        "id": "ch_reconcile",
+                        "object": "charge",
+                        "customer": "cus_reconcile",
+                        "payment_intent": "pi_reconcile",
+                        "disputed": False,
+                        "dispute": "du_should_not_create",
+                    },
+                },
+            )
+        )
+
+        self.assertEqual(result.disputes_reconciled, 0)
+        self.assertFalse(result.financial_blocked)
+        self.assertFalse(PaymentDispute.objects.exists())
+
+    def test_reconcile_does_not_request_forbidden_invoice_expansion(self):
+        fake_client = self.fake_client(
+            subscriptions=[self.stripe_subscription()],
+            invoices=[self.invoice()],
+        )
+
+        self.reconcile(fake_client)
+
+        invoice_expand = (
+            fake_client.v1.invoices.list_calls[0]["params"]["expand"]
+        )
+        self.assertNotIn(
+            "data.payments.data.payment.payment_intent",
+            invoice_expand,
+        )
+        self.assertNotIn(
+            "data.payments.data.payment.charge",
+            invoice_expand,
+        )
+
+    def test_reconcile_retrieves_payment_intent_charge_and_dispute_in_steps(self):
+        invoice = self.invoice(
+            charge_id="",
+        )
+        fake_client = self.fake_client(
+            subscriptions=[self.stripe_subscription()],
+            invoices=[invoice],
+            payment_intents={
+                "pi_reconcile": {
+                    "id": "pi_reconcile",
+                    "object": "payment_intent",
+                    "customer": "cus_reconcile",
+                    "latest_charge": "ch_from_pi",
+                },
+            },
+            charges={
+                "ch_from_pi": {
+                    "id": "ch_from_pi",
+                    "object": "charge",
+                    "customer": "cus_reconcile",
+                    "payment_intent": "pi_reconcile",
+                    "dispute": "du_from_charge",
+                },
+            },
+            retrieve_disputes={
+                "du_from_charge": self.dispute(
+                    dispute_id="du_from_charge",
+                    charge_id="ch_from_pi",
+                ),
+            },
+        )
+
+        result = self.reconcile(fake_client)
+
+        self.assertEqual(result.disputes_reconciled, 1)
+        self.assertTrue(result.financial_blocked)
+        self.assertEqual(
+            fake_client.v1.payment_intents.retrieve_calls[0][
+                "payment_intent_id"
+            ],
+            "pi_reconcile",
+        )
+        self.assertEqual(
+            fake_client.v1.charges.retrieve_calls[0]["charge_id"],
+            "ch_from_pi",
+        )
+        self.assertEqual(
+            fake_client.v1.disputes.retrieve_calls[0]["dispute_id"],
+            "du_from_charge",
+        )
+
+    def test_reconcile_reuses_expanded_payment_intent_charge_and_dispute(self):
+        invoice = self.invoice(
+            payment_intent_id={
+                "id": "pi_reconcile",
+                "object": "payment_intent",
+                "customer": "cus_reconcile",
+                "latest_charge": {
+                    "id": "ch_expanded",
+                    "object": "charge",
+                    "customer": "cus_reconcile",
+                    "payment_intent": "pi_reconcile",
+                    "dispute": self.dispute(
+                        dispute_id="du_expanded",
+                        charge_id="ch_expanded",
+                    ),
+                },
+            },
+            charge_id="",
+        )
+        fake_client = self.fake_client(
+            subscriptions=[self.stripe_subscription()],
+            invoices=[invoice],
+        )
+
+        result = self.reconcile(fake_client)
+
+        self.assertEqual(result.disputes_reconciled, 1)
+        self.assertFalse(fake_client.v1.payment_intents.retrieve_calls)
+        self.assertFalse(fake_client.v1.charges.retrieve_calls)
+        self.assertFalse(fake_client.v1.disputes.retrieve_calls)
+        self.assertTrue(
+            PaymentDispute.objects.filter(
+                stripe_dispute_id="du_expanded",
+            ).exists()
+        )
+
+    def test_reconcile_payment_intent_api_failure_does_not_apply_payment(self):
+        with self.assertRaises(StripeReconciliationError):
+            self.reconcile(
+                self.fake_client(
+                    subscriptions=[self.stripe_subscription()],
+                    invoices=[self.invoice()],
+                    payment_intent_retrieve_side_effect=RuntimeError(
+                        "stripe unavailable"
+                    ),
+                )
+            )
+
+        self.subscription.refresh_from_db()
+        self.wallet.refresh_from_db()
+        self.assertEqual(
+            self.subscription.status,
+            SubscriptionStatus.PENDING,
+        )
+        self.assertEqual(self.wallet.plan_balance, 0)
+        self.assertFalse(PaymentDispute.objects.exists())
+
+    def test_reconcile_charge_api_failure_does_not_apply_payment(self):
+        with self.assertRaises(StripeReconciliationError):
+            self.reconcile(
+                self.fake_client(
+                    subscriptions=[self.stripe_subscription()],
+                    invoices=[self.invoice()],
+                    charge_retrieve_side_effect=RuntimeError(
+                        "stripe unavailable"
+                    ),
+                )
+            )
+
+        self.subscription.refresh_from_db()
+        self.wallet.refresh_from_db()
+        self.assertEqual(
+            self.subscription.status,
+            SubscriptionStatus.PENDING,
+        )
+        self.assertEqual(self.wallet.plan_balance, 0)
+        self.assertFalse(PaymentDispute.objects.exists())
+
+    def test_reconcile_dispute_retrieve_failure_does_not_apply_payment(self):
+        with self.assertRaises(StripeReconciliationError):
+            self.reconcile(
+                self.fake_client(
+                    subscriptions=[self.stripe_subscription()],
+                    invoices=[
+                        self.invoice(
+                            charge_id="",
+                        )
+                    ],
+                    payment_intents={
+                        "pi_reconcile": {
+                            "id": "pi_reconcile",
+                            "object": "payment_intent",
+                            "customer": "cus_reconcile",
+                            "latest_charge": "ch_reconcile",
+                        },
+                    },
+                    charges={
+                        "ch_reconcile": {
+                            "id": "ch_reconcile",
+                            "object": "charge",
+                            "customer": "cus_reconcile",
+                            "payment_intent": "pi_reconcile",
+                            "dispute": "du_retrieve_failure",
+                        },
+                    },
+                    dispute_retrieve_side_effect=RuntimeError(
+                        "stripe unavailable"
+                    ),
+                )
+            )
+
+        self.subscription.refresh_from_db()
+        self.wallet.refresh_from_db()
+        self.assertEqual(
+            self.subscription.status,
+            SubscriptionStatus.PENDING,
+        )
+        self.assertEqual(self.wallet.plan_balance, 0)
+        self.assertFalse(PaymentDispute.objects.exists())
+
+    def test_reconcile_payment_intent_customer_mismatch_fails_closed(self):
+        with self.assertRaises(StripeReconciliationError):
+            self.reconcile(
+                self.fake_client(
+                    subscriptions=[self.stripe_subscription()],
+                    invoices=[self.invoice()],
+                    payment_intents={
+                        "pi_reconcile": {
+                            "id": "pi_reconcile",
+                            "object": "payment_intent",
+                            "customer": "cus_other",
+                        },
+                    },
+                )
+            )
+
+        self.wallet.refresh_from_db()
+        self.assertEqual(self.wallet.plan_balance, 0)
+        self.assertFalse(PaymentDispute.objects.exists())
+
+    def test_reconcile_charge_payment_intent_mismatch_fails_closed(self):
+        with self.assertRaises(StripeReconciliationError):
+            self.reconcile(
+                self.fake_client(
+                    subscriptions=[self.stripe_subscription()],
+                    invoices=[self.invoice()],
+                    charges={
+                        "ch_reconcile": {
+                            "id": "ch_reconcile",
+                            "object": "charge",
+                            "customer": "cus_reconcile",
+                            "payment_intent": "pi_other",
+                        },
+                    },
+                )
+            )
+
+        self.wallet.refresh_from_db()
+        self.assertEqual(self.wallet.plan_balance, 0)
+        self.assertFalse(PaymentDispute.objects.exists())
+
+    def test_reconcile_charge_customer_mismatch_fails_closed(self):
+        with self.assertRaises(StripeReconciliationError):
+            self.reconcile(
+                self.fake_client(
+                    subscriptions=[self.stripe_subscription()],
+                    invoices=[self.invoice()],
+                    charges={
+                        "ch_reconcile": {
+                            "id": "ch_reconcile",
+                            "object": "charge",
+                            "customer": "cus_other",
+                            "payment_intent": "pi_reconcile",
+                        },
+                    },
+                )
+            )
+
+        self.wallet.refresh_from_db()
+        self.assertEqual(self.wallet.plan_balance, 0)
+        self.assertFalse(PaymentDispute.objects.exists())
+
+    def test_reconcile_existing_dispute_does_not_duplicate(self):
+        fake_client = self.fake_client(
+            subscriptions=[self.stripe_subscription()],
+            invoices=[self.invoice()],
+            disputes=[self.dispute(dispute_id="du_reconcile_existing")],
+        )
+
+        self.reconcile(fake_client)
+        second = self.reconcile(fake_client)
+
+        self.assertFalse(second.applied)
+        self.assertEqual(second.disputes_reconciled, 1)
+        self.assertEqual(
+            PaymentDispute.objects.filter(
+                stripe_dispute_id="du_reconcile_existing",
+            ).count(),
+            1,
+        )
+        self.wallet.refresh_from_db()
+        self.assertEqual(self.wallet.plan_balance, 25)
+
+    def test_reconcile_updates_existing_dispute_status_to_won(self):
+        PaymentDispute.objects.create(
+            organization=self.organization,
+            stripe_dispute_id="du_reconcile_won",
+            stripe_payment_intent_id="pi_reconcile",
+            stripe_customer_id="cus_reconcile",
+            amount=3990,
+            currency="BRL",
+            status=PaymentDisputeStatus.NEEDS_RESPONSE,
+            origin_type=PaymentDisputeOriginType.SUBSCRIPTION,
+        )
+
+        result = self.reconcile(
+            self.fake_client(
+                subscriptions=[self.stripe_subscription()],
+                invoices=[self.invoice()],
+                disputes=[
+                    self.dispute(
+                        dispute_id="du_reconcile_won",
+                        dispute_status=PaymentDisputeStatus.WON,
+                    )
+                ],
+            )
+        )
+
+        dispute = PaymentDispute.objects.get(
+            stripe_dispute_id="du_reconcile_won"
+        )
+        self.assertEqual(
+            dispute.status,
+            PaymentDisputeStatus.WON,
+        )
+        self.assertFalse(dispute.is_blocking)
+        self.assertFalse(result.financial_blocked)
+
+    def test_reconcile_lost_dispute_keeps_block_without_negative_wallet(self):
+        result = self.reconcile(
+            self.fake_client(
+                subscriptions=[self.stripe_subscription()],
+                invoices=[self.invoice()],
+                disputes=[
+                    self.dispute(
+                        dispute_id="du_reconcile_lost",
+                        dispute_status=PaymentDisputeStatus.LOST,
+                    )
+                ],
+            )
+        )
+
+        dispute = PaymentDispute.objects.get(
+            stripe_dispute_id="du_reconcile_lost"
+        )
+        self.wallet.refresh_from_db()
+        self.assertTrue(dispute.is_blocking)
+        self.assertTrue(result.financial_blocked)
+        self.assertGreaterEqual(self.wallet.balance, 0)
+        self.assertEqual(self.wallet.plan_balance, 25)
+
+    def test_reconcile_multiple_disputes_keeps_block_until_all_non_blocking(self):
+        blocked = self.reconcile(
+            self.fake_client(
+                subscriptions=[self.stripe_subscription()],
+                invoices=[self.invoice()],
+                disputes=[
+                    self.dispute(
+                        dispute_id="du_reconcile_multi_a",
+                        dispute_status=PaymentDisputeStatus.WON,
+                    ),
+                    self.dispute(
+                        dispute_id="du_reconcile_multi_b",
+                        dispute_status=PaymentDisputeStatus.NEEDS_RESPONSE,
+                    ),
+                ],
+            )
+        )
+
+        clear = self.reconcile(
+            self.fake_client(
+                subscriptions=[self.stripe_subscription()],
+                invoices=[self.invoice()],
+                disputes=[
+                    self.dispute(
+                        dispute_id="du_reconcile_multi_a",
+                        dispute_status=PaymentDisputeStatus.WON,
+                    ),
+                    self.dispute(
+                        dispute_id="du_reconcile_multi_b",
+                        dispute_status=PaymentDisputeStatus.WON,
+                    ),
+                ],
+            )
+        )
+
+        self.assertTrue(blocked.financial_blocked)
+        self.assertFalse(clear.financial_blocked)
+
+    def test_reconcile_paid_invoice_does_not_remove_existing_financial_block(self):
+        PaymentDispute.objects.create(
+            organization=self.organization,
+            stripe_dispute_id="du_local_block",
+            stripe_payment_intent_id="pi_local_block",
+            stripe_customer_id="cus_reconcile",
+            amount=3990,
+            currency="BRL",
+            status=PaymentDisputeStatus.NEEDS_RESPONSE,
+            origin_type=PaymentDisputeOriginType.SUBSCRIPTION,
+        )
+
+        result = self.reconcile(
+            self.fake_client(
+                subscriptions=[self.stripe_subscription()],
+                invoices=[self.invoice()],
+                disputes=[],
+            )
+        )
+
+        self.assertTrue(result.financial_blocked)
+        self.assertEqual(
+            BillingAccessService.evaluate_organization(
+                self.organization
+            ).status,
+            SubscriptionAccessStatus.FINANCIAL_BLOCK,
+        )
+
+    def test_reconcile_credit_purchase_dispute(self):
+        package = CreditPackage.objects.create(
+            name="Extra Reconcile",
+            slug="extra-reconcile",
+            credits=10,
+            price=Decimal("19.90"),
+            stripe_product_id="prod_extra_reconcile",
+            stripe_price_id="price_extra_reconcile",
+            stripe_price_signature="brl|1990|10",
+            is_active=True,
+        )
+        purchase = CreditPurchase.objects.create(
+            organization=self.organization,
+            package=package,
+            subscription=self.subscription,
+            plan=self.plan,
+            status=CreditPurchaseStatus.PAID,
+            credits_snapshot=10,
+            price_snapshot=Decimal("19.90"),
+            currency_snapshot="BRL",
+            stripe_price_id_snapshot="price_extra_reconcile",
+            extra_credit_limit_snapshot=10,
+            cycle_start=self.at(
+                2026,
+                9,
+                1,
+            ),
+            cycle_end=self.at(
+                2026,
+                10,
+                1,
+            ),
+            stripe_customer_id="cus_reconcile",
+            stripe_checkout_session_id="cs_extra_reconcile",
+            stripe_checkout_url="https://checkout.stripe.test/extra",
+            stripe_payment_intent_id="pi_credit_reconcile",
+            stripe_idempotency_key="extra-reconcile-key",
+            request_signature="extra-reconcile-signature",
+            paid_at=timezone.now(),
+        )
+
+        self.reconcile(
+            self.fake_client(
+                subscriptions=[self.stripe_subscription()],
+                invoices=[self.invoice()],
+                disputes=[
+                    self.dispute(
+                        dispute_id="du_credit_reconcile",
+                        payment_intent_id="pi_credit_reconcile",
+                        charge_id="ch_credit_reconcile",
+                        amount=1990,
+                    )
+                ],
+            )
+        )
+
+        dispute = PaymentDispute.objects.get(
+            stripe_dispute_id="du_credit_reconcile"
+        )
+        self.assertEqual(
+            dispute.origin_type,
+            PaymentDisputeOriginType.CREDIT_PURCHASE,
+        )
+        self.assertEqual(
+            dispute.related_credit_purchase,
+            purchase,
+        )
+
+    def test_reconcile_dispute_customer_mismatch_fails_closed(self):
+        with self.assertRaises(StripeReconciliationError):
+            self.reconcile(
+                self.fake_client(
+                    subscriptions=[self.stripe_subscription()],
+                    invoices=[self.invoice()],
+                    disputes=[
+                        self.dispute(
+                            dispute_id="du_wrong_customer",
+                            customer_id="cus_other",
+                        )
+                    ],
+                )
+            )
+
+        self.subscription.refresh_from_db()
+        self.wallet.refresh_from_db()
+        self.assertEqual(
+            self.subscription.status,
+            SubscriptionStatus.PENDING,
+        )
+        self.assertEqual(self.wallet.plan_balance, 0)
+        self.assertFalse(
+            PaymentDispute.objects.filter(
+                stripe_dispute_id="du_wrong_customer",
+            ).exists()
+        )
+
+    def test_reconcile_dispute_api_failure_does_not_apply_payment(self):
+        with self.assertRaises(StripeReconciliationError):
+            self.reconcile(
+                self.fake_client(
+                    subscriptions=[self.stripe_subscription()],
+                    invoices=[self.invoice()],
+                    dispute_list_side_effect=RuntimeError(
+                        "stripe unavailable"
+                    ),
+                )
+            )
+
+        self.subscription.refresh_from_db()
+        self.wallet.refresh_from_db()
+        self.assertEqual(
+            self.subscription.status,
+            SubscriptionStatus.PENDING,
+        )
+        self.assertEqual(self.wallet.plan_balance, 0)
+        self.assertFalse(PaymentDispute.objects.exists())
+
+    def test_reconcile_invoice_api_failure_does_not_apply_payment(self):
+        with self.assertRaises(StripeReconciliationError):
+            self.reconcile(
+                self.fake_client(
+                    subscriptions=[self.stripe_subscription()],
+                    invoice_list_side_effect=RuntimeError(
+                        "stripe unavailable"
+                    ),
+                )
+            )
+
+        self.subscription.refresh_from_db()
+        self.wallet.refresh_from_db()
+        self.assertEqual(
+            self.subscription.status,
+            SubscriptionStatus.PENDING,
+        )
+        self.assertEqual(self.wallet.plan_balance, 0)
+        self.assertFalse(PaymentDispute.objects.exists())
+
+    def test_reconcile_invoice_payments_api_failure_does_not_apply_payment(self):
+        invoice = self.invoice()
+        invoice["payments"] = None
+
+        with self.assertRaises(StripeReconciliationError):
+            self.reconcile(
+                self.fake_client(
+                    subscriptions=[self.stripe_subscription()],
+                    invoices=[invoice],
+                    invoice_payment_list_side_effect=RuntimeError(
+                        "stripe unavailable"
+                    ),
+                )
+            )
+
+        self.subscription.refresh_from_db()
+        self.wallet.refresh_from_db()
+        self.assertEqual(
+            self.subscription.status,
+            SubscriptionStatus.PENDING,
+        )
+        self.assertEqual(self.wallet.plan_balance, 0)
+        self.assertFalse(PaymentDispute.objects.exists())
 
     def test_without_customer_returns_stable_error(self):
         self.organization.stripe_customer_id = ""
@@ -3300,6 +5290,38 @@ class StripeWebhookApiTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    @override_settings(
+        STRIPE_SECRET_KEY="sk_test_checkout",
+        FRONTEND_URL="http://localhost:3000",
+    )
+    def test_financial_block_rejects_subscription_checkout(self):
+        PaymentDispute.objects.create(
+            organization=self.organization,
+            stripe_dispute_id="du_subscription_checkout_block",
+            status=PaymentDisputeStatus.NEEDS_RESPONSE,
+            origin_type=PaymentDisputeOriginType.SUBSCRIPTION,
+            amount=3990,
+            currency="BRL",
+        )
+        fake_client = FakeStripeBillingClient()
+
+        with patch.object(
+            StripeBillingService,
+            "client",
+            return_value=fake_client,
+        ):
+            response = self.client.post(
+                self.url,
+                {"plan_id": str(self.plan.pk)},
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            fake_client.v1.checkout.sessions.create_calls,
+            [],
+        )
+
 
 @override_settings(
     STRIPE_SECRET_KEY="sk_test_123",
@@ -3322,12 +5344,8 @@ class CreditPackagePurchaseTests(TestCase):
             extra_credit_limit_per_cycle=25,
             is_active=True,
         )
-        self.period_start = timezone.make_aware(
-            timezone.datetime(2026, 8, 1, 10, 0, 0)
-        )
-        self.period_end = timezone.make_aware(
-            timezone.datetime(2026, 9, 1, 10, 0, 0)
-        )
+        self.period_start = timezone.now() - timezone.timedelta(days=1)
+        self.period_end = timezone.now() + timezone.timedelta(days=30)
         self.subscription = Subscription.objects.create(
             organization=self.organization,
             plan=self.plan,
@@ -3490,6 +5508,40 @@ class CreditPackagePurchaseTests(TestCase):
         self.assertEqual(
             params["metadata"]["maried_credit_purchase_id"],
             str(purchase.pk),
+        )
+
+    def test_financial_block_rejects_credit_checkout(self):
+        user = get_user_model().objects.create_user(
+            email="extras-block@example.com",
+            password="senha-teste",
+            name="Cliente Extras Bloqueado",
+            organization=self.organization,
+            role="OWNER",
+        )
+        PaymentDispute.objects.create(
+            organization=self.organization,
+            stripe_dispute_id="du_credit_checkout_block",
+            status=PaymentDisputeStatus.NEEDS_RESPONSE,
+            origin_type=PaymentDisputeOriginType.CREDIT_PURCHASE,
+            amount=1990,
+            currency="BRL",
+        )
+        fake_client = FakeStripeBillingClient()
+
+        with patch.object(
+            StripeBillingService,
+            "client",
+            return_value=fake_client,
+        ):
+            with self.assertRaises(StripeCheckoutUnavailableError):
+                StripeBillingService.create_credit_checkout(
+                    user=user,
+                    package=self.package,
+                )
+
+        self.assertEqual(
+            fake_client.v1.checkout.sessions.create_calls,
+            [],
         )
 
     def test_open_pending_purchase_reuses_checkout_without_new_session(self):

@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Plan, Subscription
+from .models import PaymentDispute, Plan, Subscription
 
 
 @admin.register(Plan)
@@ -75,6 +75,61 @@ class SubscriptionAdmin(admin.ModelAdmin):
 
     ordering = (
         "organization__name",
+    )
+
+    list_per_page = 50
+
+
+@admin.register(PaymentDispute)
+class PaymentDisputeAdmin(admin.ModelAdmin):
+    list_display = (
+        "organization",
+        "origin_type",
+        "status",
+        "amount",
+        "currency",
+        "stripe_dispute_id",
+        "created_at",
+        "resolved_at",
+    )
+
+    list_filter = (
+        "status",
+        "origin_type",
+        "currency",
+    )
+
+    search_fields = (
+        "organization__name",
+        "stripe_dispute_id",
+        "stripe_payment_intent_id",
+        "stripe_charge_id",
+        "stripe_customer_id",
+    )
+
+    readonly_fields = (
+        "stripe_dispute_id",
+        "stripe_payment_intent_id",
+        "stripe_charge_id",
+        "stripe_customer_id",
+        "related_subscription",
+        "related_credit_purchase",
+        "origin_type",
+        "amount",
+        "currency",
+        "status",
+        "reason",
+        "evidence_due_by",
+        "resolved_at",
+        "last_event_id",
+        "created_at",
+        "updated_at",
+    )
+
+    list_select_related = (
+        "organization",
+        "related_subscription",
+        "related_credit_purchase",
     )
 
     list_per_page = 50

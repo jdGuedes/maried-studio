@@ -850,6 +850,29 @@ export type SuperAdminCreditPurchase = {
 };
 
 
+export type SuperAdminPaymentDispute = {
+  id: string;
+  organization: string;
+  organization_name: string;
+  stripe_dispute_reference: string;
+  stripe_payment_intent_id: string;
+  stripe_charge_id: string;
+  stripe_customer_id: string;
+  subscription_id: string | null;
+  credit_purchase_id: string | null;
+  origin_type: string;
+  amount: number;
+  currency: string;
+  status: string;
+  reason: string;
+  evidence_due_by: string | null;
+  resolved_at: string | null;
+  is_blocking: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+
 export type SuperAdminGeneration = {
   id: string;
   organization: string;
@@ -926,6 +949,8 @@ export type SuperAdminStripeReconciliation = {
   stripe_subscription_status?: string | null;
   stripe_invoice_id?: string;
   stripe_subscription_id?: string;
+  disputes_reconciled?: number;
+  financial_blocked?: boolean;
   code?: string;
   detail?: string;
 };
@@ -1616,6 +1641,33 @@ export async function getSuperAdminCreditPurchases():
     await parseResponse<
       | PaginatedResponse<SuperAdminCreditPurchase>
       | SuperAdminCreditPurchase[]
+    >(response);
+
+  return unpackResults(data);
+}
+
+
+export async function getSuperAdminPaymentDisputes():
+  Promise<SuperAdminPaymentDispute[]> {
+  const response =
+    await fetch(
+      `${API_URL}/api/superadmin/financeiro/disputas/`,
+      {
+        method:
+          "GET",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+      }
+    );
+
+  const data =
+    await parseResponse<
+      | PaginatedResponse<SuperAdminPaymentDispute>
+      | SuperAdminPaymentDispute[]
     >(response);
 
   return unpackResults(data);

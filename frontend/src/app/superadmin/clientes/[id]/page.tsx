@@ -220,9 +220,13 @@ export default function SuperAdminClienteDetalhePage() {
           );
 
         setMessage(
-          result.applied
-            ? "Pagamento encontrado no Stripe e assinatura sincronizada."
-            : "Esta assinatura ja esta sincronizada com o Stripe."
+          result.financial_blocked
+            ? "Stripe sincronizado. Conta bloqueada por contestacao financeira."
+            : result.disputes_reconciled
+              ? "Stripe sincronizado. Disputas financeiras atualizadas."
+              : result.applied
+                ? "Pagamento encontrado no Stripe e assinatura sincronizada."
+                : "Esta assinatura ja esta sincronizada com o Stripe."
         );
       },
       ""
@@ -241,6 +245,13 @@ export default function SuperAdminClienteDetalhePage() {
         <AdminCard>Carregando cliente...</AdminCard>
       ) : client ? (
         <div className="space-y-5">
+          {client.subscription.operational_status === "FINANCIAL_BLOCK" ? (
+            <StatusMessage
+              text="Conta bloqueada por contestacao financeira."
+              tone="error"
+            />
+          ) : null}
+
           <div className="grid gap-3 md:grid-cols-4">
             <MetricCard label="Conta" value={client.is_active ? "Ativa" : "Bloqueada"} />
             <MetricCard label="Usuario" value={client.user?.is_active ? "Ativo" : "Bloqueado"} />

@@ -53,6 +53,8 @@ export type ClientSubscription = {
 
   next_billing_at: string | null;
 
+  cancel_at_period_end: boolean;
+
   grace_until: string | null;
 
   days_remaining_in_grace: number | null;
@@ -60,6 +62,10 @@ export type ClientSubscription = {
   can_create: boolean;
 
   can_purchase_credits: boolean;
+
+  can_start_subscription: boolean;
+
+  financial_blocked: boolean;
 
   access_reason: string;
 
@@ -100,6 +106,12 @@ export function getBillingAccessMessage(
     ClientSubscription | null
 ) {
   if (
+    subscription?.financial_blocked
+  ) {
+    return "Sua conta possui uma contestação financeira em análise.";
+  }
+
+  if (
     isPendingFirstPayment(
       subscription
     )
@@ -115,6 +127,12 @@ export function getBillingAccessCtaLabel(
   subscription:
     ClientSubscription | null
 ) {
+  if (
+    subscription?.financial_blocked
+  ) {
+    return "Ver assinatura";
+  }
+
   if (
     isPendingFirstPayment(
       subscription
@@ -469,6 +487,78 @@ export async function createSubscriptionCheckout(
     );
 
   return parseResponse<SubscriptionCheckoutResponse>(
+    response
+  );
+}
+
+
+export async function cancelSubscription():
+  Promise<ClientSubscription> {
+
+  await ensureCsrfCookie();
+
+  const response =
+    await fetch(
+      `${API_URL}/api/billing/subscription/cancel/`,
+      {
+        method:
+          "POST",
+
+        credentials:
+          "include",
+
+        headers: {
+          Accept:
+            "application/json",
+
+          "Content-Type":
+            "application/json",
+
+          ...getCsrfHeaders(),
+        },
+
+        body:
+          JSON.stringify({}),
+      }
+    );
+
+  return parseResponse<ClientSubscription>(
+    response
+  );
+}
+
+
+export async function resumeSubscription():
+  Promise<ClientSubscription> {
+
+  await ensureCsrfCookie();
+
+  const response =
+    await fetch(
+      `${API_URL}/api/billing/subscription/resume/`,
+      {
+        method:
+          "POST",
+
+        credentials:
+          "include",
+
+        headers: {
+          Accept:
+            "application/json",
+
+          "Content-Type":
+            "application/json",
+
+          ...getCsrfHeaders(),
+        },
+
+        body:
+          JSON.stringify({}),
+      }
+    );
+
+  return parseResponse<ClientSubscription>(
     response
   );
 }

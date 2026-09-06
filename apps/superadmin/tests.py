@@ -12,6 +12,9 @@ from apps.billing.services import BillingError
 from apps.billing.stripe_services import StripeReconciliationResult
 from apps.billing.models import (
     BillingCycle,
+    PaymentDispute,
+    PaymentDisputeOriginType,
+    PaymentDisputeStatus,
     Plan,
     Subscription,
     SubscriptionStatus,
@@ -135,6 +138,62 @@ class SuperAdminApiTests(APITestCase):
             reverse("superadmin:clients"),
             self._client_payload(),
             format="json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_superadmin_lists_payment_disputes_read_only(self):
+        dispute = PaymentDispute.objects.create(
+            organization=self.organization,
+            stripe_dispute_id="du_superadmin",
+            status=PaymentDisputeStatus.NEEDS_RESPONSE,
+            origin_type=PaymentDisputeOriginType.SUBSCRIPTION,
+            amount=9990,
+            currency="BRL",
+            reason="fraudulent",
+        )
+        self.auth_superadmin()
+
+        response = self.client.get(
+            reverse("superadmin:payment-disputes")
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(
+            response.data["results"][0]["id"],
+            str(dispute.pk),
+        )
+        self.assertEqual(
+            response.data["results"][0]["organization_name"],
+            self.organization.name,
+        )
+        self.assertEqual(
+            response.data["results"][0]["stripe_dispute_reference"],
+            "peradmin",
+        )
+        self.assertTrue(response.data["results"][0]["is_blocking"])
+
+        detail_response = self.client.get(
+            reverse(
+                "superadmin:payment-dispute-detail",
+                kwargs={
+                    "pk": dispute.pk,
+                },
+            )
+        )
+
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertEqual(
+            detail_response.data["id"],
+            str(dispute.pk),
+        )
+
+    def test_common_user_cannot_access_payment_disputes(self):
+        self.client.force_authenticate(self.common_user)
+
+        response = self.client.get(
+            reverse("superadmin:payment-disputes")
         )
 
         self.assertEqual(response.status_code, 403)

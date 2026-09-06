@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 import {
   Activity,
+  AlertTriangle,
   BarChart3,
   ClipboardList,
   CreditCard,
@@ -54,6 +55,11 @@ const superAdminNav = [
     label: "Créditos",
     href: "/superadmin/creditos",
     icon: CreditCard,
+  },
+  {
+    label: "Financeiro",
+    href: "/superadmin/financeiro",
+    icon: AlertTriangle,
   },
   {
     label: "Gerações",

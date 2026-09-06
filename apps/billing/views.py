@@ -35,6 +35,8 @@ from .stripe_services import (
     StripeCheckoutRetryRequiredError,
     StripeCheckoutUnavailableError,
     StripeConfigurationError,
+    StripeSubscriptionCancellationError,
+    StripeSubscriptionCancellationService,
     StripeSubscriptionAlreadyActiveError,
     StripeWebhookService,
 )
@@ -297,6 +299,112 @@ class SubscriptionCheckoutView(APIView):
         return Response(
             checkout,
             status=status.HTTP_201_CREATED,
+        )
+
+
+class SubscriptionCancelView(APIView):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def post(
+        self,
+        request,
+    ):
+        organization = getattr(
+            request.user,
+            "organization",
+            None,
+        )
+
+        if not organization:
+            return Response(
+                {
+                    "detail": (
+                        "Usuário não possui organização vinculada."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            subscription = (
+                StripeSubscriptionCancellationService
+                .cancel_at_period_end(
+                    organization=organization,
+                )
+            )
+
+        except StripeSubscriptionCancellationError as exc:
+            return Response(
+                {
+                    "detail": str(exc),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        access = BillingAccessService.evaluate_organization(
+            organization
+        )
+
+        return Response(
+            CurrentSubscriptionSerializer.from_access(
+                access
+            ).data,
+            status=status.HTTP_200_OK,
+        )
+
+
+class SubscriptionResumeView(APIView):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def post(
+        self,
+        request,
+    ):
+        organization = getattr(
+            request.user,
+            "organization",
+            None,
+        )
+
+        if not organization:
+            return Response(
+                {
+                    "detail": (
+                        "Usuário não possui organização vinculada."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            subscription = (
+                StripeSubscriptionCancellationService
+                .resume(
+                    organization=organization,
+                )
+            )
+
+        except StripeSubscriptionCancellationError as exc:
+            return Response(
+                {
+                    "detail": str(exc),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        access = BillingAccessService.evaluate_organization(
+            organization
+        )
+
+        return Response(
+            CurrentSubscriptionSerializer.from_access(
+                access
+            ).data,
+            status=status.HTTP_200_OK,
         )
 
 
