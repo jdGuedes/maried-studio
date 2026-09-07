@@ -12,6 +12,7 @@ from django.utils import timezone
 
 from PIL import Image
 
+from rest_framework import serializers
 from rest_framework.test import APITestCase, APITransactionTestCase
 
 from apps.billing.models import (
@@ -29,6 +30,13 @@ from apps.organizations.models import Organization
 from apps.studio.models import Generation, GeneratedImage, GenerationMode, GenerationStatus
 
 from .models import AssetType, Product, ProductAsset, ProductCategory
+from .serializers import (
+    MAX_IMAGE_HEIGHT,
+    MAX_IMAGE_PIXELS,
+    MAX_IMAGE_SIZE,
+    MAX_IMAGE_WIDTH,
+    inspect_uploaded_image,
+)
 
 
 class ProductSubscriptionAccessTests(APITestCase):
@@ -384,6 +392,407 @@ class ProductSubscriptionAccessTests(APITestCase):
         self.assertEqual(
             response.status_code,
             404,
+        )
+
+
+class ProductImageUploadSecurityTests(APITestCase):
+    class FakeImage:
+        def __init__(
+            self,
+            *,
+            image_format="PNG",
+            size=(600, 600),
+            verify_error=None,
+        ):
+            self.format = image_format
+            self.size = size
+            self.verify_error = verify_error
+
+        def verify(self):
+            if self.verify_error:
+                raise self.verify_error
+
+    def setUp(self):
+        User = get_user_model()
+
+        self.organization = Organization.objects.create(
+            name="Empresa Upload Seguro",
+            slug="empresa-upload-seguro",
+        )
+
+        self.user = User.objects.create_user(
+            email="upload-seguro@example.com",
+            password="senha-teste",
+            name="Cliente Upload Seguro",
+            organization=self.organization,
+            role="OWNER",
+        )
+
+        self.plan = Plan.objects.create(
+            name="Plano Upload Seguro",
+            slug="plano-upload-seguro",
+            description="Plano de testes.",
+            price=Decimal("99.90"),
+            billing_cycle=BillingCycle.MONTHLY,
+            credits_per_cycle=50,
+            is_active=True,
+        )
+
+        Subscription.objects.create(
+            organization=self.organization,
+            plan=self.plan,
+            status=SubscriptionStatus.ACTIVE,
+            price_snapshot=self.plan.price,
+            credits_snapshot=self.plan.credits_per_cycle,
+            started_at=timezone.now(),
+            current_period_start=timezone.now(),
+            current_period_end=timezone.now() + timezone.timedelta(days=30),
+            next_billing_at=timezone.now() + timezone.timedelta(days=30),
+        )
+
+        CreditWallet.objects.create(
+            organization=self.organization,
+            plan_balance=10,
+            balance=10,
+        )
+
+        self.client.force_authenticate(
+            self.user
+        )
+
+    def uploaded_image(
+        self,
+        *,
+        image_format="PNG",
+        name="produto.png",
+        content_type="image/png",
+    ):
+        buffer = BytesIO()
+
+        image = Image.new(
+            "RGB",
+            (
+                600,
+                600,
+            ),
+            "white",
+        )
+
+        image.save(
+            buffer,
+            format=image_format,
+        )
+
+        buffer.seek(0)
+
+        return SimpleUploadedFile(
+            name,
+            buffer.read(),
+            content_type=content_type,
+        )
+
+    def uploaded_bytes(
+        self,
+        *,
+        name="produto.jpg",
+        content=b"not-an-image",
+        content_type="image/jpeg",
+    ):
+        return SimpleUploadedFile(
+            name,
+            content,
+            content_type=content_type,
+        )
+
+    def assert_validation_message_is_safe(
+        self,
+        exc,
+    ):
+        message = str(
+            exc.exception
+        )
+
+        self.assertNotIn(
+            "DecompressionBomb",
+            message,
+        )
+
+        self.assertNotIn(
+            "Pillow",
+            message,
+        )
+
+        self.assertNotIn(
+            "products/originals",
+            message,
+        )
+
+    def inspect_with_mocked_image(
+        self,
+        *,
+        image_format="PNG",
+        size=(600, 600),
+        first_verify_error=None,
+        first_open_error=None,
+    ):
+        uploaded = self.uploaded_bytes(
+            content=b"synthetic-image"
+        )
+
+        first_image = self.FakeImage(
+            image_format=image_format,
+            size=size,
+            verify_error=first_verify_error,
+        )
+
+        second_image = self.FakeImage(
+            image_format=image_format,
+            size=size,
+        )
+
+        side_effect = (
+            first_open_error
+            if first_open_error
+            else [
+                first_image,
+                second_image,
+            ]
+        )
+
+        with patch(
+            "apps.products.serializers.Image.open",
+            side_effect=side_effect,
+        ):
+            return inspect_uploaded_image(
+                uploaded
+            )
+
+    def test_normal_jpeg_is_accepted(self):
+        metadata = inspect_uploaded_image(
+            self.uploaded_image(
+                image_format="JPEG",
+                name="produto.jpg",
+                content_type="image/jpeg",
+            )
+        )
+
+        self.assertEqual(
+            metadata["mime_type"],
+            "image/jpeg",
+        )
+
+    def test_normal_png_is_accepted(self):
+        metadata = inspect_uploaded_image(
+            self.uploaded_image()
+        )
+
+        self.assertEqual(
+            metadata["mime_type"],
+            "image/png",
+        )
+
+    def test_normal_webp_is_accepted(self):
+        metadata = inspect_uploaded_image(
+            self.uploaded_image(
+                image_format="WEBP",
+                name="produto.webp",
+                content_type="image/webp",
+            )
+        )
+
+        self.assertEqual(
+            metadata["mime_type"],
+            "image/webp",
+        )
+
+    def test_fake_extension_is_rejected(self):
+        with self.assertRaises(
+            serializers.ValidationError
+        ) as exc:
+            inspect_uploaded_image(
+                self.uploaded_bytes(
+                    name="produto.jpg"
+                )
+            )
+
+        self.assert_validation_message_is_safe(
+            exc
+        )
+
+    def test_fake_mime_is_rejected(self):
+        with self.assertRaises(
+            serializers.ValidationError
+        ) as exc:
+            inspect_uploaded_image(
+                self.uploaded_bytes(
+                    name="produto.txt",
+                    content_type="image/jpeg",
+                )
+            )
+
+        self.assert_validation_message_is_safe(
+            exc
+        )
+
+    def test_corrupted_image_is_rejected(self):
+        with self.assertRaises(
+            serializers.ValidationError
+        ) as exc:
+            self.inspect_with_mocked_image(
+                first_verify_error=OSError(
+                    "corrupted image"
+                )
+            )
+
+        self.assert_validation_message_is_safe(
+            exc
+        )
+
+    def test_svg_is_rejected(self):
+        with self.assertRaises(
+            serializers.ValidationError
+        ) as exc:
+            inspect_uploaded_image(
+                self.uploaded_bytes(
+                    name="produto.svg",
+                    content=(
+                        b"<svg xmlns='http://www.w3.org/2000/svg'></svg>"
+                    ),
+                    content_type="image/svg+xml",
+                )
+            )
+
+        self.assert_validation_message_is_safe(
+            exc
+        )
+
+    def test_oversized_bytes_are_rejected(self):
+        with self.assertRaises(
+            serializers.ValidationError
+        ) as exc:
+            inspect_uploaded_image(
+                self.uploaded_bytes(
+                    content=b"x" * (
+                        MAX_IMAGE_SIZE + 1
+                    )
+                )
+            )
+
+        self.assertIn(
+            "15 MB",
+            str(
+                exc.exception
+            ),
+        )
+
+    def test_oversized_width_is_rejected(self):
+        with self.assertRaises(
+            serializers.ValidationError
+        ) as exc:
+            self.inspect_with_mocked_image(
+                size=(
+                    MAX_IMAGE_WIDTH + 1,
+                    600,
+                )
+            )
+
+        self.assert_validation_message_is_safe(
+            exc
+        )
+
+    def test_oversized_height_is_rejected(self):
+        with self.assertRaises(
+            serializers.ValidationError
+        ) as exc:
+            self.inspect_with_mocked_image(
+                size=(
+                    600,
+                    MAX_IMAGE_HEIGHT + 1,
+                )
+            )
+
+        self.assert_validation_message_is_safe(
+            exc
+        )
+
+    def test_oversized_pixels_are_rejected(self):
+        with self.assertRaises(
+            serializers.ValidationError
+        ) as exc:
+            self.inspect_with_mocked_image(
+                size=(
+                    10000,
+                    (MAX_IMAGE_PIXELS // 10000) + 1,
+                )
+            )
+
+        self.assert_validation_message_is_safe(
+            exc
+        )
+
+    def test_decompression_warning_is_rejected(self):
+        with self.assertRaises(
+            serializers.ValidationError
+        ) as exc:
+            self.inspect_with_mocked_image(
+                first_open_error=(
+                    Image.DecompressionBombWarning(
+                        "bomb warning"
+                    )
+                )
+            )
+
+        self.assert_validation_message_is_safe(
+            exc
+        )
+
+    def test_decompression_error_is_rejected(self):
+        with self.assertRaises(
+            serializers.ValidationError
+        ) as exc:
+            self.inspect_with_mocked_image(
+                first_open_error=(
+                    Image.DecompressionBombError(
+                        "bomb error"
+                    )
+                )
+            )
+
+        self.assert_validation_message_is_safe(
+            exc
+        )
+
+    def test_invalid_upload_does_not_create_product_or_asset(self):
+        response = self.client.post(
+            reverse(
+                "product-list"
+            ),
+            {
+                "name": "Produto Inválido",
+                "category": ProductCategory.EARRING,
+                "original_image": self.uploaded_bytes(
+                    name="produto.jpg"
+                ),
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            400,
+        )
+
+        self.assertFalse(
+            Product.objects.filter(
+                organization=self.organization,
+                name="Produto Inválido",
+            ).exists()
+        )
+
+        self.assertFalse(
+            ProductAsset.objects.filter(
+                product__organization=self.organization
+            ).exists()
         )
 
 

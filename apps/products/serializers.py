@@ -1,3 +1,5 @@
+import warnings
+
 from PIL import Image
 
 from rest_framework import serializers
@@ -30,6 +32,10 @@ MAX_IMAGE_SIZE = 15 * 1024 * 1024
 MIN_IMAGE_WIDTH = 500
 MIN_IMAGE_HEIGHT = 500
 
+MAX_IMAGE_WIDTH = 12000
+MAX_IMAGE_HEIGHT = 12000
+MAX_IMAGE_PIXELS = 60_000_000
+
 
 # ==========================================================
 # INSPEÇÃO DA IMAGEM
@@ -44,23 +50,41 @@ def inspect_uploaded_image(uploaded):
     try:
         uploaded.seek(0)
 
-        image = Image.open(
-            uploaded
-        )
+        with warnings.catch_warnings():
+            warnings.simplefilter(
+                "error",
+                Image.DecompressionBombWarning,
+            )
 
-        image.verify()
+            image = Image.open(
+                uploaded
+            )
 
-        uploaded.seek(0)
+            image.verify()
 
-        image = Image.open(
-            uploaded
-        )
+            uploaded.seek(0)
 
-        width, height = image.size
+            image = Image.open(
+                uploaded
+            )
 
-        image_format = image.format
+            width, height = image.size
 
-    except Exception as exc:
+            image_format = image.format
+
+    except (
+        Image.DecompressionBombWarning,
+        Image.DecompressionBombError,
+    ) as exc:
+        raise serializers.ValidationError(
+            "A imagem enviada possui dimensões muito grandes. "
+            "Reduza o tamanho da imagem e tente novamente."
+        ) from exc
+
+    except (
+        OSError,
+        ValueError,
+    ) as exc:
         raise serializers.ValidationError(
             "O arquivo enviado não é uma imagem válida."
         ) from exc
@@ -72,6 +96,25 @@ def inspect_uploaded_image(uploaded):
         raise serializers.ValidationError(
             "Formato não suportado. "
             "Use JPEG, PNG ou WEBP."
+        )
+
+    if (
+        width > MAX_IMAGE_WIDTH
+        or
+        height > MAX_IMAGE_HEIGHT
+    ):
+        raise serializers.ValidationError(
+            "A imagem enviada possui dimensões muito grandes. "
+            "Reduza o tamanho da imagem e tente novamente."
+        )
+
+    if (
+        width * height
+        > MAX_IMAGE_PIXELS
+    ):
+        raise serializers.ValidationError(
+            "A imagem enviada possui pixels demais. "
+            "Reduza o tamanho da imagem e tente novamente."
         )
 
     if (
