@@ -14,8 +14,11 @@ import {
 } from "./confirmation-step";
 
 import {
+  ApiError,
   createGeneration,
   createProduct,
+  getActiveGeneration,
+  getGeneration,
   getModelReferences,
   getSceneTemplates,
 } from "@/lib/api";
@@ -113,6 +116,14 @@ const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 
+const GENERATION_POLL_INTERVAL_MS =
+  5000;
+
+
+const GENERATION_POLL_MAX_ATTEMPTS =
+  72;
+
+
 function isValidUuid(
   value:
     string
@@ -149,6 +160,56 @@ function revokePreviewUrl(
       value
     );
   }
+}
+
+
+function isPendingGeneration(
+  generation:
+    Generation
+) {
+  return [
+    "CREDIT_RESERVED",
+    "PROCESSING",
+  ].includes(
+    generation.status
+  );
+}
+
+
+function getPendingGenerationCopy(
+  generation:
+    Generation
+) {
+  if (
+    generation.status ===
+    "CREDIT_RESERVED"
+  ) {
+    return {
+      title:
+        "Sua criação entrou na fila",
+      description:
+        "Vamos começar em instantes. Você pode continuar navegando pelo MARIED Studio.",
+    };
+  }
+
+  if (
+    generation.status ===
+    "PROCESSING"
+  ) {
+    return {
+      title:
+        "Estamos criando sua imagem",
+      description:
+        "Esse processo pode levar alguns minutinhos. Você não precisa ficar nesta página enquanto preparamos sua criação.",
+    };
+  }
+
+  return {
+    title:
+      "Não conseguimos concluir esta criação.",
+    description:
+      "Seu crédito foi devolvido quando aplicável. Você pode tentar novamente.",
+  };
 }
 
 
@@ -219,6 +280,11 @@ export function CreationWizard({
   const cameraInputRef =
     useRef<HTMLInputElement>(
       null
+    );
+
+  const generationPollAttempts =
+    useRef(
+      0
     );
 
 
@@ -468,6 +534,14 @@ export function CreationWizard({
   );
 
 
+  const [
+    loadingActiveGeneration,
+    setLoadingActiveGeneration,
+  ] = useState(
+    true
+  );
+
+
   // =======================================================
   // IDEMPOTÊNCIA
   // =======================================================
@@ -592,7 +666,164 @@ export function CreationWizard({
     setIdempotencyKey(
       null
     );
+
+    generationPollAttempts.current =
+      0;
   }
+
+
+  useEffect(() => {
+    let active =
+      true;
+
+    void getActiveGeneration()
+      .then(
+        (
+          activeGeneration
+        ) => {
+          if (
+            !active
+          ) {
+            return;
+          }
+
+          if (
+            activeGeneration &&
+            isPendingGeneration(
+              activeGeneration
+            )
+          ) {
+            setGeneration(
+              activeGeneration
+            );
+
+            setGenerationError(
+              null
+            );
+
+            setStep(
+              5
+            );
+          }
+        }
+      )
+      .catch(
+        (
+          error
+        ) => {
+          console.error(
+            "Erro ao consultar criação ativa:",
+            error
+          );
+        }
+      )
+      .finally(
+        () => {
+          if (
+            active
+          ) {
+            setLoadingActiveGeneration(
+              false
+            );
+          }
+        }
+      );
+
+    return () => {
+      active =
+        false;
+    };
+  }, []);
+
+
+  useEffect(() => {
+    if (
+      !generation ||
+      !isPendingGeneration(
+        generation
+      )
+    ) {
+      return;
+    }
+
+    if (
+      generationPollAttempts.current >=
+      GENERATION_POLL_MAX_ATTEMPTS
+    ) {
+      setGenerationError(
+        "A geração continua sendo processada. Você pode acompanhar o resultado em Minhas criações."
+      );
+
+      return;
+    }
+
+    const timer =
+      window.setTimeout(
+        () => {
+          generationPollAttempts.current +=
+            1;
+
+          void getGeneration(
+            generation.id
+          )
+            .then(
+              async (
+                latestGeneration
+              ) => {
+                setGeneration(
+                  latestGeneration
+                );
+
+                if (
+                  latestGeneration.status ===
+                  "COMPLETED"
+                ) {
+                  setWalletFromGeneration(
+                    latestGeneration.available_credits
+                  );
+
+                  await refreshWallet();
+                  setGenerationError(
+                    null
+                  );
+                }
+
+                if (
+                  latestGeneration.status ===
+                  "FAILED"
+                ) {
+                  await refreshWallet();
+                  setGenerationError(
+                    latestGeneration.error_message ||
+                    "Não foi possível concluir esta geração. Seu crédito foi devolvido quando aplicável."
+                  );
+                }
+              }
+            )
+            .catch(
+              (
+                error
+              ) => {
+                console.error(
+                  "Erro ao consultar status da geração:",
+                  error
+                );
+              }
+            );
+        },
+        GENERATION_POLL_INTERVAL_MS
+      );
+
+    return () => {
+      window.clearTimeout(
+        timer
+      );
+    };
+  }, [
+    generation,
+    refreshWallet,
+    setWalletFromGeneration,
+  ]);
 
 
   // =======================================================
@@ -1367,6 +1598,23 @@ export function CreationWizard({
     }
 
     if (
+      generation &&
+      isPendingGeneration(
+        generation
+      )
+    ) {
+      setGenerationError(
+        "Já existe uma criação em andamento. Aguarde ela ficar pronta antes de iniciar uma nova."
+      );
+
+      setStep(
+        5
+      );
+
+      return;
+    }
+
+    if (
       !canOperateStudio
     ) {
       setGenerationError(
@@ -1467,6 +1715,9 @@ export function CreationWizard({
     setGenerationError(
       null
     );
+
+    generationPollAttempts.current =
+      0;
 
     try {
       // ===================================================
@@ -1660,12 +1911,9 @@ export function CreationWizard({
       // ===================================================
 
       if (
-        createdGeneration.status ===
-          "PROCESSING" ||
-        createdGeneration.status ===
-          "CREATED" ||
-        createdGeneration.status ===
-          "CREDIT_RESERVED"
+        isPendingGeneration(
+          createdGeneration
+        )
       ) {
         // Já pode existir reserva ativa,
         // então sincronizamos o saldo.
@@ -1673,8 +1921,8 @@ export function CreationWizard({
         await refreshWallet();
 
 
-        setGenerationError(
-          "Sua imagem entrou em processamento. Em breve vamos acompanhar esse status automaticamente."
+        setStep(
+          5
         );
 
         return;
@@ -1703,6 +1951,36 @@ export function CreationWizard({
         await refreshWallet();
       } catch {
         // Mantemos o erro principal abaixo.
+      }
+
+      if (
+        error instanceof ApiError &&
+        error.status === 409
+      ) {
+        try {
+          const activeGeneration =
+            await getActiveGeneration();
+
+          if (
+            activeGeneration
+          ) {
+            setGeneration(
+              activeGeneration
+            );
+
+            setGenerationError(
+              null
+            );
+
+            setStep(
+              5
+            );
+
+            return;
+          }
+        } catch {
+          // Mantemos a mensagem original do 409.
+        }
       }
 
 
@@ -1839,6 +2117,23 @@ export function CreationWizard({
   // =======================================================
 
   function handleAnotherGeneration() {
+    if (
+      generation &&
+      isPendingGeneration(
+        generation
+      )
+    ) {
+      setGenerationError(
+        "Aguarde a criação em andamento ficar pronta antes de iniciar uma nova."
+      );
+
+      setStep(
+        5
+      );
+
+      return;
+    }
+
     setGeneration(
       null
     );
@@ -1889,6 +2184,22 @@ export function CreationWizard({
     step >= 4
       ? "100%"
       : `${step * 25}%`;
+
+
+  const hasActiveGeneration =
+    generation
+      ? isPendingGeneration(
+          generation
+        )
+      : false;
+
+
+  const pendingGenerationCopy =
+    generation
+      ? getPendingGenerationCopy(
+          generation
+        )
+      : null;
 
 
   const selectionTitle =
@@ -2996,7 +3307,9 @@ export function CreationWizard({
               }
 
               isGenerating={
-                isGenerating
+                isGenerating ||
+                loadingActiveGeneration ||
+                hasActiveGeneration
               }
 
               error={
@@ -3011,6 +3324,93 @@ export function CreationWizard({
                 handleGenerate
               }
             />
+
+          ) : null}
+
+
+          {/* =================================================
+              ETAPA 05
+              ACOMPANHAMENTO
+          ================================================= */}
+
+          {step === 5 &&
+          generation &&
+          !generation.image_url ? (
+
+            <motion.section
+              key="step-5-processing"
+
+              initial={{
+                opacity:
+                  0,
+
+                y:
+                  14,
+              }}
+
+              animate={{
+                opacity:
+                  1,
+
+                y:
+                  0,
+              }}
+
+              exit={{
+                opacity:
+                  0,
+              }}
+
+              className="mx-auto max-w-2xl text-center"
+            >
+
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[var(--maried-soft-gold)]">
+                {isPendingGeneration(
+                  generation
+                ) ? (
+                  <LoaderCircle
+                    size={22}
+                    className="animate-spin text-[var(--maried-gold)]"
+                  />
+                ) : (
+                  <X
+                    size={22}
+                    className="text-red-500"
+                  />
+                )}
+              </div>
+
+              <h1 className="mt-5 text-[30px] font-semibold text-[var(--maried-espresso)] sm:text-[38px]">
+                {pendingGenerationCopy?.title}
+              </h1>
+
+              <p className="mt-3 text-sm leading-6 text-[var(--maried-cocoa)]">
+                {generationError ||
+                  pendingGenerationCopy?.description}
+              </p>
+
+              <div className="mt-8 grid gap-3 sm:grid-cols-2">
+                <Link
+                  href="/criacoes"
+                  className="flex h-12 items-center justify-center rounded-xl bg-[var(--maried-gold)] text-sm font-medium text-white"
+                >
+                  Minhas criações
+                </Link>
+
+                {!hasActiveGeneration ? (
+                  <button
+                    type="button"
+                    onClick={
+                      handleAnotherGeneration
+                    }
+                    className="flex h-12 items-center justify-center rounded-xl border border-[var(--maried-sand)] bg-white text-sm font-medium text-[var(--maried-coffee)]"
+                  >
+                    Criar outra versão
+                  </button>
+                ) : null}
+              </div>
+
+            </motion.section>
 
           ) : null}
 

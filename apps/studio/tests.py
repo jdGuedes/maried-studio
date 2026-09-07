@@ -47,6 +47,8 @@ from apps.studio.models import (
 )
 from apps.studio.serializers import GenerationCreateSerializer
 from apps.studio.services.generation_service import GenerationService
+from apps.studio.services.generation_queue import GenerationQueueService
+from apps.studio.services.performance import GenerationPerformanceTracker
 
 
 class DashboardLegacyWalletTests(APITestCase):
@@ -2652,6 +2654,35 @@ class ProductReuseGenerationApiTests(
 
         return generation
 
+    def create_generation(
+        self,
+        *,
+        key,
+        status_value,
+        organization=None,
+        user=None,
+        product=None,
+    ):
+        return Generation.objects.create(
+            organization=(
+                organization or
+                self.organization
+            ),
+            user=(
+                user or
+                self.user
+            ),
+            product=(
+                product or
+                self.product
+            ),
+            mode=GenerationMode.STILL,
+            generation_rule=self.rule,
+            status=status_value,
+            idempotency_key=key,
+            credit_cost=1,
+        )
+
     def generation_payload(
         self,
         *,
@@ -2726,14 +2757,49 @@ class ProductReuseGenerationApiTests(
 
         self.assertEqual(
             response.status_code,
-            201,
+            202,
         )
         self.assertEqual(
             response.data["status"],
-            GenerationStatus.COMPLETED,
+            GenerationStatus.CREDIT_RESERVED,
         )
         self.assertEqual(
             generate.call_count,
+            0,
+        )
+
+        generation = Generation.objects.get(
+            id=response.data["id"]
+        )
+
+        self.wallet.refresh_from_db()
+        self.assertEqual(
+            self.wallet.plan_balance,
+            10,
+        )
+        self.assertEqual(
+            self.wallet.reserved_balance,
+            1,
+        )
+
+        with patch(
+            "apps.ai.providers.openai.OpenAIImageProvider.generate",
+            return_value=GeneratedAsset(
+                content=self.image_bytes(),
+                mime_type="image/png",
+            ),
+        ) as worker_generate:
+            GenerationQueueService.process_generation(
+                generation.id
+            )
+
+        generation.refresh_from_db()
+        self.assertEqual(
+            generation.status,
+            GenerationStatus.COMPLETED,
+        )
+        self.assertEqual(
+            worker_generate.call_count,
             1,
         )
         self.assertEqual(
@@ -2790,15 +2856,675 @@ class ProductReuseGenerationApiTests(
             3,
         )
 
-    def test_existing_product_idempotency_does_not_charge_or_process_twice(
+    def test_generation_success_emits_performance_log_without_sensitive_data(
         self,
     ):
+        response = self.post_generation(
+            product=self.product,
+            key="reuse-performance-success",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            202,
+        )
+
+        generation = Generation.objects.get(
+            id=response.data["id"]
+        )
+
+        with patch(
+            "apps.studio.services.performance.logger.info"
+        ) as log_info:
+            with patch(
+                "apps.ai.providers.openai.OpenAIImageProvider.generate",
+                return_value=GeneratedAsset(
+                    content=self.image_bytes(),
+                    mime_type="image/png",
+                ),
+            ):
+                GenerationQueueService.process_generation(
+                    generation.id
+                )
+
+        log_info.assert_called_once()
+
+        message = log_info.call_args.args[0]
+        extra = log_info.call_args.kwargs["extra"]
+        extra_text = str(extra)
+
+        self.assertIn(
+            "generation_performance",
+            message,
+        )
+        self.assertIn(
+            "success=true",
+            message,
+        )
+        self.assertIn(
+            "generation_type=STILL",
+            message,
+        )
+        self.assertIn(
+            "provider=OPENAI",
+            message,
+        )
+        self.assertIn(
+            "queue_wait_ms=",
+            message,
+        )
+        self.assertIn(
+            "total_ms=",
+            message,
+        )
+        self.assertIn(
+            "provider_ms=",
+            message,
+        )
+        self.assertIn(
+            "internal_ms=",
+            message,
+        )
+        self.assertIn(
+            "storage_ms=",
+            message,
+        )
+        self.assertTrue(extra["success"])
+        self.assertEqual(
+            extra["generation_type"],
+            GenerationMode.STILL,
+        )
+        self.assertEqual(
+            extra["provider"],
+            "OPENAI",
+        )
+        self.assertEqual(
+            extra["model"],
+            "gpt-image-test",
+        )
+        self.assertGreaterEqual(
+            extra["total_duration_ms"],
+            extra["provider_duration_ms"],
+        )
+        self.assertGreaterEqual(
+            extra["internal_duration_ms"],
+            0,
+        )
+        self.assertEqual(
+            extra["input_file_size_bytes"],
+            len(self.image_bytes()),
+        )
+        self.assertEqual(
+            extra["input_width"],
+            32,
+        )
+        self.assertEqual(
+            extra["input_height"],
+            32,
+        )
+        self.assertEqual(
+            extra["output_size_bytes"],
+            len(self.image_bytes()),
+        )
+        self.assertNotIn(
+            "test-openai-key",
+            extra_text,
+        )
+        self.assertNotIn(
+            "test-openai-key",
+            message,
+        )
+        self.assertNotIn(
+            "OPENAI_API_KEY",
+            extra_text,
+        )
+        self.assertNotIn(
+            "OPENAI_API_KEY",
+            message,
+        )
+        self.assertNotIn(
+            "b64_json",
+            extra_text,
+        )
+        self.assertNotIn(
+            "b64_json",
+            message,
+        )
+        self.assertNotIn(
+            "final_prompt",
+            extra_text,
+        )
+        self.assertNotIn(
+            "final_prompt",
+            message,
+        )
+        self.assertNotIn(
+            "Authorization",
+            extra_text,
+        )
+        self.assertNotIn(
+            "Authorization",
+            message,
+        )
+
+    def test_queue_wait_metric_uses_claim_time_not_log_time(
+        self,
+    ):
+        queued_at = (
+            timezone.now() -
+            timezone.timedelta(minutes=2)
+        )
+        claimed_at = (
+            queued_at +
+            timezone.timedelta(seconds=3)
+        )
+        generation = self.create_generation(
+            key="reuse-queue-wait-metric",
+            status_value=GenerationStatus.PROCESSING,
+        )
+        tracker = GenerationPerformanceTracker(
+            queued_at=queued_at,
+            claimed_at=claimed_at,
+        )
+
+        metrics = tracker.metrics(
+            generation=generation,
+            success=True,
+            provider="OPENAI",
+            model="gpt-image-test",
+        )
+
+        self.assertEqual(
+            metrics["queue_wait_duration_ms"],
+            3000.0,
+        )
+
+    def test_generation_provider_failure_emits_metrics_and_refunds_credit(
+        self,
+    ):
+        response = self.post_generation(
+            product=self.product,
+            key="reuse-performance-provider-failure",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            202,
+        )
+
+        generation = Generation.objects.get(
+            id=response.data["id"]
+        )
+
+        with patch(
+            "apps.studio.services.performance.logger.warning"
+        ) as log_warning:
+            with patch(
+                "apps.ai.providers.openai.OpenAIImageProvider.generate",
+                side_effect=RuntimeError("provider down"),
+            ):
+                with self.assertRaises(
+                    RuntimeError
+                ):
+                    GenerationQueueService.process_generation(
+                        generation.id
+                    )
+
+        log_warning.assert_called_once()
+
+        message = log_warning.call_args.args[0]
+        extra = log_warning.call_args.kwargs["extra"]
+        self.assertIn(
+            "success=false",
+            message,
+        )
+        self.assertIn(
+            "failure_stage=provider",
+            message,
+        )
+        self.assertIn(
+            "total_ms=",
+            message,
+        )
+        self.assertIn(
+            "provider_ms=",
+            message,
+        )
+        self.assertIn(
+            "internal_ms=",
+            message,
+        )
+        self.assertFalse(extra["success"])
+        self.assertEqual(
+            extra["failure_stage"],
+            "provider",
+        )
+        self.assertGreater(
+            extra["provider_duration_ms"],
+            0,
+        )
+
+        self.wallet.refresh_from_db()
+        self.assertEqual(
+            self.wallet.plan_balance,
+            10,
+        )
+        self.assertEqual(
+            self.wallet.reserved_balance,
+            0,
+        )
+
+    def test_generation_storage_failure_emits_metrics_and_refunds_credit(
+        self,
+    ):
+        response = self.post_generation(
+            product=self.product,
+            key="reuse-performance-storage-failure",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            202,
+        )
+
+        generation = Generation.objects.get(
+            id=response.data["id"]
+        )
+
+        with patch(
+            "apps.studio.services.performance.logger.warning"
+        ) as log_warning:
+            with patch(
+                "apps.ai.providers.openai.OpenAIImageProvider.generate",
+                return_value=GeneratedAsset(
+                    content=self.image_bytes(),
+                    mime_type="image/png",
+                ),
+            ):
+                with patch(
+                    "django.db.models.fields.files.FieldFile.save",
+                    side_effect=RuntimeError("storage down"),
+                ):
+                    with self.assertRaises(
+                        RuntimeError
+                    ):
+                        GenerationQueueService.process_generation(
+                            generation.id
+                        )
+
+        log_warning.assert_called_once()
+
+        message = log_warning.call_args.args[0]
+        extra = log_warning.call_args.kwargs["extra"]
+        self.assertIn(
+            "success=false",
+            message,
+        )
+        self.assertIn(
+            "failure_stage=storage",
+            message,
+        )
+        self.assertIn(
+            "storage_ms=",
+            message,
+        )
+        self.assertFalse(extra["success"])
+        self.assertEqual(
+            extra["failure_stage"],
+            "storage",
+        )
+        self.assertEqual(
+            extra["output_size_bytes"],
+            len(self.image_bytes()),
+        )
+
+        self.wallet.refresh_from_db()
+        self.assertEqual(
+            self.wallet.plan_balance,
+            10,
+        )
+        self.assertEqual(
+            self.wallet.reserved_balance,
+            0,
+        )
+
+    def test_generation_queue_process_available_completes_reserved_generation(
+        self,
+    ):
+        response = self.post_generation(
+            product=self.product,
+            key="reuse-queue-success",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            202,
+        )
+
         with patch(
             "apps.ai.providers.openai.OpenAIImageProvider.generate",
             return_value=GeneratedAsset(
                 content=self.image_bytes(),
                 mime_type="image/png",
             ),
+        ) as generate:
+            result = GenerationQueueService.process_available(
+                limit=1
+            )
+
+        self.assertEqual(
+            result["processed"],
+            1,
+        )
+        self.assertEqual(
+            generate.call_count,
+            1,
+        )
+
+        generation = Generation.objects.get(
+            id=response.data["id"]
+        )
+        self.assertEqual(
+            generation.status,
+            GenerationStatus.COMPLETED,
+        )
+
+        self.wallet.refresh_from_db()
+        self.assertEqual(
+            self.wallet.plan_balance,
+            9,
+        )
+        self.assertEqual(
+            self.wallet.reserved_balance,
+            0,
+        )
+
+    def test_fresh_credit_reserved_generation_is_eligible_immediately(
+        self,
+    ):
+        response = self.post_generation(
+            product=self.product,
+            key="reuse-fresh-queue",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            202,
+        )
+
+        with patch(
+            "apps.ai.providers.openai.OpenAIImageProvider.generate",
+            return_value=GeneratedAsset(
+                content=self.image_bytes(),
+                mime_type="image/png",
+            ),
+        ) as generate:
+            result = GenerationQueueService.process_available(
+                limit=1
+            )
+
+        self.assertEqual(
+            result["found"],
+            1,
+        )
+        self.assertEqual(
+            result["processed"],
+            1,
+        )
+        self.assertEqual(
+            generate.call_count,
+            1,
+        )
+
+    def test_old_credit_reserved_generation_is_also_eligible(
+        self,
+    ):
+        response = self.post_generation(
+            product=self.product,
+            key="reuse-old-credit-reserved",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            202,
+        )
+
+        Generation.objects.filter(
+            pk=response.data["id"]
+        ).update(
+            created_at=(
+                timezone.now() -
+                timezone.timedelta(minutes=2)
+            )
+        )
+
+        with patch(
+            "apps.ai.providers.openai.OpenAIImageProvider.generate",
+            return_value=GeneratedAsset(
+                content=self.image_bytes(),
+                mime_type="image/png",
+            ),
+        ) as generate:
+            result = GenerationQueueService.process_available(
+                limit=1
+            )
+
+        self.assertEqual(
+            result["processed"],
+            1,
+        )
+        self.assertEqual(
+            generate.call_count,
+            1,
+        )
+
+    def test_processing_generation_is_not_claimed_as_fresh_job(
+        self,
+    ):
+        self.create_generation(
+            key="reuse-processing-not-fresh",
+            status_value=GenerationStatus.PROCESSING,
+        )
+
+        with patch(
+            "apps.ai.providers.openai.OpenAIImageProvider.generate"
+        ) as generate:
+            result = GenerationQueueService.process_available(
+                limit=1
+            )
+
+        self.assertEqual(
+            result["found"],
+            0,
+        )
+        self.assertEqual(
+            result["processed"],
+            0,
+        )
+        generate.assert_not_called()
+
+    def test_queue_claim_sets_processing_before_provider_call(
+        self,
+    ):
+        response = self.post_generation(
+            product=self.product,
+            key="reuse-claim-before-provider",
+        )
+
+        generation_id = response.data["id"]
+
+        def assert_processing_before_provider(*args, **kwargs):
+            generation = Generation.objects.get(
+                pk=generation_id
+            )
+
+            self.assertEqual(
+                generation.status,
+                GenerationStatus.PROCESSING,
+            )
+            self.assertIsNotNone(
+                generation.started_at
+            )
+
+            return GeneratedAsset(
+                content=self.image_bytes(),
+                mime_type="image/png",
+            )
+
+        with patch(
+            "apps.ai.providers.openai.OpenAIImageProvider.generate",
+            side_effect=assert_processing_before_provider,
+        ) as generate:
+            result = GenerationQueueService.process_available(
+                limit=1
+            )
+
+        self.assertEqual(
+            result["processed"],
+            1,
+        )
+        self.assertEqual(
+            generate.call_count,
+            1,
+        )
+
+    def test_generation_queue_claim_is_single_use(
+        self,
+    ):
+        response = self.post_generation(
+            product=self.product,
+            key="reuse-single-claim",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            202,
+        )
+
+        first_claim = (
+            GenerationQueueService._claim_generation(
+                response.data["id"]
+            )
+        )
+        second_claim = (
+            GenerationQueueService._claim_generation(
+                response.data["id"]
+            )
+        )
+
+        self.assertIsNotNone(
+            first_claim
+        )
+        self.assertEqual(
+            first_claim.status,
+            GenerationStatus.PROCESSING,
+        )
+        self.assertIsNone(
+            second_claim
+        )
+
+    def test_generation_queue_management_command_processes_once(
+        self,
+    ):
+        response = self.post_generation(
+            product=self.product,
+            key="reuse-queue-command",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            202,
+        )
+
+        with patch(
+            "apps.ai.providers.openai.OpenAIImageProvider.generate",
+            return_value=GeneratedAsset(
+                content=self.image_bytes(),
+                mime_type="image/png",
+            ),
+        ) as generate:
+            call_command(
+                "process_generation_queue",
+                "--once",
+                "--limit",
+                "1",
+            )
+
+        self.assertEqual(
+            generate.call_count,
+            1,
+        )
+
+        generation = Generation.objects.get(
+            id=response.data["id"]
+        )
+        self.assertEqual(
+            generation.status,
+            GenerationStatus.COMPLETED,
+        )
+
+    def test_completed_generation_reprocess_does_not_call_provider(
+        self,
+    ):
+        generation = self.create_completed_generation(
+            key="reuse-completed-skip"
+        )
+
+        with patch(
+            "apps.ai.providers.openai.OpenAIImageProvider.generate"
+        ) as generate:
+            processed_generation, did_process = (
+                GenerationQueueService.process_generation(
+                    generation.id
+                )
+            )
+
+        self.assertFalse(
+            did_process
+        )
+        self.assertEqual(
+            processed_generation.status,
+            GenerationStatus.COMPLETED,
+        )
+        generate.assert_not_called()
+
+    def test_processing_generation_reprocess_does_not_call_provider(
+        self,
+    ):
+        generation = Generation.objects.create(
+            organization=self.organization,
+            user=self.user,
+            product=self.product,
+            mode=GenerationMode.STILL,
+            generation_rule=self.rule,
+            status=GenerationStatus.PROCESSING,
+            idempotency_key="reuse-processing-skip",
+            credit_cost=1,
+        )
+
+        with patch(
+            "apps.ai.providers.openai.OpenAIImageProvider.generate"
+        ) as generate:
+            processed_generation, did_process = (
+                GenerationQueueService.process_generation(
+                    generation.id
+                )
+            )
+
+        self.assertFalse(
+            did_process
+        )
+        self.assertEqual(
+            processed_generation.status,
+            GenerationStatus.PROCESSING,
+        )
+        generate.assert_not_called()
+
+    def test_existing_product_idempotency_does_not_charge_or_process_twice(
+        self,
+    ):
+        with patch(
+            "apps.ai.providers.openai.OpenAIImageProvider.generate"
         ) as generate:
             first_response = self.post_generation(
                 product=self.product,
@@ -2811,15 +3537,15 @@ class ProductReuseGenerationApiTests(
 
         self.assertEqual(
             first_response.status_code,
-            201,
+            202,
         )
         self.assertEqual(
             second_response.status_code,
-            200,
+            202,
         )
         self.assertEqual(
             generate.call_count,
-            1,
+            0,
         )
         self.assertEqual(
             Generation.objects
@@ -2828,6 +3554,40 @@ class ProductReuseGenerationApiTests(
                 idempotency_key="reuse-idempotent",
             )
             .count(),
+            1,
+        )
+        self.assertEqual(
+            first_response.data["id"],
+            second_response.data["id"],
+        )
+
+        self.wallet.refresh_from_db()
+        self.assertEqual(
+            self.wallet.plan_balance,
+            10,
+        )
+        self.assertEqual(
+            self.wallet.reserved_balance,
+            1,
+        )
+
+        generation = Generation.objects.get(
+            id=first_response.data["id"]
+        )
+
+        with patch(
+            "apps.ai.providers.openai.OpenAIImageProvider.generate",
+            return_value=GeneratedAsset(
+                content=self.image_bytes(),
+                mime_type="image/png",
+            ),
+        ) as worker_generate:
+            GenerationQueueService.process_generation(
+                generation.id
+            )
+
+        self.assertEqual(
+            worker_generate.call_count,
             1,
         )
 
@@ -2839,6 +3599,250 @@ class ProductReuseGenerationApiTests(
         self.assertEqual(
             self.wallet.reserved_balance,
             0,
+        )
+
+    def test_different_idempotency_key_is_blocked_while_generation_is_active(
+        self,
+    ):
+        with patch(
+            "apps.ai.providers.openai.OpenAIImageProvider.generate"
+        ) as generate:
+            first_response = self.post_generation(
+                product=self.product,
+                key="reuse-intentional-a",
+            )
+            second_response = self.post_generation(
+                product=self.product,
+                key="reuse-intentional-b",
+            )
+
+        self.assertEqual(
+            first_response.status_code,
+            202,
+        )
+        self.assertEqual(
+            second_response.status_code,
+            409,
+        )
+        self.assertEqual(
+            second_response.data["code"],
+            "GENERATION_ALREADY_IN_PROGRESS",
+        )
+        generate.assert_not_called()
+        self.assertEqual(
+            Generation.objects.filter(
+                product=self.product,
+                idempotency_key__in=[
+                    "reuse-intentional-a",
+                    "reuse-intentional-b",
+                ],
+            ).count(),
+            1,
+        )
+
+        self.wallet.refresh_from_db()
+        self.assertEqual(
+            self.wallet.plan_balance,
+            10,
+        )
+        self.assertEqual(
+            self.wallet.reserved_balance,
+            1,
+        )
+
+    def test_credit_reserved_generation_blocks_new_generation(
+        self,
+    ):
+        self.create_generation(
+            key="active-credit-reserved",
+            status_value=GenerationStatus.CREDIT_RESERVED,
+        )
+
+        with patch(
+            "apps.ai.providers.openai.OpenAIImageProvider.generate"
+        ) as generate:
+            response = self.post_generation(
+                product=self.product,
+                key="blocked-by-credit-reserved",
+            )
+
+        self.assertEqual(
+            response.status_code,
+            409,
+        )
+        self.assertEqual(
+            response.data["code"],
+            "GENERATION_ALREADY_IN_PROGRESS",
+        )
+        generate.assert_not_called()
+        self.assertFalse(
+            Generation.objects.filter(
+                idempotency_key="blocked-by-credit-reserved",
+            ).exists()
+        )
+
+        self.wallet.refresh_from_db()
+        self.assertEqual(
+            self.wallet.reserved_balance,
+            0,
+        )
+
+    def test_processing_generation_blocks_new_generation(
+        self,
+    ):
+        self.create_generation(
+            key="active-processing",
+            status_value=GenerationStatus.PROCESSING,
+        )
+
+        with patch(
+            "apps.ai.providers.openai.OpenAIImageProvider.generate"
+        ) as generate:
+            response = self.post_generation(
+                product=self.product,
+                key="blocked-by-processing",
+            )
+
+        self.assertEqual(
+            response.status_code,
+            409,
+        )
+        self.assertEqual(
+            response.data["code"],
+            "GENERATION_ALREADY_IN_PROGRESS",
+        )
+        generate.assert_not_called()
+        self.assertFalse(
+            Generation.objects.filter(
+                idempotency_key="blocked-by-processing",
+            ).exists()
+        )
+
+        self.wallet.refresh_from_db()
+        self.assertEqual(
+            self.wallet.reserved_balance,
+            0,
+        )
+
+    def test_completed_generation_releases_new_generation(
+        self,
+    ):
+        self.create_generation(
+            key="final-completed",
+            status_value=GenerationStatus.COMPLETED,
+        )
+
+        with patch(
+            "apps.ai.providers.openai.OpenAIImageProvider.generate"
+        ) as generate:
+            response = self.post_generation(
+                product=self.product,
+                key="allowed-after-completed",
+            )
+
+        self.assertEqual(
+            response.status_code,
+            202,
+        )
+        generate.assert_not_called()
+        self.assertTrue(
+            Generation.objects.filter(
+                idempotency_key="allowed-after-completed",
+                status=GenerationStatus.CREDIT_RESERVED,
+            ).exists()
+        )
+
+    def test_failed_generation_releases_new_generation(
+        self,
+    ):
+        self.create_generation(
+            key="final-failed",
+            status_value=GenerationStatus.FAILED,
+        )
+
+        with patch(
+            "apps.ai.providers.openai.OpenAIImageProvider.generate"
+        ) as generate:
+            response = self.post_generation(
+                product=self.product,
+                key="allowed-after-failed",
+            )
+
+        self.assertEqual(
+            response.status_code,
+            202,
+        )
+        generate.assert_not_called()
+        self.assertTrue(
+            Generation.objects.filter(
+                idempotency_key="allowed-after-failed",
+                status=GenerationStatus.CREDIT_RESERVED,
+            ).exists()
+        )
+
+    def test_cancelled_generation_releases_new_generation(
+        self,
+    ):
+        self.create_generation(
+            key="final-cancelled",
+            status_value=GenerationStatus.CANCELLED,
+        )
+
+        with patch(
+            "apps.ai.providers.openai.OpenAIImageProvider.generate"
+        ) as generate:
+            response = self.post_generation(
+                product=self.product,
+                key="allowed-after-cancelled",
+            )
+
+        self.assertEqual(
+            response.status_code,
+            202,
+        )
+        generate.assert_not_called()
+        self.assertTrue(
+            Generation.objects.filter(
+                idempotency_key="allowed-after-cancelled",
+                status=GenerationStatus.CREDIT_RESERVED,
+            ).exists()
+        )
+
+    def test_active_generation_in_other_organization_does_not_block_request(
+        self,
+    ):
+        other_product = self.create_product_with_original(
+            name="Brinco Reuso Outra Org",
+            organization=self.other_organization,
+            user=self.other_user,
+        )
+
+        self.create_generation(
+            key="other-active-processing",
+            status_value=GenerationStatus.PROCESSING,
+            organization=self.other_organization,
+            user=self.other_user,
+            product=other_product,
+        )
+
+        with patch(
+            "apps.ai.providers.openai.OpenAIImageProvider.generate"
+        ) as generate:
+            response = self.post_generation(
+                product=self.product,
+                key="allowed-own-org",
+            )
+
+        self.assertEqual(
+            response.status_code,
+            202,
+        )
+        generate.assert_not_called()
+        self.assertTrue(
+            Generation.objects.filter(
+                organization=self.organization,
+                idempotency_key="allowed-own-org",
+            ).exists()
         )
 
     def test_other_organization_cannot_generate_with_existing_product(

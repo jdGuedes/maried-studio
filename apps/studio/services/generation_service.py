@@ -1,4 +1,6 @@
 import mimetypes
+import logging
+import sys
 from pathlib import Path
 
 from django.conf import settings
@@ -20,6 +22,28 @@ from apps.studio.models import (
     GenerationStatus,
     SceneTemplate,
 )
+from apps.studio.services.performance import GenerationPerformanceTracker
+
+
+logger = logging.getLogger(__name__)
+
+
+ACTIVE_GENERATION_STATUSES = (
+    GenerationStatus.CREDIT_RESERVED,
+    GenerationStatus.PROCESSING,
+)
+
+
+class GenerationAlreadyInProgress(Exception):
+    code = "GENERATION_ALREADY_IN_PROGRESS"
+
+    def __init__(self, generation):
+        self.generation = generation
+
+        super().__init__(
+            "Já existe uma criação em andamento. "
+            "Aguarde ela ficar pronta antes de iniciar uma nova."
+        )
 
 
 class GenerationService:
@@ -37,7 +61,9 @@ class GenerationService:
         scene_template_id,
         model_reference_id=None,
         idempotency_key,
+        performance_tracker=None,
     ):
+        tracker = performance_tracker
         # -----------------------------------------------------
         # 0. ISOLAMENTO MULTI-TENANT
         # -----------------------------------------------------
@@ -66,13 +92,23 @@ class GenerationService:
                 "do usuário."
             )
 
-        if not product.organization.is_active:
+        locked_organization = (
+            product.organization.__class__.objects
+            .select_for_update(
+                of=("self",)
+            )
+            .get(
+                pk=product.organization_id,
+            )
+        )
+
+        if not locked_organization.is_active:
             raise PermissionError(
                 "Organização inativa."
             )
 
         BillingAccessService.ensure_operational_access(
-            product.organization
+            locked_organization
         )
 
         # -----------------------------------------------------
@@ -80,12 +116,30 @@ class GenerationService:
         # -----------------------------------------------------
 
         existing = Generation.objects.filter(
-            organization=product.organization,
+            organization=locked_organization,
             idempotency_key=idempotency_key,
         ).first()
 
         if existing:
             return existing, False
+
+        active_generation = (
+            Generation.objects
+            .filter(
+                organization=locked_organization,
+                status__in=ACTIVE_GENERATION_STATUSES,
+            )
+            .order_by(
+                "created_at",
+                "id",
+            )
+            .first()
+        )
+
+        if active_generation:
+            raise GenerationAlreadyInProgress(
+                active_generation
+            )
 
         # -----------------------------------------------------
         # 2. REGRA DA GERAÇÃO
@@ -179,7 +233,7 @@ class GenerationService:
         # -----------------------------------------------------
 
         generation = Generation.objects.create(
-            organization=product.organization,
+            organization=locked_organization,
             user=user,
             product=product,
             mode=mode,
@@ -195,13 +249,21 @@ class GenerationService:
         # 5. RESERVA DO CRÉDITO
         # -----------------------------------------------------
 
-        wallet = product.organization.credit_wallet
+        wallet = locked_organization.credit_wallet
 
-        CreditService.reserve(
-            wallet,
-            generation,
-            1,
-        )
+        if tracker:
+            with tracker.measure("credit"):
+                CreditService.reserve(
+                    wallet,
+                    generation,
+                    1,
+                )
+        else:
+            CreditService.reserve(
+                wallet,
+                generation,
+                1,
+            )
 
         generation.status = (
             GenerationStatus.CREDIT_RESERVED
@@ -222,9 +284,22 @@ class GenerationService:
 
     @staticmethod
     def process(
-        generation: Generation
+        generation: Generation,
+        performance_tracker=None,
+        allow_claimed_processing=False,
     ):
-        with transaction.atomic():
+        tracker = (
+            performance_tracker
+            or GenerationPerformanceTracker()
+        )
+        input_metadata = {}
+        output_metadata = {}
+
+        db_context = tracker.measure("db_finalize")
+        db_context.__enter__()
+        transaction_context = transaction.atomic()
+        transaction_context.__enter__()
+        try:
             locked_generation = (
                 Generation.objects
                 .select_for_update(
@@ -279,42 +354,77 @@ class GenerationService:
                 locked_generation.status
                 == GenerationStatus.COMPLETED
             ):
+                transaction_context.__exit__(None, None, None)
+                db_context.__exit__(None, None, None)
+                tracker.log(
+                    generation=locked_generation,
+                    success=True,
+                    provider=locked_generation.provider,
+                    model=locked_generation.model,
+                )
                 return locked_generation
 
-            if (
-                locked_generation.status
-                != GenerationStatus.CREDIT_RESERVED
+            if locked_generation.status == (
+                GenerationStatus.PROCESSING
+            ):
+                if not allow_claimed_processing:
+                    raise ValueError(
+                        "Geração não pode ser processada "
+                        f"no status {locked_generation.status}."
+                    )
+
+                if locked_generation.started_at:
+                    tracker.mark_claimed_at(
+                        locked_generation.started_at
+                    )
+
+                transaction_context.__exit__(None, None, None)
+                db_context.__exit__(None, None, None)
+
+            elif locked_generation.status != (
+                GenerationStatus.CREDIT_RESERVED
             ):
                 raise ValueError(
                     "Geração não pode ser processada "
                     f"no status {locked_generation.status}."
                 )
 
-            locked_generation.status = (
-                GenerationStatus.PROCESSING
-            )
+            else:
+                locked_generation.status = (
+                    GenerationStatus.PROCESSING
+                )
 
-            locked_generation.started_at = (
-                timezone.now()
-            )
+                locked_generation.started_at = (
+                    timezone.now()
+                )
 
-            locked_generation.provider = (
-                "OPENAI"
-            )
+                tracker.mark_claimed_at(
+                    locked_generation.started_at
+                )
 
-            locked_generation.model = (
-                settings.OPENAI_IMAGE_MODEL
-            )
+                locked_generation.provider = (
+                    "OPENAI"
+                )
 
-            locked_generation.save(
-                update_fields=[
-                    "status",
-                    "started_at",
-                    "provider",
-                    "model",
-                    "updated_at",
-                ]
-            )
+                locked_generation.model = (
+                    settings.OPENAI_IMAGE_MODEL
+                )
+
+                locked_generation.save(
+                    update_fields=[
+                        "status",
+                        "started_at",
+                        "provider",
+                        "model",
+                        "updated_at",
+                    ]
+                )
+                transaction_context.__exit__(None, None, None)
+                db_context.__exit__(None, None, None)
+        except Exception:
+            transaction_context.__exit__(*sys.exc_info())
+            db_context.__exit__(*sys.exc_info())
+            raise
 
         generation = locked_generation
 
@@ -323,6 +433,8 @@ class GenerationService:
         )
 
         try:
+            current_stage = "prompt"
+            prompt_timer = tracker.start_stage()
             prompt = PromptEngine.build(
                 product=generation.product,
                 mode=generation.mode,
@@ -391,7 +503,11 @@ class GenerationService:
                     "updated_at",
                 ]
             )
+            tracker.stop_stage("prompt", prompt_timer)
+            current_stage = ""
 
+            current_stage = "asset_preparation"
+            asset_timer = tracker.start_stage()
             source = (
                 generation.product.assets
                 .filter(
@@ -459,98 +575,158 @@ class GenerationService:
                     reference_bytes,
                     mime_type,
                 )
-
-                asset = provider.generate(
-                    prompt=prompt,
-                    reference_file=(
-                        reference_upload
+                input_metadata = {
+                    "input_file_size_bytes": (
+                        source.file_size
+                        or len(reference_bytes)
                     ),
+                    "input_width": source.width,
+                    "input_height": source.height,
+                }
+
+                tracker.stop_stage(
+                    "asset_preparation",
+                    asset_timer,
                 )
+                current_stage = ""
+
+                with tracker.measure("provider"):
+                    asset = provider.generate(
+                        prompt=prompt,
+                        reference_file=(
+                            reference_upload
+                        ),
+                    )
 
             finally:
                 source.file.close()
 
-            result = GeneratedImage(
-                generation=generation,
-                mime_type=asset.mime_type,
-            )
+            with tracker.measure("result_processing"):
+                output_metadata = {
+                    "output_size_bytes": len(
+                        asset.content
+                    ),
+                    "output_width": None,
+                    "output_height": None,
+                }
 
-            result.file.save(
-                f"{generation.id}.png",
-                ContentFile(
-                    asset.content
-                ),
-                save=True,
-            )
+            with tracker.measure("storage"):
+                result = GeneratedImage(
+                    generation=generation,
+                    mime_type=asset.mime_type,
+                    file_size=output_metadata[
+                        "output_size_bytes"
+                    ],
+                )
 
-            CreditService.consume(
-                wallet,
-                generation,
-                1,
-            )
+                result.file.save(
+                    f"{generation.id}.png",
+                    ContentFile(
+                        asset.content
+                    ),
+                    save=True,
+                )
 
-            generation.status = (
-                GenerationStatus.COMPLETED
-            )
-
-            generation.completed_at = (
-                timezone.now()
-            )
-
-            generation.save(
-                update_fields=[
-                    "status",
-                    "completed_at",
-                    "updated_at",
-                ]
-            )
-
-            return generation
-
-        except Exception as exc:
-            try:
-                CreditService.refund_reservation(
+            with tracker.measure("credit"):
+                CreditService.consume(
                     wallet,
                     generation,
                     1,
                 )
 
-            except Exception as refund_exc:
-                print(
-                    "ERRO AO DEVOLVER RESERVA "
-                    "DE CRÉDITO:",
-                    repr(refund_exc),
+            with tracker.measure("db_finalize"):
+                generation.status = (
+                    GenerationStatus.COMPLETED
                 )
 
-            generation.status = (
-                GenerationStatus.FAILED
+                generation.completed_at = (
+                    timezone.now()
+                )
+
+                generation.save(
+                    update_fields=[
+                        "status",
+                        "completed_at",
+                        "updated_at",
+                    ]
+                )
+
+            tracker.log(
+                generation=generation,
+                success=True,
+                provider=generation.provider,
+                model=generation.model,
+                input_metadata=input_metadata,
+                output_metadata=output_metadata,
             )
 
-            generation.failure_type = (
-                FailureType.TECHNICAL
-            )
+            return generation
 
-            generation.error_code = (
-                exc.__class__.__name__
-            )
+        except Exception as exc:
+            if current_stage:
+                tracker.mark_failure(current_stage)
 
-            generation.error_message = (
-                str(exc)[:2000]
-            )
+            try:
+                with tracker.measure("credit"):
+                    CreditService.refund_reservation(
+                        wallet,
+                        generation,
+                        1,
+                    )
 
-            generation.completed_at = (
-                timezone.now()
-            )
+            except Exception as refund_exc:
+                logger.exception(
+                    "generation_credit_refund_failed",
+                    extra={
+                        "generation_id": str(generation.pk),
+                        "organization_id": str(
+                            generation.organization_id
+                        ),
+                        "exception_class": (
+                            refund_exc.__class__.__name__
+                        ),
+                    },
+                )
 
-            generation.save(
-                update_fields=[
-                    "status",
-                    "failure_type",
-                    "error_code",
-                    "error_message",
-                    "completed_at",
-                    "updated_at",
-                ]
+            with tracker.measure("db_finalize"):
+                generation.status = (
+                    GenerationStatus.FAILED
+                )
+
+                generation.failure_type = (
+                    FailureType.TECHNICAL
+                )
+
+                generation.error_code = (
+                    exc.__class__.__name__
+                )
+
+                generation.error_message = (
+                    str(exc)[:2000]
+                )
+
+                generation.completed_at = (
+                    timezone.now()
+                )
+
+                generation.save(
+                    update_fields=[
+                        "status",
+                        "failure_type",
+                        "error_code",
+                        "error_message",
+                        "completed_at",
+                        "updated_at",
+                    ]
+                )
+
+            tracker.log(
+                generation=generation,
+                success=False,
+                provider=generation.provider,
+                model=generation.model,
+                input_metadata=input_metadata,
+                output_metadata=output_metadata,
             )
 
             raise

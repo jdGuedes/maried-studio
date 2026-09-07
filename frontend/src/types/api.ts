@@ -71,7 +71,8 @@ export type Generation = {
     | "CREDIT_RESERVED"
     | "PROCESSING"
     | "COMPLETED"
-    | "FAILED";
+    | "FAILED"
+    | "CANCELLED";
 
   failure_type: string;
   provider: string;

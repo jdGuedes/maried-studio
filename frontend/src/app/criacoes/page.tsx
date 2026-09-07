@@ -115,15 +115,73 @@ function statusLabel(
       CREATED:
         "Criada",
       CREDIT_RESERVED:
-        "Crédito reservado",
+        "Na fila",
       PROCESSING:
-        "Processando",
+        "Criando sua imagem",
       COMPLETED:
         "Concluída",
       FAILED:
-        "Falhou",
+        "Não foi possível concluir",
     } as Record<string, string>
   )[value] ?? value;
+}
+
+
+function isPendingStatus(
+  value: string
+) {
+  return [
+    "CREATED",
+    "CREDIT_RESERVED",
+    "PROCESSING",
+  ].includes(
+    value
+  );
+}
+
+
+function isActiveGenerationStatus(
+  value: string
+) {
+  return [
+    "CREDIT_RESERVED",
+    "PROCESSING",
+  ].includes(
+    value
+  );
+}
+
+
+function processingFeedback(
+  value: string
+) {
+  if (
+    value === "CREDIT_RESERVED"
+  ) {
+    return {
+      title:
+        "Sua criação está na fila ✨",
+      description:
+        "Vamos começar em instantes. Você pode continuar navegando pelo MARIED Studio enquanto isso.",
+      status:
+        "Na fila",
+    };
+  }
+
+  if (
+    value === "PROCESSING"
+  ) {
+    return {
+      title:
+        "Estamos criando sua imagem 🎨",
+      description:
+        "Esse processo pode levar alguns minutinhos. Você pode continuar navegando pelo MARIED Studio. Sua criação continuará sendo processada.",
+      status:
+        "Criando sua imagem",
+    };
+  }
+
+  return null;
 }
 
 
@@ -149,6 +207,104 @@ function complement(
   }
 
   return null;
+}
+
+
+function ActiveGenerationVisual({
+  status,
+  compact = false,
+}: {
+  status: string;
+  compact?: boolean;
+}) {
+  const feedback =
+    processingFeedback(
+      status
+    );
+
+  if (!feedback) {
+    return null;
+  }
+
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="flex h-full flex-col items-center justify-center px-5 text-center"
+    >
+      <LoaderCircle
+        size={compact ? 24 : 34}
+        className="animate-spin text-[var(--maried-gold)]"
+      />
+
+      <p className={`${compact ? "mt-3 text-xs" : "mt-5 text-base"} font-semibold text-[var(--maried-espresso)]`}>
+        {feedback.title}
+      </p>
+
+      {!compact ? (
+        <p className="mt-2 max-w-md text-sm leading-6 text-[var(--maried-cocoa)]">
+          {feedback.description}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+
+function StatusValue({
+  status,
+}: {
+  status: string;
+}) {
+  const feedback =
+    processingFeedback(
+      status
+    );
+
+  if (!feedback) {
+    return (
+      <>
+        {statusLabel(
+          status
+        )}
+      </>
+    );
+  }
+
+  return (
+    <span
+      role="status"
+      aria-live="polite"
+      className="inline-flex items-center gap-1.5"
+    >
+      <LoaderCircle
+        size={12}
+        className="animate-spin text-[var(--maried-gold)]"
+      />
+      {feedback.status}
+    </span>
+  );
+}
+
+
+function StatusDetail({
+  status,
+}: {
+  status: string;
+}) {
+  return (
+    <div>
+      <p className="text-[10px] uppercase tracking-[0.16em] text-[var(--maried-caramel)]">
+        Status
+      </p>
+
+      <p className="mt-1 text-sm font-medium text-[var(--maried-espresso)]">
+        <StatusValue
+          status={status}
+        />
+      </p>
+    </div>
+  );
 }
 
 
@@ -383,10 +539,14 @@ function CreationsContent() {
 
   const load =
     useCallback(
-      async () => {
-        setLoading(
-          true
-        );
+      async (
+        silent = false
+      ) => {
+        if (!silent) {
+          setLoading(
+            true
+          );
+        }
 
         setError(
           null
@@ -427,9 +587,11 @@ function CreationsContent() {
               : "Não foi possível carregar suas criações."
           );
         } finally {
-          setLoading(
-            false
-          );
+          if (!silent) {
+            setLoading(
+              false
+            );
+          }
         }
       },
       [
@@ -454,6 +616,39 @@ function CreationsContent() {
       );
     };
   }, [
+    load,
+  ]);
+
+  useEffect(() => {
+    const hasPending =
+      items.some(
+        (generation) =>
+          isPendingStatus(
+            generation.status
+          )
+      );
+
+    if (!hasPending) {
+      return;
+    }
+
+    const timer =
+      window.setInterval(
+        () => {
+          void load(
+            true
+          );
+        },
+        5000
+      );
+
+    return () => {
+      window.clearInterval(
+        timer
+      );
+    };
+  }, [
+    items,
     load,
   ]);
 
@@ -945,6 +1140,15 @@ function CreationsContent() {
                               className="object-cover"
                               sizes="(max-width: 640px) 100vw, 25vw"
                             />
+                          ) : isActiveGenerationStatus(
+                            generation.status
+                          ) ? (
+                            <ActiveGenerationVisual
+                              status={
+                                generation.status
+                              }
+                              compact
+                            />
                           ) : (
                             <div className="flex h-full items-center justify-center">
                               <ImageIcon
@@ -961,9 +1165,11 @@ function CreationsContent() {
                             </span>
 
                             <span className="text-[10px] text-[var(--maried-caramel)]">
-                              {statusLabel(
-                                generation.status
-                              )}
+                              <StatusValue
+                                status={
+                                  generation.status
+                                }
+                              />
                             </span>
                           </div>
 
@@ -1086,6 +1292,29 @@ function CreationsContent() {
                     className="object-contain p-4"
                     sizes="(max-width: 1024px) 100vw, 65vw"
                   />
+                ) : isActiveGenerationStatus(
+                  selected.status
+                ) ? (
+                  <ActiveGenerationVisual
+                    status={
+                      selected.status
+                    }
+                  />
+                ) : selected.status === "FAILED" ? (
+                  <div className="flex h-full flex-col items-center justify-center px-5 text-center">
+                    <X
+                      size={34}
+                      className="text-red-500"
+                    />
+
+                    <p className="mt-5 text-base font-semibold text-[var(--maried-espresso)]">
+                      Não conseguimos concluir esta criação.
+                    </p>
+
+                    <p className="mt-2 max-w-md text-sm leading-6 text-[var(--maried-cocoa)]">
+                      Seu crédito foi devolvido quando aplicável. Você pode tentar novamente.
+                    </p>
+                  </div>
                 ) : (
                   <div className="flex h-full items-center justify-center">
                     <ImageIcon
@@ -1107,11 +1336,10 @@ function CreationsContent() {
                     value={selected.category_label}
                   />
 
-                  <Detail
-                    label="Status"
-                    value={statusLabel(
+                  <StatusDetail
+                    status={
                       selected.status
-                    )}
+                    }
                   />
 
                   {complement(
@@ -1199,6 +1427,22 @@ function CreationsContent() {
                           : "Excluir imagem"}
                       </button>
                     </>
+                  ) : isActiveGenerationStatus(
+                    selected.status
+                  ) ? (
+                    <div
+                      role="status"
+                      aria-live="polite"
+                      className="rounded-xl bg-[var(--maried-cream)] px-4 py-3 text-center text-xs leading-5 text-[var(--maried-cocoa)]"
+                    >
+                      {processingFeedback(
+                        selected.status
+                      )?.description}
+                    </div>
+                  ) : selected.status === "FAILED" ? (
+                    <div className="rounded-xl bg-red-50 px-4 py-3 text-center text-xs leading-5 text-red-700">
+                      Não conseguimos concluir esta criação. Seu crédito foi devolvido quando aplicável.
+                    </div>
                   ) : (
                     <div className="rounded-xl bg-[var(--maried-cream)] px-4 py-3 text-center text-xs">
                       Esta criação ainda não possui uma imagem disponível.

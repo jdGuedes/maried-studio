@@ -1,3 +1,5 @@
+import logging
+
 from django.shortcuts import get_object_or_404
 
 from rest_framework import (
@@ -38,7 +40,15 @@ from .serializers import (
     SceneTemplateSerializer,
 )
 
-from .services.generation_service import GenerationService
+from .services.generation_service import (
+    GenerationAlreadyInProgress,
+    GenerationService,
+)
+from .services.generation_queue import GenerationQueueService
+from .services.performance import GenerationPerformanceTracker
+
+
+logger = logging.getLogger(__name__)
 
 
 def get_product_generation_block_reason(product):
@@ -373,21 +383,24 @@ class GenerationCreateView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        serializer = GenerationCreateSerializer(
-            data=request.data
-        )
+        performance_tracker = GenerationPerformanceTracker()
 
-        serializer.is_valid(
-            raise_exception=True
-        )
+        with performance_tracker.measure("validation"):
+            serializer = GenerationCreateSerializer(
+                data=request.data
+            )
 
-        data = serializer.validated_data
+            serializer.is_valid(
+                raise_exception=True
+            )
 
-        product = get_object_or_404(
-            Product,
-            pk=data["product_id"],
-            organization=organization,
-        )
+            data = serializer.validated_data
+
+            product = get_object_or_404(
+                Product,
+                pk=data["product_id"],
+                organization=organization,
+            )
 
         try:
             BillingAccessService.ensure_operational_access(
@@ -432,6 +445,7 @@ class GenerationCreateView(APIView):
                     idempotency_key=data[
                         "idempotency_key"
                     ],
+                    performance_tracker=performance_tracker,
                 )
             )
 
@@ -452,46 +466,19 @@ class GenerationCreateView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
+        except GenerationAlreadyInProgress as exc:
+            return Response(
+                {
+                    "code": exc.code,
+                    "detail": str(exc),
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
         if created:
-            try:
-                generation = GenerationService.process(
-                    generation
-                )
-
-            except Exception as exc:
-                import traceback
-
-                print(
-                    "\n"
-                    "============================================"
-                )
-
-                print(
-                    "ERRO NO GENERATION SERVICE"
-                )
-
-                print(
-                    "============================================"
-                )
-
-                print(
-                    "Generation ID:",
-                    generation.id,
-                )
-
-                print(
-                    "Erro:",
-                    repr(exc),
-                )
-
-                traceback.print_exc()
-
-                print(
-                    "============================================"
-                    "\n"
-                )
-
-                generation.refresh_from_db()
+            GenerationQueueService.enqueue_after_commit(
+                generation
+            )
 
         generation.refresh_from_db()
 
@@ -510,9 +497,13 @@ class GenerationCreateView(APIView):
                 ),
             )
 
-        if created:
+        if generation.status in [
+            "CREATED",
+            "CREDIT_RESERVED",
+            "PROCESSING",
+        ]:
             response_status = (
-                status.HTTP_201_CREATED
+                status.HTTP_202_ACCEPTED
             )
         else:
             response_status = (

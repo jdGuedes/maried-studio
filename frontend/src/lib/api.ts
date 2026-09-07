@@ -151,6 +151,27 @@ export type LoginResponse = {
 };
 
 
+type GenerationListItem = {
+  id: string;
+
+  status: Generation["status"];
+};
+
+
+type GenerationListResponse = {
+  count: number;
+
+  next:
+    string | null;
+
+  previous:
+    string | null;
+
+  results:
+    GenerationListItem[];
+};
+
+
 // ==========================================================
 // PARSE DA RESPOSTA
 // ==========================================================
@@ -624,6 +645,55 @@ export async function getGeneration(
   return parseResponse<Generation>(
     response
   );
+}
+
+
+export async function getActiveGeneration():
+  Promise<Generation | null> {
+
+  for (const generationStatus of [
+    "PROCESSING",
+    "CREDIT_RESERVED",
+  ] as const) {
+    const params =
+      new URLSearchParams({
+        status:
+          generationStatus,
+      });
+
+    const response =
+      await fetch(
+        `${API_URL}/api/studio/generations/?${params.toString()}`,
+        {
+          method:
+            "GET",
+
+          credentials:
+            "include",
+
+          cache:
+            "no-store",
+        }
+      );
+
+    const data =
+      await parseResponse<GenerationListResponse>(
+        response
+      );
+
+    const activeGeneration =
+      data.results[0];
+
+    if (
+      activeGeneration
+    ) {
+      return getGeneration(
+        activeGeneration.id
+      );
+    }
+  }
+
+  return null;
 }
 
 
