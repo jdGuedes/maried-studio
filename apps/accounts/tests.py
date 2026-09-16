@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import default_token_generator
+from django.core.cache import cache
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils.encoding import force_bytes
@@ -13,6 +14,91 @@ from apps.audit.models import AuditLog
 from apps.organizations.models import Organization
 from .models import AccountRecoverySecurity, UserRole
 from .services import EmailDeliveryError
+
+
+SECURITY_RATE_LIMITS_FOR_TESTS = {
+    "login_ip": {
+        "limit": 100,
+        "window": 60,
+    },
+    "login_identifier": {
+        "limit": 100,
+        "window": 60,
+    },
+    "password_reset_request_ip": {
+        "limit": 100,
+        "window": 60,
+    },
+    "password_reset_request_identifier": {
+        "limit": 100,
+        "window": 60,
+    },
+    "password_reset_confirm_ip": {
+        "limit": 100,
+        "window": 60,
+    },
+    "password_reset_confirm_token": {
+        "limit": 100,
+        "window": 60,
+    },
+    "recovery_key_ip": {
+        "limit": 100,
+        "window": 60,
+    },
+    "recovery_key_identifier": {
+        "limit": 100,
+        "window": 60,
+    },
+    "recovery_questions_request_ip": {
+        "limit": 100,
+        "window": 60,
+    },
+    "recovery_questions_request_identifier": {
+        "limit": 100,
+        "window": 60,
+    },
+    "recovery_questions_verify_ip": {
+        "limit": 100,
+        "window": 60,
+    },
+    "recovery_questions_verify_challenge": {
+        "limit": 100,
+        "window": 60,
+    },
+    "recovery_reset_ip": {
+        "limit": 100,
+        "window": 60,
+    },
+    "recovery_reset_token": {
+        "limit": 100,
+        "window": 60,
+    },
+    "authenticated_password_user": {
+        "limit": 100,
+        "window": 60,
+    },
+    "recovery_authenticated_user": {
+        "limit": 100,
+        "window": 60,
+    },
+}
+
+
+def rate_limits_for_tests(
+    **overrides,
+):
+    config = {
+        key: value.copy()
+        for key, value in SECURITY_RATE_LIMITS_FOR_TESTS.items()
+    }
+
+    for key, value in overrides.items():
+        config[key] = {
+            **config[key],
+            **value,
+        }
+
+    return config
 
 
 class UserManagerTests(TestCase):
@@ -31,6 +117,8 @@ class UserManagerTests(TestCase):
 
 class SessionAuthenticationAPITests(APITestCase):
     def setUp(self):
+        cache.clear()
+
         User = get_user_model()
 
         self.organization = Organization.objects.create(
@@ -472,6 +560,8 @@ class SessionAuthenticationAPITests(APITestCase):
 
 class PasswordResetAPITests(APITestCase):
     def setUp(self):
+        cache.clear()
+
         User = get_user_model()
 
         self.organization = Organization.objects.create(
@@ -1001,8 +1091,366 @@ class PasswordResetAPITests(APITestCase):
         )
 
 
+class SecurityRateLimitAPITests(APITestCase):
+    password = "senha-segura-123"
+
+    def setUp(self):
+        cache.clear()
+
+        User = get_user_model()
+
+        self.organization = Organization.objects.create(
+            name="Empresa Rate Limit",
+            slug="empresa-rate-limit",
+        )
+
+        self.user = User.objects.create_user(
+            email="rate-limit@example.com",
+            password=self.password,
+            name="Cliente Rate Limit",
+            organization=self.organization,
+            role=UserRole.OWNER,
+        )
+
+        self.client = APIClient(
+            enforce_csrf_checks=True
+        )
+
+    def csrf_token(self):
+        response = self.client.get(
+            reverse("accounts:csrf")
+        )
+        self.assertEqual(response.status_code, 200)
+        return self.client.cookies["csrftoken"].value
+
+    def post_json(
+        self,
+        url_name,
+        payload,
+        *,
+        ip="127.0.0.1",
+    ):
+        return self.client.post(
+            reverse(url_name),
+            payload,
+            format="json",
+            HTTP_X_CSRFTOKEN=self.csrf_token(),
+            REMOTE_ADDR=ip,
+        )
+
+    def setup_recovery(self):
+        self.client.force_authenticate(
+            self.user
+        )
+
+        response = self.post_json(
+            "accounts:recovery-setup",
+            {
+                "question_1": "Cidade favorita?",
+                "answer_1": "Fortaleza",
+                "question_2": "Primeira vitrine?",
+                "answer_2": "Centro",
+            },
+        )
+
+        self.assertEqual(response.status_code, 201)
+
+        self.client.force_authenticate(
+            user=None
+        )
+
+        return response.data["recovery_key"]
+
+    def assert_rate_limited(
+        self,
+        response,
+    ):
+        self.assertEqual(
+            response.status_code,
+            429,
+        )
+        self.assertEqual(
+            response.data,
+            {
+                "detail": (
+                    "Muitas tentativas. Aguarde alguns minutos e tente novamente."
+                )
+            },
+        )
+        self.assertIn(
+            "Retry-After",
+            response,
+        )
+
+    @override_settings(
+        SECURITY_RATE_LIMITS=rate_limits_for_tests(
+            login_identifier={
+                "limit": 1,
+                "window": 60,
+            },
+        )
+    )
+    def test_login_rate_limit_protects_same_account_across_ips(self):
+        first = self.post_json(
+            "accounts:login",
+            {
+                "email": self.user.email,
+                "password": "senha-errada",
+            },
+            ip="10.0.0.1",
+        )
+        second = self.post_json(
+            "accounts:login",
+            {
+                "email": self.user.email,
+                "password": "senha-errada",
+            },
+            ip="10.0.0.2",
+        )
+
+        self.assertEqual(first.status_code, 400)
+        self.assert_rate_limited(second)
+
+    @override_settings(
+        SECURITY_RATE_LIMITS=rate_limits_for_tests(
+            login_identifier={
+                "limit": 1,
+                "window": 60,
+            },
+        )
+    )
+    def test_login_rate_limit_does_not_create_account_enumeration_message(self):
+        known_first = self.post_json(
+            "accounts:login",
+            {
+                "email": self.user.email,
+                "password": "senha-errada",
+            },
+        )
+        known_second = self.post_json(
+            "accounts:login",
+            {
+                "email": self.user.email,
+                "password": "senha-errada",
+            },
+        )
+
+        cache.clear()
+
+        unknown_first = self.post_json(
+            "accounts:login",
+            {
+                "email": "unknown-rate@example.com",
+                "password": "senha-errada",
+            },
+        )
+        unknown_second = self.post_json(
+            "accounts:login",
+            {
+                "email": "unknown-rate@example.com",
+                "password": "senha-errada",
+            },
+        )
+
+        self.assertEqual(known_first.status_code, 400)
+        self.assertEqual(unknown_first.status_code, 400)
+        self.assert_rate_limited(known_second)
+        self.assert_rate_limited(unknown_second)
+        self.assertEqual(
+            known_second.data,
+            unknown_second.data,
+        )
+
+    @override_settings(
+        SECURITY_RATE_LIMITS=rate_limits_for_tests(
+            password_reset_request_ip={
+                "limit": 1,
+                "window": 60,
+            },
+        )
+    )
+    @patch(
+        "apps.accounts.services.ResendEmailService.send_password_reset_email"
+    )
+    def test_password_reset_request_rate_limit_isolated_by_ip(
+        self,
+        send_email,
+    ):
+        first = self.post_json(
+            "accounts:password-reset-request",
+            {
+                "email": self.user.email,
+            },
+            ip="10.0.0.1",
+        )
+        second = self.post_json(
+            "accounts:password-reset-request",
+            {
+                "email": self.user.email,
+            },
+            ip="10.0.0.2",
+        )
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+
+    @override_settings(
+        SECURITY_RATE_LIMITS=rate_limits_for_tests(
+            recovery_key_identifier={
+                "limit": 1,
+                "window": 60,
+            },
+        )
+    )
+    def test_recovery_key_endpoint_is_rate_limited_without_secret_echo(self):
+        self.setup_recovery()
+
+        first = self.post_json(
+            "accounts:recovery-verify-key",
+            {
+                "email": self.user.email,
+                "recovery_key": "MRD-INVALID-KEY",
+            },
+        )
+        second = self.post_json(
+            "accounts:recovery-verify-key",
+            {
+                "email": self.user.email,
+                "recovery_key": "MRD-INVALID-KEY",
+            },
+        )
+
+        self.assertEqual(first.status_code, 400)
+        self.assert_rate_limited(second)
+        self.assertNotIn(
+            "MRD-INVALID-KEY",
+            str(second.data),
+        )
+
+    @override_settings(
+        SECURITY_RATE_LIMITS=rate_limits_for_tests(
+            recovery_questions_verify_challenge={
+                "limit": 1,
+                "window": 60,
+            },
+        )
+    )
+    def test_security_questions_verify_is_rate_limited(self):
+        self.setup_recovery()
+
+        challenge = self.post_json(
+            "accounts:recovery-questions",
+            {
+                "email": self.user.email,
+            },
+        )
+
+        payload = {
+            "challenge_id": challenge.data["challenge_id"],
+            "answers": [
+                {
+                    "question_id": challenge.data["questions"][0]["id"],
+                    "answer": "Fortaleza",
+                },
+                {
+                    "question_id": challenge.data["questions"][1]["id"],
+                    "answer": "errada",
+                },
+            ],
+        }
+
+        first = self.post_json(
+            "accounts:recovery-questions-verify",
+            payload,
+        )
+        second = self.post_json(
+            "accounts:recovery-questions-verify",
+            payload,
+        )
+
+        self.assertEqual(first.status_code, 400)
+        self.assert_rate_limited(second)
+        self.assertNotIn(
+            "errada",
+            str(second.data),
+        )
+
+    @override_settings(
+        SECURITY_RATE_LIMITS=rate_limits_for_tests()
+    )
+    def test_recovery_reset_password_still_works_under_normal_use(self):
+        recovery_key = self.setup_recovery()
+
+        token_response = self.post_json(
+            "accounts:recovery-verify-key",
+            {
+                "email": self.user.email,
+                "recovery_key": recovery_key,
+            },
+        )
+
+        response = self.post_json(
+            "accounts:recovery-reset-password",
+            {
+                "recovery_token": token_response.data["recovery_token"],
+                "new_password": "nova-senha-segura-456",
+                "new_password_confirm": "nova-senha-segura-456",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("recovery_key", response.data)
+
+    @override_settings(
+        SECURITY_RATE_LIMITS=rate_limits_for_tests()
+    )
+    def test_authenticated_password_change_still_works_under_normal_use(self):
+        self.client.force_authenticate(
+            self.user
+        )
+
+        response = self.post_json(
+            "accounts:password-change",
+            {
+                "current_password": self.password,
+                "new_password": "nova-senha-segura-456",
+                "new_password_confirm": "nova-senha-segura-456",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+    @override_settings(
+        SECURITY_RATE_LIMITS=rate_limits_for_tests(
+            login_identifier={
+                "limit": 1,
+                "window": 60,
+            },
+        )
+    )
+    @patch(
+        "apps.accounts.rate_limits.cache.add",
+        side_effect=RuntimeError("cache unavailable"),
+    )
+    def test_rate_limit_storage_failure_fails_open(
+        self,
+        _cache_add,
+    ):
+        response = self.post_json(
+            "accounts:login",
+            {
+                "email": self.user.email,
+                "password": "senha-errada",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+
 class OrganizationMemberApiUnavailableV1Tests(APITestCase):
     def setUp(self):
+        cache.clear()
+
         User = get_user_model()
 
         self.organization = Organization.objects.create(
@@ -1111,6 +1559,8 @@ class OrganizationMemberApiUnavailableV1Tests(APITestCase):
 
 class CurrentUserProfileAPITests(APITestCase):
     def setUp(self):
+        cache.clear()
+
         User = get_user_model()
         self.organization = Organization.objects.create(
             name="Empresa Perfil",
@@ -1187,6 +1637,8 @@ class AccountRecoveryAPITests(APITestCase):
     password = "senha-antiga-123"
 
     def setUp(self):
+        cache.clear()
+
         User = get_user_model()
 
         self.organization = Organization.objects.create(

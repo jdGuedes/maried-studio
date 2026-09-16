@@ -35,6 +35,13 @@ from .permissions import (
     CanManageOrganizationMembers,
 )
 
+from .rate_limits import (
+    check_rate_limits,
+    client_ip,
+    rate_limit_rule,
+    user_identifier,
+)
+
 from .serializers import (
     AccountRecoveryChangeQuestionsSerializer,
     AccountRecoveryPasswordResetSerializer,
@@ -140,6 +147,24 @@ class LoginView(
         )
 
         credentials = serializer.validated_data
+
+        limited = check_rate_limits(
+            [
+                rate_limit_rule(
+                    "login_ip",
+                    client_ip(
+                        request
+                    ),
+                ),
+                rate_limit_rule(
+                    "login_identifier",
+                    credentials["email"],
+                ),
+            ]
+        )
+
+        if limited:
+            return limited
 
         user = authenticate(
             request=request,
@@ -256,6 +281,20 @@ class AuthenticatedPasswordChangeView(
         self,
         request,
     ):
+        limited = check_rate_limits(
+            [
+                rate_limit_rule(
+                    "authenticated_password_user",
+                    user_identifier(
+                        request
+                    ),
+                ),
+            ]
+        )
+
+        if limited:
+            return limited
+
         serializer = AuthenticatedPasswordChangeSerializer(
             data=request.data,
             context={
@@ -338,6 +377,24 @@ class PasswordResetRequestView(
             raise_exception=True
         )
 
+        limited = check_rate_limits(
+            [
+                rate_limit_rule(
+                    "password_reset_request_ip",
+                    client_ip(
+                        request
+                    ),
+                ),
+                rate_limit_rule(
+                    "password_reset_request_identifier",
+                    serializer.validated_data["email"],
+                ),
+            ]
+        )
+
+        if limited:
+            return limited
+
         PasswordResetService().request_reset(
             email=serializer.validated_data["email"]
         )
@@ -376,6 +433,27 @@ class PasswordResetConfirmView(
         )
 
         data = serializer.validated_data
+
+        limited = check_rate_limits(
+            [
+                rate_limit_rule(
+                    "password_reset_confirm_ip",
+                    client_ip(
+                        request
+                    ),
+                ),
+                rate_limit_rule(
+                    "password_reset_confirm_token",
+                    (
+                        f"{data['uid']}:"
+                        f"{data['token']}"
+                    ),
+                ),
+            ]
+        )
+
+        if limited:
+            return limited
 
         try:
             PasswordResetService().confirm_reset(
@@ -450,6 +528,20 @@ class AccountRecoverySetupView(
         self,
         request,
     ):
+        limited = check_rate_limits(
+            [
+                rate_limit_rule(
+                    "recovery_authenticated_user",
+                    user_identifier(
+                        request
+                    ),
+                ),
+            ]
+        )
+
+        if limited:
+            return limited
+
         serializer = AccountRecoverySetupSerializer(
             data=request.data
         )
@@ -494,6 +586,20 @@ class AccountRecoveryRotateKeyView(
         self,
         request,
     ):
+        limited = check_rate_limits(
+            [
+                rate_limit_rule(
+                    "recovery_authenticated_user",
+                    user_identifier(
+                        request
+                    ),
+                ),
+            ]
+        )
+
+        if limited:
+            return limited
+
         serializer = AccountRecoveryRotateKeySerializer(
             data=request.data
         )
@@ -545,6 +651,20 @@ class AccountRecoveryChangeQuestionsView(
         self,
         request,
     ):
+        limited = check_rate_limits(
+            [
+                rate_limit_rule(
+                    "recovery_authenticated_user",
+                    user_identifier(
+                        request
+                    ),
+                ),
+            ]
+        )
+
+        if limited:
+            return limited
+
         serializer = AccountRecoveryChangeQuestionsSerializer(
             data=request.data
         )
@@ -606,6 +726,26 @@ class AccountRecoveryVerifyKeyView(
             raise_exception=True
         )
 
+        limited = check_rate_limits(
+            [
+                rate_limit_rule(
+                    "recovery_key_ip",
+                    client_ip(
+                        request
+                    ),
+                ),
+                rate_limit_rule(
+                    "recovery_key_identifier",
+                    serializer.validated_data[
+                        "email"
+                    ],
+                ),
+            ]
+        )
+
+        if limited:
+            return limited
+
         try:
             result = (
                 AccountRecoveryService
@@ -653,6 +793,26 @@ class AccountRecoveryQuestionsView(
             raise_exception=True
         )
 
+        limited = check_rate_limits(
+            [
+                rate_limit_rule(
+                    "recovery_questions_request_ip",
+                    client_ip(
+                        request
+                    ),
+                ),
+                rate_limit_rule(
+                    "recovery_questions_request_identifier",
+                    serializer.validated_data[
+                        "email"
+                    ],
+                ),
+            ]
+        )
+
+        if limited:
+            return limited
+
         result = (
             AccountRecoveryService
             .create_questions_challenge(
@@ -692,6 +852,26 @@ class AccountRecoveryQuestionsVerifyView(
         serializer.is_valid(
             raise_exception=True
         )
+
+        limited = check_rate_limits(
+            [
+                rate_limit_rule(
+                    "recovery_questions_verify_ip",
+                    client_ip(
+                        request
+                    ),
+                ),
+                rate_limit_rule(
+                    "recovery_questions_verify_challenge",
+                    serializer.validated_data[
+                        "challenge_id"
+                    ],
+                ),
+            ]
+        )
+
+        if limited:
+            return limited
 
         try:
             result = (
@@ -741,6 +921,24 @@ class AccountRecoveryPasswordResetView(
         )
 
         data = serializer.validated_data
+
+        limited = check_rate_limits(
+            [
+                rate_limit_rule(
+                    "recovery_reset_ip",
+                    client_ip(
+                        request
+                    ),
+                ),
+                rate_limit_rule(
+                    "recovery_reset_token",
+                    data["recovery_token"],
+                ),
+            ]
+        )
+
+        if limited:
+            return limited
 
         try:
             result = AccountRecoveryService.reset_password(

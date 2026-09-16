@@ -305,6 +305,74 @@ ACCOUNT_RECOVERY_ENFORCE_ONBOARDING = env_bool(
 )
 
 
+SECURITY_RATE_LIMITS = {
+    "login_ip": {
+        "limit": 20,
+        "window": 600,
+    },
+    "login_identifier": {
+        "limit": 10,
+        "window": 900,
+    },
+    "password_reset_request_ip": {
+        "limit": 10,
+        "window": 600,
+    },
+    "password_reset_request_identifier": {
+        "limit": 3,
+        "window": 900,
+    },
+    "password_reset_confirm_ip": {
+        "limit": 20,
+        "window": 600,
+    },
+    "password_reset_confirm_token": {
+        "limit": 5,
+        "window": 900,
+    },
+    "recovery_key_ip": {
+        "limit": 10,
+        "window": 600,
+    },
+    "recovery_key_identifier": {
+        "limit": 5,
+        "window": 900,
+    },
+    "recovery_questions_request_ip": {
+        "limit": 10,
+        "window": 600,
+    },
+    "recovery_questions_request_identifier": {
+        "limit": 5,
+        "window": 900,
+    },
+    "recovery_questions_verify_ip": {
+        "limit": 10,
+        "window": 600,
+    },
+    "recovery_questions_verify_challenge": {
+        "limit": 5,
+        "window": 900,
+    },
+    "recovery_reset_ip": {
+        "limit": 10,
+        "window": 600,
+    },
+    "recovery_reset_token": {
+        "limit": 5,
+        "window": 900,
+    },
+    "authenticated_password_user": {
+        "limit": 8,
+        "window": 900,
+    },
+    "recovery_authenticated_user": {
+        "limit": 10,
+        "window": 900,
+    },
+}
+
+
 # ============================================================
 # DATABASE
 # ============================================================
