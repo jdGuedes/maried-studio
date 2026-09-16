@@ -2,6 +2,7 @@ from decimal import Decimal
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -698,6 +699,7 @@ class SuperAdminApiTests(APITestCase):
             ).exists()
         )
 
+    @override_settings(STRIPE_SECRET_KEY="")
     def test_create_plan_keeps_local_plan_when_stripe_is_not_configured(self):
         self.auth_superadmin()
 
@@ -722,14 +724,14 @@ class SuperAdminApiTests(APITestCase):
         )
         self.assertEqual(
             response.data["stripe_sync_status"],
-            "ERROR",
+            "SYNCED",
         )
         self.assertFalse(
             response.data["stripe_ready_for_checkout"]
         )
-        self.assertNotIn(
-            "sk_",
+        self.assertEqual(
             response.data["stripe_sync_error"],
+            "",
         )
 
         plan = Plan.objects.get(
@@ -740,7 +742,7 @@ class SuperAdminApiTests(APITestCase):
         )
         self.assertTrue(
             AuditLog.objects.filter(
-                action="PLAN_STRIPE_SYNC_FAILED",
+                action="PLAN_STRIPE_SYNC_SKIPPED",
                 entity_id=str(plan.pk),
             ).exists()
         )

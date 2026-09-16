@@ -11,6 +11,7 @@ import {
   Pencil,
   Save,
   ShieldCheck,
+  KeyRound,
   UserRound,
   X,
 } from "lucide-react";
@@ -31,6 +32,16 @@ import {
   updateProfile,
   type UserProfile,
 } from "@/lib/profile";
+
+import {
+  changePassword,
+  getAccountRecoveryStatus,
+  type AccountRecoveryStatus,
+} from "@/lib/api";
+
+import {
+  PasswordStrengthGuide,
+} from "@/components/auth/password-strength-guide";
 
 import {
   getCurrentSubscription,
@@ -200,6 +211,78 @@ export default function ProfilePage() {
 
 
   const [
+    securityStatus,
+    setSecurityStatus,
+  ] = useState<AccountRecoveryStatus | null>(
+    null
+  );
+
+
+  const [
+    loadingSecurity,
+    setLoadingSecurity,
+  ] = useState(
+    true
+  );
+
+
+  const [
+    securityError,
+    setSecurityError,
+  ] = useState<string | null>(
+    null
+  );
+
+
+  const [
+    passwordModalOpen,
+    setPasswordModalOpen,
+  ] = useState(
+    false
+  );
+
+
+  const [
+    currentPassword,
+    setCurrentPassword,
+  ] = useState(
+    ""
+  );
+
+
+  const [
+    newPassword,
+    setNewPassword,
+  ] = useState(
+    ""
+  );
+
+
+  const [
+    newPasswordConfirm,
+    setNewPasswordConfirm,
+  ] = useState(
+    ""
+  );
+
+
+  const [
+    changingPassword,
+    setChangingPassword,
+  ] = useState(
+    false
+  );
+
+
+  const [
+    passwordError,
+    setPasswordError,
+  ] = useState<string | null>(
+    null
+  );
+
+
+  const [
     name,
     setName,
   ] = useState(
@@ -314,6 +397,72 @@ export default function ProfilePage() {
 
     void loadSubscription();
 
+  }, []);
+
+
+  // ========================================================
+  // CARREGAR SEGURANCA
+  // ========================================================
+
+  async function loadSecurityStatus() {
+    setLoadingSecurity(
+      true
+    );
+
+    setSecurityError(
+      null
+    );
+
+    try {
+      const data =
+        await getAccountRecoveryStatus();
+
+      setSecurityStatus(
+        data
+      );
+    } catch {
+      setSecurityError(
+        "Não foi possível carregar as informações de segurança."
+      );
+    } finally {
+      setLoadingSecurity(
+        false
+      );
+    }
+  }
+
+
+  useEffect(() => {
+    let active =
+      true;
+
+    getAccountRecoveryStatus()
+      .then((data) => {
+        if (active) {
+          setSecurityStatus(
+            data
+          );
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setSecurityError(
+            "Não foi possível carregar as informações de segurança."
+          );
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setLoadingSecurity(
+            false
+          );
+        }
+      });
+
+    return () => {
+      active =
+        false;
+    };
   }, []);
 
 
@@ -440,6 +589,74 @@ export default function ProfilePage() {
         false
       );
 
+    }
+  }
+
+
+  async function handlePasswordChange() {
+    if (
+      changingPassword
+    ) {
+      return;
+    }
+
+    setPasswordError(
+      null
+    );
+    setSuccess(
+      null
+    );
+
+    if (
+      newPassword !==
+      newPasswordConfirm
+    ) {
+      setPasswordError(
+        "As novas senhas não coincidem."
+      );
+
+      return;
+    }
+
+    setChangingPassword(
+      true
+    );
+
+    try {
+      const response =
+        await changePassword({
+          currentPassword,
+          newPassword,
+          newPasswordConfirm,
+        });
+
+      setCurrentPassword(
+        ""
+      );
+      setNewPassword(
+        ""
+      );
+      setNewPasswordConfirm(
+        ""
+      );
+      setPasswordModalOpen(
+        false
+      );
+      setSuccess(
+        response.detail
+      );
+
+      await refreshProfile();
+    } catch (error) {
+      setPasswordError(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível alterar sua senha agora. Tente novamente."
+      );
+    } finally {
+      setChangingPassword(
+        false
+      );
     }
   }
 
@@ -1094,22 +1311,103 @@ export default function ProfilePage() {
 
 
             <p className="mt-4 text-xs leading-5 text-[var(--maried-cocoa)]">
-              Em breve você poderá alterar sua senha
-              e gerenciar sessões abertas diretamente
-              por aqui.
+              Gerencie sua senha e as opções de recuperação da sua conta.
             </p>
 
 
-            <button
-              type="button"
+            {loadingSecurity ? (
 
-              disabled
+              <div className="mt-5 flex h-[96px] items-center">
+                <LoaderCircle
+                  size={22}
+                  className="animate-spin text-[var(--maried-gold)]"
+                />
+              </div>
 
-              className="mt-5 h-10 rounded-xl border border-[var(--maried-sand)] bg-[var(--maried-cream)] px-4 text-xs text-[var(--maried-caramel)]"
-            >
-              Alterar senha
-            </button>
+            ) : securityError ? (
 
+              <div className="mt-5 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                <div>
+                  {securityError}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    void loadSecurityStatus();
+                  }}
+                  className="mt-2 text-xs font-medium text-red-700 underline"
+                >
+                  Tentar novamente
+                </button>
+              </div>
+
+            ) : (
+
+              <div className="mt-5 space-y-3">
+                <div className="rounded-xl border border-[var(--maried-sand)] bg-white px-3 py-3">
+                  <div className="text-[10px] font-medium uppercase text-[var(--maried-caramel)]">
+                    Recuperação da conta
+                  </div>
+
+                  <div className="mt-2 space-y-1 text-xs text-[var(--maried-cocoa)]">
+                    <div className="flex items-center justify-between gap-3">
+                      <span>Chave de recuperação</span>
+                      <span className="font-medium text-[var(--maried-espresso)]">
+                        {securityStatus?.recovery_key_configured
+                          ? "Configurada"
+                          : "Pendente"}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3">
+                      <span>Perguntas de segurança</span>
+                      <span className="font-medium text-[var(--maried-espresso)]">
+                        {securityStatus?.security_questions_configured
+                          ? "Configuradas"
+                          : "Pendentes"}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3">
+                      <span>Última rotação</span>
+                      <span className="font-medium text-[var(--maried-espresso)]">
+                        {formatDate(
+                          securityStatus?.key_rotated_at ??
+                          null
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPasswordModalOpen(
+                        true
+                      );
+                      setPasswordError(
+                        null
+                      );
+                    }}
+                    className="flex h-10 items-center justify-center gap-2 rounded-xl border border-[var(--maried-sand)] bg-white px-4 text-xs font-medium text-[var(--maried-gold)]"
+                  >
+                    <KeyRound size={15} />
+                    Alterar senha
+                  </button>
+
+                  <Link
+                    href="/seguranca"
+                    className="flex h-10 items-center justify-center rounded-xl border border-[var(--maried-sand)] bg-white px-4 text-xs font-medium text-[var(--maried-gold)]"
+                  >
+                    Gerenciar recuperação
+                  </Link>
+                </div>
+              </div>
+
+            )}
           </section>
 
         </div>
@@ -1292,6 +1590,178 @@ export default function ProfilePage() {
         </section>
 
       </div>
+
+      {passwordModalOpen ? (
+
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6">
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handlePasswordChange();
+            }}
+            className="max-h-full w-full max-w-[520px] overflow-y-auto rounded-2xl border border-[var(--maried-sand)] bg-white p-5 shadow-xl"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold text-[var(--maried-espresso)]">
+                  Alterar senha
+                </h2>
+
+                <p className="mt-1 text-sm text-[var(--maried-cocoa)]">
+                  Use uma senha exclusiva que você não utilize em outros serviços.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                disabled={changingPassword}
+                onClick={() => {
+                  setPasswordModalOpen(
+                    false
+                  );
+                  setPasswordError(
+                    null
+                  );
+                  setCurrentPassword(
+                    ""
+                  );
+                  setNewPassword(
+                    ""
+                  );
+                  setNewPasswordConfirm(
+                    ""
+                  );
+                }}
+                aria-label="Fechar alteração de senha"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[var(--maried-sand)] text-[var(--maried-cocoa)]"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <label className="mt-5 block">
+              <span className="text-xs font-medium text-[var(--maried-coffee)]">
+                Senha atual
+              </span>
+              <input
+                type="password"
+                autoComplete="current-password"
+                value={currentPassword}
+                onChange={(event) => {
+                  setCurrentPassword(
+                    event.target.value
+                  );
+                }}
+                required
+                disabled={changingPassword}
+                className="mt-2 h-12 w-full rounded-xl border border-[var(--maried-sand)] bg-white px-4 text-sm outline-none transition-colors focus:border-[var(--maried-gold)] disabled:opacity-60"
+              />
+            </label>
+
+            <label className="mt-4 block">
+              <span className="text-xs font-medium text-[var(--maried-coffee)]">
+                Nova senha
+              </span>
+              <input
+                type="password"
+                autoComplete="new-password"
+                value={newPassword}
+                onChange={(event) => {
+                  setNewPassword(
+                    event.target.value
+                  );
+                }}
+                required
+                disabled={changingPassword}
+                className="mt-2 h-12 w-full rounded-xl border border-[var(--maried-sand)] bg-white px-4 text-sm outline-none transition-colors focus:border-[var(--maried-gold)] disabled:opacity-60"
+              />
+            </label>
+
+            <div className="mt-4">
+              <PasswordStrengthGuide
+                password={newPassword}
+              />
+            </div>
+
+            <label className="mt-4 block">
+              <span className="text-xs font-medium text-[var(--maried-coffee)]">
+                Confirmar nova senha
+              </span>
+              <input
+                type="password"
+                autoComplete="new-password"
+                value={newPasswordConfirm}
+                onChange={(event) => {
+                  setNewPasswordConfirm(
+                    event.target.value
+                  );
+                }}
+                required
+                disabled={changingPassword}
+                className="mt-2 h-12 w-full rounded-xl border border-[var(--maried-sand)] bg-white px-4 text-sm outline-none transition-colors focus:border-[var(--maried-gold)] disabled:opacity-60"
+              />
+            </label>
+
+            {newPasswordConfirm ? (
+              <div
+                aria-live="polite"
+                className={[
+                  "mt-3 rounded-xl px-4 py-2 text-xs",
+                  newPassword ===
+                  newPasswordConfirm
+                    ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
+                    : "border border-red-200 bg-red-50 text-red-700",
+                ].join(" ")}
+              >
+                {newPassword ===
+                newPasswordConfirm
+                  ? "Senhas coincidem."
+                  : "As senhas não coincidem."}
+              </div>
+            ) : null}
+
+            {passwordError ? (
+              <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {passwordError}
+              </div>
+            ) : null}
+
+            <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                disabled={changingPassword}
+                onClick={() => {
+                  setPasswordModalOpen(
+                    false
+                  );
+                }}
+                className="h-11 rounded-xl border border-[var(--maried-sand)] bg-white px-4 text-sm font-medium text-[var(--maried-coffee)] disabled:opacity-60"
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="submit"
+                disabled={changingPassword}
+                className="flex h-11 items-center justify-center gap-2 rounded-xl bg-[var(--maried-gold)] px-4 text-sm font-medium text-white disabled:opacity-70"
+              >
+                {changingPassword ? (
+                  <LoaderCircle
+                    size={16}
+                    className="animate-spin"
+                  />
+                ) : (
+                  <KeyRound size={16} />
+                )}
+                {changingPassword
+                  ? "Alterando..."
+                  : "Alterar senha"}
+              </button>
+            </div>
+          </form>
+        </div>
+
+      ) : null}
 
     </main>
   );

@@ -365,6 +365,36 @@ export default function SuperAdminClienteDetalhePage() {
             </AdminCard>
           </div>
 
+          <AdminCard>
+            <h2 className="mb-4 text-sm font-semibold text-[var(--maried-espresso)]">Seguranca da conta</h2>
+            <div className="grid gap-3 md:grid-cols-2">
+              <Info
+                label="Recuperacao configurada"
+                value={client.user?.recovery_security?.recovery_configured ? "Sim" : "Nao"}
+              />
+              <Info
+                label="Chave configurada"
+                value={client.user?.recovery_security?.recovery_key_configured ? "Sim" : "Nao"}
+              />
+              <Info
+                label="Perguntas configuradas"
+                value={client.user?.recovery_security?.security_questions_configured ? "Sim" : "Nao"}
+              />
+              <Info
+                label="Ultima rotacao"
+                value={formatDate(client.user?.recovery_security?.key_rotated_at)}
+              />
+              <Info
+                label="Bloqueio temporario"
+                value={client.user?.recovery_security?.temporarily_blocked ? "Sim" : "Nao"}
+              />
+              <Info
+                label="Bloqueado ate"
+                value={formatDate(client.user?.recovery_security?.blocked_until)}
+              />
+            </div>
+          </AdminCard>
+
           <div className="grid gap-5 xl:grid-cols-2">
             <AdminCard>
               <h2 className="mb-4 text-sm font-semibold text-[var(--maried-espresso)]">Creditos</h2>

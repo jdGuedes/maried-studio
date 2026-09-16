@@ -74,6 +74,43 @@ type ProfileProviderProps = {
 };
 
 
+function isPublicRoute(
+  pathname: string | null
+) {
+  if (
+    pathname === "/login" ||
+    pathname === "/esqueci-senha"
+  ) {
+    return true;
+  }
+
+  return Boolean(
+    pathname?.startsWith(
+      "/redefinir-senha/"
+    )
+  );
+}
+
+
+function isRecoverySetupRoute(
+  pathname: string | null
+) {
+  return pathname ===
+    "/configurar-recuperacao";
+}
+
+
+function requiresRecoverySetup(
+  profile: UserProfile | null
+) {
+  return Boolean(
+    profile &&
+    !profile.is_superuser &&
+    profile.recovery_configured === false
+  );
+}
+
+
 // ==========================================================
 // PROVIDER
 // ==========================================================
@@ -144,11 +181,6 @@ export function ProfileProvider({
 
         } catch (error) {
 
-          console.error(
-            "Erro ao carregar perfil:",
-            error
-          );
-
           if (
             error instanceof
               ProfileApiError &&
@@ -161,9 +193,14 @@ export function ProfileProvider({
               null
             );
 
+            setError(
+              null
+            );
+
             if (
-              pathname !==
-              "/login"
+              !isPublicRoute(
+                pathname
+              )
             ) {
               const next =
                 encodeURIComponent(
@@ -174,7 +211,14 @@ export function ProfileProvider({
                 `/login?next=${next}`
               );
             }
+
+            return null;
           }
+
+          console.error(
+            "Erro ao carregar perfil:",
+            error
+          );
 
 
           const message =
@@ -250,6 +294,41 @@ export function ProfileProvider({
 
   }, [
     refreshProfile,
+  ]);
+
+
+  useEffect(() => {
+    if (
+      loading ||
+      !requiresRecoverySetup(
+        profile
+      ) ||
+      isPublicRoute(
+        pathname
+      ) ||
+      isRecoverySetupRoute(
+        pathname
+      ) ||
+      pathname?.startsWith(
+        "/superadmin"
+      )
+    ) {
+      return;
+    }
+
+    const next =
+      encodeURIComponent(
+        pathname || "/"
+      );
+
+    router.replace(
+      `/configurar-recuperacao?next=${next}`
+    );
+  }, [
+    loading,
+    pathname,
+    profile,
+    router,
   ]);
 
 

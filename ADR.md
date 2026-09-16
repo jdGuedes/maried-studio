@@ -201,3 +201,27 @@ Exemplos:
 - `FRONT-001.md`
 - `ADMIN-001.md`
 - `QA-001.md`
+
+## ADR-015 - Recuperacao autonoma de conta na V1
+
+Status: aprovado.
+
+Decisao:
+
+A V1 utiliza recuperacao autonoma baseada em dois fatores internos:
+
+- Recovery Key como metodo preferencial;
+- perguntas de seguranca como fallback quando a cliente perdeu a Recovery Key.
+
+O reset por email/Resend permanece como fator futuro opcional, nao como requisito
+operacional da V1.
+
+Consequencias:
+
+- a Recovery Key e exibida somente uma vez e armazenada apenas como hash;
+- respostas de seguranca sao armazenadas apenas como hash;
+- SuperAdmin pode observar metadados de configuracao/bloqueio, mas nao ve senha,
+  chave, respostas, hashes ou tokens;
+- se a cliente perdeu senha, Recovery Key e respostas, nao existe recuperacao
+  autonoma segura na V1;
+- endpoints de recovery devem ser prioridade no rate limit geral futuro.

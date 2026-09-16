@@ -1478,6 +1478,31 @@ class StripeBillingService:
         customer_id,
         request_signature,
     ):
+        purchase = (
+            CreditPurchaseService
+            .reusable_pending_purchase(
+                organization=organization,
+                package=package,
+                subscription=subscription,
+                stripe_customer_id=customer_id,
+                request_signature=request_signature,
+            )
+        )
+
+        if purchase:
+            synced_purchase = (
+                CreditPurchaseCheckoutService
+                .sync_purchase_from_session(
+                    purchase=purchase
+                )
+            )
+
+            if (
+                synced_purchase.status
+                == CreditPurchaseStatus.PENDING
+            ):
+                return synced_purchase, False
+
         purchase, created = (
             CreditPurchaseService
             .create_pending_purchase(

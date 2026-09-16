@@ -1,5 +1,6 @@
 from pathlib import Path
 import os
+import sys
 
 import dj_database_url
 from django.core.exceptions import ImproperlyConfigured
@@ -237,6 +238,74 @@ ASGI_APPLICATION = (
 
 
 # ============================================================
+# SENHAS
+# ============================================================
+
+AUTH_PASSWORD_VALIDATORS = [
+    {
+        "NAME": (
+            "django.contrib.auth.password_validation."
+            "UserAttributeSimilarityValidator"
+        ),
+    },
+    {
+        "NAME": (
+            "django.contrib.auth.password_validation."
+            "MinimumLengthValidator"
+        ),
+        "OPTIONS": {
+            "min_length": 8,
+        },
+    },
+    {
+        "NAME": (
+            "django.contrib.auth.password_validation."
+            "CommonPasswordValidator"
+        ),
+    },
+    {
+        "NAME": (
+            "django.contrib.auth.password_validation."
+            "NumericPasswordValidator"
+        ),
+    },
+]
+
+PASSWORD_RESET_TIMEOUT = env_int(
+    "DJANGO_PASSWORD_RESET_TIMEOUT",
+    3600,
+)
+
+ACCOUNT_RECOVERY_TOKEN_TIMEOUT = env_int(
+    "ACCOUNT_RECOVERY_TOKEN_TIMEOUT",
+    1800,
+)
+
+ACCOUNT_RECOVERY_CHALLENGE_TIMEOUT = env_int(
+    "ACCOUNT_RECOVERY_CHALLENGE_TIMEOUT",
+    900,
+)
+
+ACCOUNT_RECOVERY_FAILED_ATTEMPT_LIMIT = env_int(
+    "ACCOUNT_RECOVERY_FAILED_ATTEMPT_LIMIT",
+    5,
+)
+
+ACCOUNT_RECOVERY_BLOCK_MINUTES = env_int(
+    "ACCOUNT_RECOVERY_BLOCK_MINUTES",
+    15,
+)
+
+ACCOUNT_RECOVERY_ENFORCE_ONBOARDING = env_bool(
+    "ACCOUNT_RECOVERY_ENFORCE_ONBOARDING",
+    default=not (
+        "test"
+        in sys.argv
+    ),
+)
+
+
+# ============================================================
 # DATABASE
 # ============================================================
 #
@@ -464,6 +533,29 @@ FRONTEND_URL = os.getenv(
     "FRONTEND_URL",
     "http://localhost:3000",
 ).rstrip("/")
+
+EMAIL_PASSWORD_RECOVERY_ENABLED = env_bool(
+    "EMAIL_PASSWORD_RECOVERY_ENABLED",
+    default=False,
+)
+
+RESEND_API_KEY = (
+    require_env("RESEND_API_KEY")
+    if IS_PRODUCTION and EMAIL_PASSWORD_RECOVERY_ENABLED
+    else os.getenv(
+        "RESEND_API_KEY",
+        "",
+    )
+)
+
+EMAIL_FROM = (
+    require_env("EMAIL_FROM")
+    if IS_PRODUCTION and EMAIL_PASSWORD_RECOVERY_ENABLED
+    else os.getenv(
+        "EMAIL_FROM",
+        "MARIED Studio <onboarding@resend.dev>",
+    )
+)
 
 CORS_ALLOWED_ORIGINS = env_list(
     "DJANGO_CORS_ALLOWED_ORIGINS",

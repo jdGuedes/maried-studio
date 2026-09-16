@@ -10,6 +10,8 @@ import {
   useRouter,
 } from "next/navigation";
 
+import Link from "next/link";
+
 import {
   LoaderCircle,
   LogIn,
@@ -165,8 +167,6 @@ export default function LoginPage() {
         response.user
       );
 
-      await refreshWallet();
-
       if (
         response.user.is_superuser
       ) {
@@ -175,6 +175,20 @@ export default function LoginPage() {
         );
         return;
       }
+
+      if (
+        response.user.recovery_configured ===
+        false
+      ) {
+        router.replace(
+          `/configurar-recuperacao?next=${encodeURIComponent(
+            resolveNextPath()
+          )}`
+        );
+        return;
+      }
+
+      await refreshWallet();
 
       const subscription =
         await getCurrentSubscription();
@@ -268,9 +282,18 @@ export default function LoginPage() {
           </label>
 
           <label className="block">
-            <span className="text-xs font-medium text-[var(--maried-coffee)]">
-              Senha
-            </span>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs font-medium text-[var(--maried-coffee)]">
+                Senha
+              </span>
+
+              <Link
+                href="/esqueci-senha"
+                className="text-xs font-medium text-[var(--maried-gold)] underline-offset-4 hover:underline"
+              >
+                Esqueci minha senha
+              </Link>
+            </div>
 
             <input
               type="password"

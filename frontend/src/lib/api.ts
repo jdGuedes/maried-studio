@@ -109,6 +109,97 @@ type ApiErrorData = {
 };
 
 
+function stringifyApiValue(
+  value: unknown
+): string {
+  if (
+    Array.isArray(value)
+  ) {
+    return value
+      .map(stringifyApiValue)
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  if (
+    value &&
+    typeof value === "object"
+  ) {
+    return Object.values(value)
+      .map(stringifyApiValue)
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  return String(
+    value ?? ""
+  );
+}
+
+
+export function humanizePasswordApiError(
+  data:
+    ApiErrorData | null,
+  fallback: string
+): string {
+  const rawMessage =
+    data?.detail ??
+    (
+      data
+        ? Object.values(data)
+            .map(stringifyApiValue)
+            .filter(Boolean)
+            .join(" ")
+        : ""
+    );
+
+  const message =
+    rawMessage
+      .replace(
+        /\b(new_password|new_password_confirm|current_password|non_field_errors|detail)\s*:\s*/gi,
+        ""
+      )
+      .trim();
+
+  if (!message) {
+    return fallback;
+  }
+
+  const lower =
+    message.toLowerCase();
+
+  if (
+    lower.includes("muito comum") ||
+    lower.includes("too common")
+  ) {
+    return "Esta senha é muito comum. Escolha uma combinação menos previsível.";
+  }
+
+  if (
+    lower.includes("muito curta") ||
+    lower.includes("too short")
+  ) {
+    return "Use uma senha mais longa.";
+  }
+
+  if (
+    lower.includes("inteiramente num") ||
+    lower.includes("entirely numeric")
+  ) {
+    return "Evite usar somente números.";
+  }
+
+  if (
+    lower.includes("muito parecida") ||
+    lower.includes("similar")
+  ) {
+    return "Escolha uma senha menos parecida com seus dados pessoais.";
+  }
+
+  return message;
+}
+
+
 export class ApiError
   extends Error {
 
@@ -148,6 +239,155 @@ export type LoginInput = {
 
 export type LoginResponse = {
   user: UserProfile;
+};
+
+
+export type PasswordResetRequestInput = {
+  email: string;
+};
+
+
+export type PasswordResetConfirmInput = {
+  uid: string;
+
+  token: string;
+
+  newPassword: string;
+
+  newPasswordConfirm: string;
+};
+
+
+export type AccountRecoveryStatus = {
+  recovery_configured: boolean;
+
+  recovery_key_configured: boolean;
+
+  security_questions_configured: boolean;
+
+  configured_at: string | null;
+
+  key_rotated_at: string | null;
+
+  temporarily_blocked: boolean;
+
+  blocked_until: string | null;
+};
+
+
+export type AccountRecoverySetupInput = {
+  question1: string;
+
+  answer1: string;
+
+  question2: string;
+
+  answer2: string;
+};
+
+
+export type AccountRecoverySetupResponse = {
+  recovery_key: string;
+
+  status: AccountRecoveryStatus;
+};
+
+
+export type AccountRecoveryVerifyKeyInput = {
+  email: string;
+
+  recoveryKey: string;
+};
+
+
+export type AccountRecoveryAuthorization = {
+  recovery_token: string;
+
+  expires_in: number;
+};
+
+
+export type AccountRecoveryQuestion = {
+  id: string;
+
+  question: string;
+};
+
+
+export type AccountRecoveryQuestionsResponse = {
+  challenge_id: string;
+
+  questions: AccountRecoveryQuestion[];
+
+  expires_in: number;
+};
+
+
+export type AccountRecoveryQuestionsVerifyInput = {
+  challengeId: string;
+
+  answers: Array<{
+    questionId: string;
+
+    answer: string;
+  }>;
+};
+
+
+export type AccountRecoveryResetPasswordInput = {
+  recoveryToken: string;
+
+  newPassword: string;
+
+  newPasswordConfirm: string;
+};
+
+
+export type AccountRecoveryResetPasswordResponse = {
+  detail: string;
+
+  recovery_key: string;
+};
+
+
+export type PasswordChangeInput = {
+  currentPassword: string;
+
+  newPassword: string;
+
+  newPasswordConfirm: string;
+};
+
+
+export type AccountRecoveryRotateKeyInput = {
+  currentPassword: string;
+};
+
+
+export type AccountRecoveryRotateKeyResponse = {
+  recovery_key: string;
+
+  status: AccountRecoveryStatus;
+};
+
+
+export type AccountRecoveryChangeQuestionsInput = {
+  currentPassword: string;
+
+  question1: string;
+
+  answer1: string;
+
+  question2: string;
+
+  answer2: string;
+};
+
+
+export type AccountRecoveryChangeQuestionsResponse = {
+  recovery_key: string;
+
+  status: AccountRecoveryStatus;
 };
 
 
@@ -243,6 +483,40 @@ async function parseResponse<T>(
 }
 
 
+async function parsePasswordResponse<T>(
+  response: Response,
+  fallback: string
+): Promise<T> {
+  let data: unknown = null;
+
+  try {
+    data =
+      await response.json();
+  } catch {
+    data = null;
+  }
+
+  if (!response.ok) {
+    const errorData =
+      data &&
+      typeof data === "object"
+        ? (data as ApiErrorData)
+        : null;
+
+    throw new ApiError(
+      humanizePasswordApiError(
+        errorData,
+        fallback
+      ),
+      response.status,
+      errorData
+    );
+  }
+
+  return data as T;
+}
+
+
 // ==========================================================
 // AUTENTICAÇÃO
 // ==========================================================
@@ -323,6 +597,506 @@ export async function logoutUser():
     detail: string;
   }>(
     response
+  );
+}
+
+
+export async function requestPasswordReset({
+  email,
+}: PasswordResetRequestInput):
+  Promise<{
+    detail: string;
+  }> {
+
+  await ensureCsrfCookie();
+
+  const response =
+    await fetch(
+      `${API_URL}/api/accounts/password-reset/request/`,
+      {
+        method:
+          "POST",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+
+        headers: {
+          "Content-Type":
+            "application/json",
+
+          ...getCsrfHeaders(),
+        },
+
+        body:
+          JSON.stringify({
+            email,
+          }),
+      }
+    );
+
+  return parseResponse<{
+    detail: string;
+  }>(
+    response
+  );
+}
+
+
+export async function confirmPasswordReset({
+  uid,
+  token,
+  newPassword,
+  newPasswordConfirm,
+}: PasswordResetConfirmInput):
+  Promise<{
+    detail: string;
+  }> {
+
+  await ensureCsrfCookie();
+
+  const response =
+    await fetch(
+      `${API_URL}/api/accounts/password-reset/confirm/`,
+      {
+        method:
+          "POST",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+
+        headers: {
+          "Content-Type":
+            "application/json",
+
+          ...getCsrfHeaders(),
+        },
+
+        body:
+          JSON.stringify({
+            uid,
+            token,
+            new_password:
+              newPassword,
+            new_password_confirm:
+              newPasswordConfirm,
+          }),
+      }
+    );
+
+  return parsePasswordResponse<{
+    detail: string;
+  }>(
+    response,
+    "Não foi possível alterar sua senha agora. Tente novamente."
+  );
+}
+
+
+export async function getAccountRecoveryStatus():
+  Promise<AccountRecoveryStatus> {
+  const response =
+    await fetch(
+      `${API_URL}/api/accounts/recovery/status/`,
+      {
+        method:
+          "GET",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+      }
+    );
+
+  return parseResponse<AccountRecoveryStatus>(
+    response
+  );
+}
+
+export async function setupAccountRecovery({
+  question1,
+  answer1,
+  question2,
+  answer2,
+}: AccountRecoverySetupInput):
+  Promise<AccountRecoverySetupResponse> {
+
+  await ensureCsrfCookie();
+
+  const response =
+    await fetch(
+      `${API_URL}/api/accounts/recovery/setup/`,
+      {
+        method:
+          "POST",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+
+        headers: {
+          "Content-Type":
+            "application/json",
+
+          ...getCsrfHeaders(),
+        },
+
+        body:
+          JSON.stringify({
+            question_1:
+              question1,
+            answer_1:
+              answer1,
+            question_2:
+              question2,
+            answer_2:
+              answer2,
+          }),
+      }
+    );
+
+  return parseResponse<AccountRecoverySetupResponse>(
+    response
+  );
+}
+
+
+export async function verifyAccountRecoveryKey({
+  email,
+  recoveryKey,
+}: AccountRecoveryVerifyKeyInput):
+  Promise<AccountRecoveryAuthorization> {
+
+  await ensureCsrfCookie();
+
+  const response =
+    await fetch(
+      `${API_URL}/api/accounts/recovery/verify-key/`,
+      {
+        method:
+          "POST",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+
+        headers: {
+          "Content-Type":
+            "application/json",
+
+          ...getCsrfHeaders(),
+        },
+
+        body:
+          JSON.stringify({
+            email,
+            recovery_key:
+              recoveryKey,
+          }),
+      }
+    );
+
+  return parseResponse<AccountRecoveryAuthorization>(
+    response
+  );
+}
+
+
+export async function requestAccountRecoveryQuestions(
+  email: string
+): Promise<AccountRecoveryQuestionsResponse> {
+
+  await ensureCsrfCookie();
+
+  const response =
+    await fetch(
+      `${API_URL}/api/accounts/recovery/questions/`,
+      {
+        method:
+          "POST",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+
+        headers: {
+          "Content-Type":
+            "application/json",
+
+          ...getCsrfHeaders(),
+        },
+
+        body:
+          JSON.stringify({
+            email,
+          }),
+      }
+    );
+
+  return parseResponse<AccountRecoveryQuestionsResponse>(
+    response
+  );
+}
+
+
+export async function verifyAccountRecoveryQuestions({
+  challengeId,
+  answers,
+}: AccountRecoveryQuestionsVerifyInput):
+  Promise<AccountRecoveryAuthorization> {
+
+  await ensureCsrfCookie();
+
+  const response =
+    await fetch(
+      `${API_URL}/api/accounts/recovery/questions/verify/`,
+      {
+        method:
+          "POST",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+
+        headers: {
+          "Content-Type":
+            "application/json",
+
+          ...getCsrfHeaders(),
+        },
+
+        body:
+          JSON.stringify({
+            challenge_id:
+              challengeId,
+            answers:
+              answers.map(
+                (
+                  answer
+                ) => ({
+                  question_id:
+                    answer.questionId,
+                  answer:
+                    answer.answer,
+                })
+              ),
+          }),
+      }
+    );
+
+  return parseResponse<AccountRecoveryAuthorization>(
+    response
+  );
+}
+
+
+export async function resetPasswordWithRecovery({
+  recoveryToken,
+  newPassword,
+  newPasswordConfirm,
+}: AccountRecoveryResetPasswordInput):
+  Promise<AccountRecoveryResetPasswordResponse> {
+
+  await ensureCsrfCookie();
+
+  const response =
+    await fetch(
+      `${API_URL}/api/accounts/recovery/reset-password/`,
+      {
+        method:
+          "POST",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+
+        headers: {
+          "Content-Type":
+            "application/json",
+
+          ...getCsrfHeaders(),
+        },
+
+        body:
+          JSON.stringify({
+            recovery_token:
+              recoveryToken,
+            new_password:
+              newPassword,
+            new_password_confirm:
+              newPasswordConfirm,
+          }),
+      }
+    );
+
+  return parsePasswordResponse<AccountRecoveryResetPasswordResponse>(
+    response,
+    "Não foi possível alterar sua senha agora. Tente novamente."
+  );
+}
+
+
+export async function changePassword({
+  currentPassword,
+  newPassword,
+  newPasswordConfirm,
+}: PasswordChangeInput):
+  Promise<{
+    detail: string;
+  }> {
+
+  await ensureCsrfCookie();
+
+  const response =
+    await fetch(
+      `${API_URL}/api/accounts/password/change/`,
+      {
+        method:
+          "POST",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+
+        headers: {
+          "Content-Type":
+            "application/json",
+
+          ...getCsrfHeaders(),
+        },
+
+        body:
+          JSON.stringify({
+            current_password:
+              currentPassword,
+            new_password:
+              newPassword,
+            new_password_confirm:
+              newPasswordConfirm,
+          }),
+      }
+    );
+
+  return parsePasswordResponse<{
+    detail: string;
+  }>(
+    response,
+    "Não foi possível alterar sua senha agora. Tente novamente."
+  );
+}
+
+
+export async function rotateRecoveryKey({
+  currentPassword,
+}: AccountRecoveryRotateKeyInput):
+  Promise<AccountRecoveryRotateKeyResponse> {
+
+  await ensureCsrfCookie();
+
+  const response =
+    await fetch(
+      `${API_URL}/api/accounts/recovery/rotate-key/`,
+      {
+        method:
+          "POST",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+
+        headers: {
+          "Content-Type":
+            "application/json",
+
+          ...getCsrfHeaders(),
+        },
+
+        body:
+          JSON.stringify({
+            current_password:
+              currentPassword,
+          }),
+      }
+    );
+
+  return parsePasswordResponse<AccountRecoveryRotateKeyResponse>(
+    response,
+    "Não foi possível gerar uma nova chave agora. Tente novamente."
+  );
+}
+
+
+export async function changeSecurityQuestions({
+  currentPassword,
+  question1,
+  answer1,
+  question2,
+  answer2,
+}: AccountRecoveryChangeQuestionsInput):
+  Promise<AccountRecoveryChangeQuestionsResponse> {
+
+  await ensureCsrfCookie();
+
+  const response =
+    await fetch(
+      `${API_URL}/api/accounts/recovery/change-questions/`,
+      {
+        method:
+          "POST",
+
+        credentials:
+          "include",
+
+        cache:
+          "no-store",
+
+        headers: {
+          "Content-Type":
+            "application/json",
+
+          ...getCsrfHeaders(),
+        },
+
+        body:
+          JSON.stringify({
+            current_password:
+              currentPassword,
+            question_1:
+              question1,
+            answer_1:
+              answer1,
+            question_2:
+              question2,
+            answer_2:
+              answer2,
+          }),
+      }
+    );
+
+  return parsePasswordResponse<AccountRecoveryChangeQuestionsResponse>(
+    response,
+    "Não foi possível alterar as perguntas agora. Tente novamente."
   );
 }
 
@@ -779,6 +1553,24 @@ export type SuperAdminClientUser = {
   is_active: boolean;
   is_staff?: boolean;
   is_superuser?: boolean;
+  recovery_security?: SuperAdminRecoverySecurity;
+};
+
+
+export type SuperAdminRecoverySecurity = {
+  recovery_configured: boolean;
+
+  recovery_key_configured: boolean;
+
+  security_questions_configured: boolean;
+
+  configured_at: string | null;
+
+  key_rotated_at: string | null;
+
+  temporarily_blocked: boolean;
+
+  blocked_until: string | null;
 };
 
 

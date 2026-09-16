@@ -25,6 +25,7 @@ from apps.billing.services import (
     SubscriptionService,
 )
 from apps.billing.stripe_services import (
+    StripeConfigurationError,
     StripeCreditPackageService,
     StripePlanError,
     StripePlanService,
@@ -112,6 +113,46 @@ def _sync_plan_with_stripe(
         StripePlanService.sync_plan(
             plan
         )
+
+    except StripeConfigurationError as exc:
+        if str(exc).startswith(
+            "STRIPE_SECRET_KEY"
+        ):
+            plan.stripe_sync_error = ""
+            plan.save(
+                update_fields=[
+                    "stripe_sync_error",
+                    "updated_at",
+                ]
+            )
+
+            _audit(
+                request=request,
+                action="PLAN_STRIPE_SYNC_SKIPPED",
+                entity=plan,
+                metadata={
+                    "plan_id": str(plan.pk),
+                    "reason": "STRIPE_NOT_CONFIGURED",
+                },
+            )
+
+            return None
+
+        plan.mark_stripe_sync_error(
+            str(exc)
+        )
+
+        _audit(
+            request=request,
+            action="PLAN_STRIPE_SYNC_FAILED",
+            entity=plan,
+            metadata={
+                "plan_id": str(plan.pk),
+                "error_type": exc.__class__.__name__,
+            },
+        )
+
+        return exc
 
     except StripePlanError as exc:
         plan.mark_stripe_sync_error(

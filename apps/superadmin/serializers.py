@@ -1,8 +1,13 @@
+from django.conf import settings
+
 from rest_framework import serializers
 
 from apps.audit.models import AuditLog
 from apps.billing.services import BillingAccessService
-from apps.accounts.models import User
+from apps.accounts.models import (
+    AccountRecoverySecurity,
+    User,
+)
 from apps.billing.models import (
     CreditPackage,
     CreditPurchase,
@@ -53,14 +58,49 @@ class SuperAdminUserSerializer(serializers.ModelSerializer):
         read_only=True,
         allow_null=True,
     )
+    recovery_security = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = [
             "id", "email", "name", "role", "role_label",
             "organization", "organization_name", "is_active",
-            "is_staff", "is_superuser", "date_joined",
+            "is_staff", "is_superuser", "recovery_security",
+            "date_joined",
         ]
+
+    def get_recovery_security(self, obj):
+        try:
+            security = obj.recovery_security
+
+        except AccountRecoverySecurity.DoesNotExist:
+            return {
+                "recovery_configured": False,
+                "recovery_key_configured": False,
+                "security_questions_configured": False,
+                "configured_at": None,
+                "key_rotated_at": None,
+                "temporarily_blocked": False,
+                "blocked_until": None,
+            }
+
+        return {
+            "recovery_configured": (
+                security.recovery_configured
+            ),
+            "recovery_key_configured": (
+                security.recovery_key_configured
+            ),
+            "security_questions_configured": (
+                security.security_questions_configured
+            ),
+            "configured_at": security.configured_at,
+            "key_rotated_at": security.key_rotated_at,
+            "temporarily_blocked": (
+                security.temporarily_blocked
+            ),
+            "blocked_until": security.blocked_until,
+        }
 
 
 class SuperAdminUserUpdateSerializer(serializers.ModelSerializer):
@@ -107,6 +147,9 @@ class SuperAdminPlanSerializer(serializers.ModelSerializer):
             obj.stripe_product_id
             and obj.stripe_price_id
         ):
+            return "SYNCED"
+
+        if not settings.STRIPE_SECRET_KEY:
             return "SYNCED"
 
         return "PENDING"

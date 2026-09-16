@@ -1164,6 +1164,69 @@ class CreditPurchaseService:
 
         return purchase, True
 
+    @classmethod
+    @transaction.atomic
+    def reusable_pending_purchase(
+        cls,
+        *,
+        organization,
+        package,
+        subscription,
+        stripe_customer_id,
+        request_signature,
+    ):
+        cls.expire_stale_pending_purchases()
+
+        subscription = (
+            Subscription.objects
+            .select_for_update()
+            .get(
+                pk=subscription.pk,
+            )
+        )
+
+        queryset = (
+            CreditPurchase.objects
+            .select_for_update()
+            .filter(
+                organization=organization,
+                package=package,
+                subscription=subscription,
+                status=CreditPurchaseStatus.PENDING,
+                stripe_customer_id=stripe_customer_id,
+            )
+            .exclude(
+                stripe_checkout_session_id__isnull=True,
+            )
+            .exclude(
+                stripe_checkout_session_id="",
+            )
+            .exclude(
+                stripe_checkout_url="",
+            )
+        )
+
+        exact = (
+            queryset
+            .filter(
+                request_signature=request_signature,
+            )
+            .order_by("-created_at")
+            .first()
+        )
+
+        if (
+            exact
+            and exact.is_pending_reservation
+        ):
+            return exact
+
+        return (
+            queryset
+            .order_by("-created_at")
+            .first()
+        )
+
     @staticmethod
     def _validate_payment(
         *,

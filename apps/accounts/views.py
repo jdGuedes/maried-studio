@@ -2,8 +2,11 @@ from django.contrib.auth import (
     authenticate,
     login,
     logout,
+    update_session_auth_hash,
 )
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.middleware.csrf import get_token
+from django.utils.cache import patch_cache_control
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import (
     csrf_protect,
@@ -33,12 +36,45 @@ from .permissions import (
 )
 
 from .serializers import (
+    AccountRecoveryChangeQuestionsSerializer,
+    AccountRecoveryPasswordResetSerializer,
+    AccountRecoveryQuestionsRequestSerializer,
+    AccountRecoveryQuestionsVerifySerializer,
+    AccountRecoveryRotateKeySerializer,
+    AccountRecoverySetupSerializer,
+    AccountRecoveryVerifyKeySerializer,
+    AuthenticatedPasswordChangeSerializer,
     LoginSerializer,
     OrganizationMemberCreateSerializer,
     OrganizationMemberSerializer,
     OrganizationMemberUpdateSerializer,
+    PasswordResetConfirmSerializer,
+    PasswordResetRequestSerializer,
     UserProfileSerializer,
 )
+
+from .services import (
+    AccountPasswordService,
+    PasswordChangeError,
+    AccountRecoveryError,
+    AccountRecoveryService,
+    AccountRecoveryTokenError,
+    PASSWORD_RESET_INVALID_DETAIL,
+    PASSWORD_RESET_NEUTRAL_DETAIL,
+    PasswordResetInvalidError,
+    PasswordResetService,
+)
+
+
+def no_store_response(
+    response,
+):
+    patch_cache_control(
+        response,
+        no_store=True,
+    )
+
+    return response
 
 
 # ==========================================================
@@ -198,6 +234,551 @@ class LogoutView(
                 )
             },
             status=status.HTTP_200_OK,
+        )
+
+
+# ==========================================================
+# PASSWORD CHANGE
+# ==========================================================
+
+@method_decorator(
+    csrf_protect,
+    name="dispatch",
+)
+class AuthenticatedPasswordChangeView(
+    APIView
+):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def post(
+        self,
+        request,
+    ):
+        serializer = AuthenticatedPasswordChangeSerializer(
+            data=request.data,
+            context={
+                "request": request,
+            },
+        )
+
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        data = serializer.validated_data
+
+        try:
+            user = (
+                AccountPasswordService
+                .change_authenticated_password(
+                    user=request.user,
+                    current_password=data[
+                        "current_password"
+                    ],
+                    new_password=data[
+                        "new_password"
+                    ],
+                )
+            )
+
+        except PasswordChangeError as exc:
+            return Response(
+                {
+                    "code": (
+                        "current_password_invalid"
+                    ),
+                    "detail": exc.detail,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        update_session_auth_hash(
+            request,
+            user,
+        )
+
+        return Response(
+            {
+                "detail": (
+                    "Senha alterada com sucesso."
+                )
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+# ==========================================================
+# PASSWORD RESET
+# ==========================================================
+
+@method_decorator(
+    csrf_protect,
+    name="dispatch",
+)
+class PasswordResetRequestView(
+    APIView
+):
+    permission_classes = [
+        permissions.AllowAny,
+    ]
+
+    authentication_classes = []
+
+    def post(
+        self,
+        request,
+    ):
+        serializer = PasswordResetRequestSerializer(
+            data=request.data
+        )
+
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        PasswordResetService().request_reset(
+            email=serializer.validated_data["email"]
+        )
+
+        return Response(
+            {
+                "detail": PASSWORD_RESET_NEUTRAL_DETAIL,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+@method_decorator(
+    csrf_protect,
+    name="dispatch",
+)
+class PasswordResetConfirmView(
+    APIView
+):
+    permission_classes = [
+        permissions.AllowAny,
+    ]
+
+    authentication_classes = []
+
+    def post(
+        self,
+        request,
+    ):
+        serializer = PasswordResetConfirmSerializer(
+            data=request.data
+        )
+
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        data = serializer.validated_data
+
+        try:
+            PasswordResetService().confirm_reset(
+                uid=data["uid"],
+                token=data["token"],
+                new_password=data["new_password"],
+            )
+
+        except PasswordResetInvalidError:
+            return Response(
+                {
+                    "detail": PASSWORD_RESET_INVALID_DETAIL,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        except DjangoValidationError as exc:
+            return Response(
+                {
+                    "new_password": list(
+                        exc.messages
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(
+            {
+                "detail": (
+                    "Senha alterada com sucesso."
+                )
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+# ==========================================================
+# ACCOUNT RECOVERY AUTÔNOMO
+# ==========================================================
+
+class AccountRecoveryStatusView(
+    APIView
+):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def get(
+        self,
+        request,
+    ):
+        return Response(
+            AccountRecoveryService.status_for_user(
+                request.user
+            ),
+            status=status.HTTP_200_OK,
+        )
+
+
+@method_decorator(
+    csrf_protect,
+    name="dispatch",
+)
+class AccountRecoverySetupView(
+    APIView
+):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def post(
+        self,
+        request,
+    ):
+        serializer = AccountRecoverySetupSerializer(
+            data=request.data
+        )
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        try:
+            result = AccountRecoveryService.setup(
+                user=request.user,
+                **serializer.validated_data,
+            )
+
+        except AccountRecoveryError as exc:
+            return Response(
+                {
+                    "detail": exc.detail,
+                },
+                status=exc.status_code,
+            )
+
+        return no_store_response(
+            Response(
+                result,
+                status=status.HTTP_201_CREATED,
+            )
+        )
+
+
+@method_decorator(
+    csrf_protect,
+    name="dispatch",
+)
+class AccountRecoveryRotateKeyView(
+    APIView
+):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def post(
+        self,
+        request,
+    ):
+        serializer = AccountRecoveryRotateKeySerializer(
+            data=request.data
+        )
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        try:
+            result = (
+                AccountRecoveryService
+                .rotate_key_authenticated(
+                    user=request.user,
+                    current_password=(
+                        serializer.validated_data[
+                            "current_password"
+                        ]
+                    ),
+                )
+            )
+
+        except AccountRecoveryError as exc:
+            return Response(
+                {
+                    "detail": exc.detail,
+                },
+                status=exc.status_code,
+            )
+
+        return no_store_response(
+            Response(
+                result,
+                status=status.HTTP_200_OK,
+            )
+        )
+
+
+@method_decorator(
+    csrf_protect,
+    name="dispatch",
+)
+class AccountRecoveryChangeQuestionsView(
+    APIView
+):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def post(
+        self,
+        request,
+    ):
+        serializer = AccountRecoveryChangeQuestionsSerializer(
+            data=request.data
+        )
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        data = serializer.validated_data
+
+        try:
+            result = (
+                AccountRecoveryService
+                .change_questions_authenticated(
+                    user=request.user,
+                    current_password=data["current_password"],
+                    question_1=data["question_1"],
+                    answer_1=data["answer_1"],
+                    question_2=data["question_2"],
+                    answer_2=data["answer_2"],
+                )
+            )
+
+        except AccountRecoveryError as exc:
+            return Response(
+                {
+                    "detail": exc.detail,
+                },
+                status=exc.status_code,
+            )
+
+        return no_store_response(
+            Response(
+                result,
+                status=status.HTTP_200_OK,
+            )
+        )
+
+
+@method_decorator(
+    csrf_protect,
+    name="dispatch",
+)
+class AccountRecoveryVerifyKeyView(
+    APIView
+):
+    permission_classes = [
+        permissions.AllowAny,
+    ]
+    authentication_classes = []
+
+    def post(
+        self,
+        request,
+    ):
+        serializer = AccountRecoveryVerifyKeySerializer(
+            data=request.data
+        )
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        try:
+            result = (
+                AccountRecoveryService
+                .verify_recovery_key(
+                    **serializer.validated_data
+                )
+            )
+
+        except AccountRecoveryError as exc:
+            return Response(
+                {
+                    "detail": exc.detail,
+                },
+                status=exc.status_code,
+            )
+
+        return no_store_response(
+            Response(
+                result,
+                status=status.HTTP_200_OK,
+            )
+        )
+
+
+@method_decorator(
+    csrf_protect,
+    name="dispatch",
+)
+class AccountRecoveryQuestionsView(
+    APIView
+):
+    permission_classes = [
+        permissions.AllowAny,
+    ]
+    authentication_classes = []
+
+    def post(
+        self,
+        request,
+    ):
+        serializer = AccountRecoveryQuestionsRequestSerializer(
+            data=request.data
+        )
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        result = (
+            AccountRecoveryService
+            .create_questions_challenge(
+                email=serializer.validated_data[
+                    "email"
+                ]
+            )
+        )
+
+        return no_store_response(
+            Response(
+                result,
+                status=status.HTTP_200_OK,
+            )
+        )
+
+
+@method_decorator(
+    csrf_protect,
+    name="dispatch",
+)
+class AccountRecoveryQuestionsVerifyView(
+    APIView
+):
+    permission_classes = [
+        permissions.AllowAny,
+    ]
+    authentication_classes = []
+
+    def post(
+        self,
+        request,
+    ):
+        serializer = AccountRecoveryQuestionsVerifySerializer(
+            data=request.data
+        )
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        try:
+            result = (
+                AccountRecoveryService
+                .verify_questions(
+                    **serializer.validated_data
+                )
+            )
+
+        except AccountRecoveryError as exc:
+            return Response(
+                {
+                    "detail": exc.detail,
+                },
+                status=exc.status_code,
+            )
+
+        return no_store_response(
+            Response(
+                result,
+                status=status.HTTP_200_OK,
+            )
+        )
+
+
+@method_decorator(
+    csrf_protect,
+    name="dispatch",
+)
+class AccountRecoveryPasswordResetView(
+    APIView
+):
+    permission_classes = [
+        permissions.AllowAny,
+    ]
+    authentication_classes = []
+
+    def post(
+        self,
+        request,
+    ):
+        serializer = AccountRecoveryPasswordResetSerializer(
+            data=request.data
+        )
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        data = serializer.validated_data
+
+        try:
+            result = AccountRecoveryService.reset_password(
+                recovery_token=data["recovery_token"],
+                new_password=data["new_password"],
+            )
+
+        except AccountRecoveryTokenError as exc:
+            return Response(
+                {
+                    "detail": exc.detail,
+                },
+                status=exc.status_code,
+            )
+
+        except AccountRecoveryError as exc:
+            return Response(
+                {
+                    "detail": exc.detail,
+                },
+                status=exc.status_code,
+            )
+
+        except DjangoValidationError as exc:
+            return Response(
+                {
+                    "new_password": list(
+                        exc.messages
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return no_store_response(
+            Response(
+                result,
+                status=status.HTTP_200_OK,
+            )
         )
 
 

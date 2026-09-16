@@ -32,6 +32,27 @@ export type UserProfile = {
   is_superuser: boolean;
 
   organization: ProfileOrganization | null;
+
+  recovery?: AccountRecoveryStatus;
+
+  recovery_configured?: boolean;
+};
+
+
+export type AccountRecoveryStatus = {
+  recovery_configured: boolean;
+
+  recovery_key_configured: boolean;
+
+  security_questions_configured: boolean;
+
+  configured_at: string | null;
+
+  key_rotated_at: string | null;
+
+  temporarily_blocked: boolean;
+
+  blocked_until: string | null;
 };
 
 

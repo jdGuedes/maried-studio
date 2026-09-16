@@ -319,3 +319,34 @@ Dependências principais:
 
 Estado operacional:
 A estratégia está documentada. A execução paralela só deve começar quando task files e locks aplicáveis estiverem definidos.
+## AUTH-002 - Recuperacao autonoma de conta
+
+Status: `REVIEW`.
+
+Implementado:
+
+- modelo `AccountRecoverySecurity` para metadados e hashes de recovery;
+- modelo `AccountRecoveryQuestionChallenge` para fallback por perguntas;
+- setup autenticado em `/api/accounts/recovery/setup/`;
+- status seguro em `/api/accounts/recovery/status/`;
+- recuperacao publica por Recovery Key em `/api/accounts/recovery/verify-key/`;
+- fallback publico por perguntas em `/api/accounts/recovery/questions/` e
+  `/api/accounts/recovery/questions/verify/`;
+- reset por autorizacao temporaria em `/api/accounts/recovery/reset-password/`;
+- rotacao autenticada de chave e alteracao autenticada de perguntas com senha atual;
+- bloqueio temporario por tentativas invalidas;
+- frontend `/configurar-recuperacao` e `/esqueci-senha` autonomo;
+- metadados seguros de recuperacao no detalhe SuperAdmin de cliente.
+
+Regras preservadas:
+
+- senha, Recovery Key, respostas, hashes e tokens nao sao expostos ao SuperAdmin;
+- Resend/email permanece como fator futuro opcional;
+- usuarios SuperAdmin nao sao obrigados ao onboarding de recovery;
+- prompt engine, billing, creditos e geracao nao foram refatorados.
+
+Pendencias:
+
+- homologacao manual com conta de teste;
+- SECURITY-002-P1-002 deve incluir os endpoints de recovery no rate limit geral;
+- email verificado/Resend pode ser retomado como fator futuro.

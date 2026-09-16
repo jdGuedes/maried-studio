@@ -15,6 +15,10 @@ import {
   type CreditWallet,
 } from "@/lib/credit-wallet";
 
+import {
+  useProfile,
+} from "@/providers/profile-provider";
+
 
 // ==========================================================
 // CONTEXTO
@@ -61,6 +65,13 @@ type CreditWalletProviderProps = {
 export function CreditWalletProvider({
   children,
 }: CreditWalletProviderProps) {
+  const {
+    profile,
+    loading:
+      loadingProfile,
+  } =
+    useProfile();
+
   const [
     wallet,
     setWallet,
@@ -155,6 +166,28 @@ export function CreditWalletProvider({
     const timer =
       window.setTimeout(
         () => {
+          if (
+            loadingProfile
+          ) {
+            return;
+          }
+
+          if (
+            !profile
+          ) {
+            clearWallet();
+            return;
+          }
+
+          if (
+            !profile.is_superuser &&
+            profile.recovery_configured ===
+              false
+          ) {
+            clearWallet();
+            return;
+          }
+
           void refreshWallet();
         },
         0
@@ -165,7 +198,12 @@ export function CreditWalletProvider({
         timer
       );
     };
-  }, [refreshWallet]);
+  }, [
+    clearWallet,
+    loadingProfile,
+    profile,
+    refreshWallet,
+  ]);
 
 
   // ========================================================

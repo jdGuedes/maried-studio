@@ -1,5 +1,6 @@
 import logging
 
+from django.conf import settings
 from django.shortcuts import get_object_or_404
 
 from rest_framework import (
@@ -15,6 +16,10 @@ from rest_framework.views import APIView
 from apps.billing.services import (
     BillingAccessService,
     SubscriptionRequiredError,
+)
+from apps.accounts.services import (
+    AccountRecoveryError,
+    AccountRecoveryService,
 )
 from apps.common.pagination import ClientListPagination
 from apps.common.private_media import build_private_image_response
@@ -382,6 +387,20 @@ class GenerationCreateView(APIView):
                 },
                 status=status.HTTP_403_FORBIDDEN,
             )
+
+        if settings.ACCOUNT_RECOVERY_ENFORCE_ONBOARDING:
+            try:
+                AccountRecoveryService.ensure_user_can_operate(
+                    request.user
+                )
+
+            except AccountRecoveryError as exc:
+                return Response(
+                    {
+                        "detail": exc.detail,
+                    },
+                    status=exc.status_code,
+                )
 
         performance_tracker = GenerationPerformanceTracker()
 

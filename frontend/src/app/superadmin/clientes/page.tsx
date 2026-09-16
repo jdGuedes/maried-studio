@@ -155,7 +155,7 @@ export default function SuperAdminClientesPage() {
   return (
     <SuperAdminShell
       title="Clientes"
-      subtitle="Contas operacionais da V1: Organization, usuÃ¡rio principal, assinatura e carteira."
+      subtitle="Contas operacionais da V1: Organization, usuário principal, assinatura e carteira."
     >
       <div className="grid gap-5 xl:grid-cols-[360px_1fr]">
         <AdminCard>
@@ -179,7 +179,7 @@ export default function SuperAdminClientesPage() {
                 <option value="">Selecione</option>
                 {activePlans.map((plan) => (
                   <option key={plan.id} value={plan.id}>
-                    {plan.name} Â· {plan.credits_per_cycle} crÃ©ditos
+                    {plan.name} · {plan.credits_per_cycle} créditos
                   </option>
                 ))}
               </select>
@@ -234,7 +234,7 @@ export default function SuperAdminClientesPage() {
                       <th>E-mail</th>
                       <th>Plano</th>
                       <th>Assinatura</th>
-                      <th>CrÃ©ditos</th>
+                      <th>Créditos</th>
                       <th>Conta</th>
                       <th></th>
                     </tr>

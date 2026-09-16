@@ -1,3 +1,5 @@
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
 from apps.organizations.models import (
@@ -7,6 +9,10 @@ from apps.organizations.models import (
 from .models import (
     User,
     UserRole,
+)
+
+from .services import (
+    AccountRecoveryService,
 )
 
 
@@ -61,6 +67,10 @@ class UserProfileSerializer(
         )
     )
 
+    recovery = serializers.SerializerMethodField()
+
+    recovery_configured = serializers.SerializerMethodField()
+
     class Meta:
         model = User
 
@@ -73,6 +83,8 @@ class UserProfileSerializer(
             "organization",
             "organization_name",
             "is_superuser",
+            "recovery",
+            "recovery_configured",
         ]
 
         read_only_fields = [
@@ -82,7 +94,27 @@ class UserProfileSerializer(
             "role_label",
             "organization",
             "is_superuser",
+            "recovery",
+            "recovery_configured",
         ]
+
+    def get_recovery(
+        self,
+        obj,
+    ):
+        return AccountRecoveryService.status_for_user(
+            obj
+        )
+
+    def get_recovery_configured(
+        self,
+        obj,
+    ):
+        return (
+            self.get_recovery(
+                obj
+            )["recovery_configured"]
+        )
 
     def validate_name(
         self,
@@ -203,6 +235,308 @@ class LoginSerializer(
 # ==========================================================
 # MEMBRO — LEITURA
 # ==========================================================
+
+# ==========================================================
+# PASSWORD RESET
+# ==========================================================
+
+class AuthenticatedPasswordChangeSerializer(
+    serializers.Serializer
+):
+    current_password = serializers.CharField(
+        write_only=True,
+        trim_whitespace=False,
+    )
+
+    new_password = serializers.CharField(
+        write_only=True,
+        trim_whitespace=False,
+    )
+
+    new_password_confirm = serializers.CharField(
+        write_only=True,
+        trim_whitespace=False,
+    )
+
+    def validate(
+        self,
+        attrs,
+    ):
+        if (
+            attrs["new_password"]
+            != attrs["new_password_confirm"]
+        ):
+            raise serializers.ValidationError(
+                {
+                    "new_password_confirm": (
+                        "As novas senhas nÃ£o coincidem."
+                    )
+                }
+            )
+
+        user = self.context[
+            "request"
+        ].user
+
+        try:
+            validate_password(
+                attrs["new_password"],
+                user,
+            )
+
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(
+                {
+                    "new_password": list(
+                        exc.messages
+                    )
+                }
+            ) from exc
+
+        return attrs
+
+
+class PasswordResetRequestSerializer(
+    serializers.Serializer
+):
+    email = serializers.EmailField()
+
+    def validate_email(
+        self,
+        value,
+    ):
+        return (
+            User.objects
+            .normalize_email(
+                value
+            )
+        )
+
+
+class PasswordResetConfirmSerializer(
+    serializers.Serializer
+):
+    uid = serializers.CharField()
+
+    token = serializers.CharField()
+
+    new_password = serializers.CharField(
+        write_only=True,
+        trim_whitespace=False,
+    )
+
+    new_password_confirm = serializers.CharField(
+        write_only=True,
+        trim_whitespace=False,
+    )
+
+    def validate(
+        self,
+        attrs,
+    ):
+        if (
+            attrs["new_password"]
+            != attrs["new_password_confirm"]
+        ):
+            raise serializers.ValidationError(
+                {
+                    "new_password_confirm": (
+                        "As senhas não conferem."
+                    )
+                }
+            )
+
+        return attrs
+
+
+class AccountRecoverySetupSerializer(
+    serializers.Serializer
+):
+    question_1 = serializers.CharField(
+        max_length=255,
+        trim_whitespace=True,
+    )
+    answer_1 = serializers.CharField(
+        max_length=255,
+        trim_whitespace=False,
+        write_only=True,
+    )
+    question_2 = serializers.CharField(
+        max_length=255,
+        trim_whitespace=True,
+    )
+    answer_2 = serializers.CharField(
+        max_length=255,
+        trim_whitespace=False,
+        write_only=True,
+    )
+
+    def validate(
+        self,
+        attrs,
+    ):
+        if (
+            attrs["question_1"].strip().casefold()
+            == attrs["question_2"].strip().casefold()
+        ):
+            raise serializers.ValidationError(
+                {
+                    "question_2": (
+                        "Informe duas perguntas diferentes."
+                    )
+                }
+            )
+
+        if (
+            not attrs["answer_1"].strip()
+            or not attrs["answer_2"].strip()
+        ):
+            raise serializers.ValidationError(
+                "Informe as duas respostas de segurança."
+            )
+
+        return attrs
+
+
+class AccountRecoveryCurrentPasswordSerializer(
+    serializers.Serializer
+):
+    current_password = serializers.CharField(
+        write_only=True,
+        trim_whitespace=False,
+    )
+
+
+class AccountRecoveryRotateKeySerializer(
+    AccountRecoveryCurrentPasswordSerializer
+):
+    pass
+
+
+class AccountRecoveryChangeQuestionsSerializer(
+    AccountRecoveryCurrentPasswordSerializer,
+    AccountRecoverySetupSerializer,
+):
+    pass
+
+
+class AccountRecoveryVerifyKeySerializer(
+    serializers.Serializer
+):
+    email = serializers.EmailField()
+    recovery_key = serializers.CharField(
+        trim_whitespace=False,
+    )
+
+    def validate_email(
+        self,
+        value,
+    ):
+        return (
+            User.objects
+            .normalize_email(
+                value
+            )
+        )
+
+
+class AccountRecoveryQuestionsRequestSerializer(
+    serializers.Serializer
+):
+    email = serializers.EmailField()
+
+    def validate_email(
+        self,
+        value,
+    ):
+        return (
+            User.objects
+            .normalize_email(
+                value
+            )
+        )
+
+
+class AccountRecoveryQuestionsVerifySerializer(
+    serializers.Serializer
+):
+    challenge_id = serializers.CharField()
+    answers = serializers.ListField(
+        child=serializers.DictField(),
+        min_length=2,
+        max_length=2,
+    )
+
+    def validate_answers(
+        self,
+        value,
+    ):
+        normalized = []
+
+        for item in value:
+            question_id = item.get(
+                "question_id"
+            )
+            answer = item.get(
+                "answer"
+            )
+
+            if (
+                not question_id
+                or answer is None
+                or not str(answer).strip()
+            ):
+                raise serializers.ValidationError(
+                    "Informe as duas respostas de segurança."
+                )
+
+            normalized.append(
+                {
+                    "question_id": str(
+                        question_id
+                    ),
+                    "answer": str(
+                        answer
+                    ),
+                }
+            )
+
+        return normalized
+
+
+class AccountRecoveryPasswordResetSerializer(
+    serializers.Serializer
+):
+    recovery_token = serializers.CharField(
+        trim_whitespace=False,
+    )
+    new_password = serializers.CharField(
+        write_only=True,
+        trim_whitespace=False,
+    )
+    new_password_confirm = serializers.CharField(
+        write_only=True,
+        trim_whitespace=False,
+    )
+
+    def validate(
+        self,
+        attrs,
+    ):
+        if (
+            attrs["new_password"]
+            != attrs["new_password_confirm"]
+        ):
+            raise serializers.ValidationError(
+                {
+                    "new_password_confirm": (
+                        "As senhas não conferem."
+                    )
+                }
+            )
+
+        return attrs
+
 
 class OrganizationMemberSerializer(
     serializers.ModelSerializer

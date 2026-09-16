@@ -531,3 +531,23 @@ QA-001.md
 ```
 
 Usar `docs/tasks/TASK_TEMPLATE.md` como base.
+
+## Workstream AUTH
+
+### AUTH-002 - Recuperacao autonoma de conta
+
+Status: `REVIEW`.
+
+Escopo implementado:
+- setup autenticado de Recovery Key + duas perguntas de seguranca;
+- fluxo publico de recuperacao por Recovery Key;
+- fallback publico por perguntas de seguranca;
+- autorizacao temporaria de reset com expiracao;
+- troca de senha com rotacao obrigatoria da Recovery Key;
+- bloqueio temporario por tentativas invalidas;
+- metadados seguros para SuperAdmin.
+
+Pendencias futuras:
+- rate limit geral por endpoint/IP em SECURITY-002-P1-002;
+- fator futuro de recuperacao por email verificado/Resend;
+- homologacao manual com conta de teste.
