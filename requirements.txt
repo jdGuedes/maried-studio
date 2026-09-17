@@ -7,3 +7,4 @@ Pillow>=11
 dj-database-url>=2
 python-dotenv>=1
 psycopg[binary]>=3.2
+gunicorn>=23,<24

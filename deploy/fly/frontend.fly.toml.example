@@ -1,0 +1,23 @@
+# Template for the MARIED STUDIO Next.js frontend on Fly.io.
+# Copy this file outside the task flow, set the real app name, and deploy later.
+
+primary_region = "gru"
+
+[build]
+  dockerfile = "Dockerfile.frontend"
+  # NEXT_PUBLIC_API_URL is compiled into the browser bundle by Next.js.
+  # Set it to the backend API origin for each environment before building.
+  # [build.args]
+  #   NEXT_PUBLIC_API_URL = "https://api.your-domain.example"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 50
+    hard_limit = 100

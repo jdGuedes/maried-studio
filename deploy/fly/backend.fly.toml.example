@@ -1,0 +1,28 @@
+# Template for the MARIED STUDIO Django API and generation worker on Fly.io.
+# Copy this file outside the task flow, set the real app name, and deploy later.
+
+primary_region = "gru"
+
+[build]
+  dockerfile = "Dockerfile.backend"
+
+[deploy]
+  # Runs once per release. Do not run migrations in web/worker startup commands.
+  release_command = "python manage.py migrate"
+
+[processes]
+  web = "gunicorn config.wsgi:application --bind 0.0.0.0:${PORT:-8000} --workers ${WEB_CONCURRENCY:-2} --timeout ${WEB_TIMEOUT:-120}"
+  worker = "python manage.py process_generation_queue"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["web"]
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 20
+    hard_limit = 40
