@@ -6,6 +6,7 @@ import dj_database_url
 from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
+from .cache import build_caches_config
 from .storage import build_storages_config
 
 
@@ -490,6 +491,11 @@ PRIVATE_MEDIA_BY_DEFAULT = env_bool(
 DJANGO_MEDIA_STORAGE_BACKEND, STORAGES = build_storages_config(
     django_env=DJANGO_ENV,
     base_dir=BASE_DIR,
+    env=os.environ,
+)
+
+DJANGO_CACHE_BACKEND, CACHES = build_caches_config(
+    django_env=DJANGO_ENV,
     env=os.environ,
 )
 

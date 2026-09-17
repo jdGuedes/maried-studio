@@ -42,7 +42,6 @@ Do not run migrations from the web or worker startup commands.
 
 ## Pending Deploy Dependencies
 
-- Shared Redis/cache remains pending in `SECURITY-002-P1-003`.
 - Health/readiness endpoints remain pending in `DEPLOY-002-FIX-004`.
 
 ## Private Media Storage
@@ -65,3 +64,23 @@ Django Web and the generation worker must receive credentials for the same envir
 Static files are not moved to Supabase Storage in this task.
 
 Existing local media is not migrated automatically. If production media exists before enabling remote storage, handle it in `DEPLOY-STORAGE-MIGRATION-001`.
+
+## Shared Cache / Rate Limiting
+
+Local development uses Django `LocMemCache` and does not require Redis.
+
+Staging and production must use a Redis-compatible shared cache through Django's Cache API. The application remains provider-neutral; Upstash or another Redis-compatible provider can be selected by infrastructure later.
+
+Required environment variable names for staging/production:
+
+- `DJANGO_CACHE_BACKEND=redis`
+- `DJANGO_CACHE_KEY_PREFIX`
+- `REDIS_URL`
+
+Use `rediss://` for remote Redis in staging and production. Do not disable certificate verification.
+
+`REDIS_URL` must be configured as a backend secret only. Never expose it to the frontend or any `NEXT_PUBLIC_*` variable.
+
+Configuration missing or insecure in staging/production fails fast at settings load. Runtime Redis outages preserve the existing rate-limit fail-open behavior: security-sensitive requests continue, a safe warning is logged, and rate-limit protection is temporarily reduced.
+
+Rate-limit counters are ephemeral security state. They are not business state and do not require the same backup policy as PostgreSQL or private object storage.
