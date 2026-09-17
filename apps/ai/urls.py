@@ -2,6 +2,7 @@ from django.urls import path
 
 from .views import (
     ModelReferenceListView,
+    ModelReferencePreviewDownloadView,
 )
 
 
@@ -13,5 +14,10 @@ urlpatterns = [
         "model-references/",
         ModelReferenceListView.as_view(),
         name="model-reference-list",
+    ),
+    path(
+        "model-references/<uuid:pk>/preview/",
+        ModelReferencePreviewDownloadView.as_view(),
+        name="model-reference-preview-download",
     ),
 ]

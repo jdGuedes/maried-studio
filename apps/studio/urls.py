@@ -7,6 +7,7 @@ from .views import (
     GeneratedImageDeleteView,
     GeneratedImageDownloadView,
     SceneTemplateListView,
+    SceneTemplatePreviewDownloadView,
 )
 
 
@@ -21,6 +22,12 @@ urlpatterns = [
         "templates/",
         SceneTemplateListView.as_view(),
         name="scene-template-list",
+    ),
+
+    path(
+        "templates/<uuid:pk>/preview/",
+        SceneTemplatePreviewDownloadView.as_view(),
+        name="scene-template-preview-download",
     ),
 
     path(

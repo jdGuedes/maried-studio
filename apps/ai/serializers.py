@@ -1,5 +1,7 @@
 from rest_framework import serializers
 
+from apps.common.private_media import build_private_media_url
+
 from .models import (
     ModelReference,
 )
@@ -8,6 +10,10 @@ from .models import (
 class ModelReferenceSerializer(
     serializers.ModelSerializer
 ):
+    preview_image = (
+        serializers.SerializerMethodField()
+    )
+
     preview_image_url = (
         serializers.SerializerMethodField()
     )
@@ -42,6 +48,14 @@ class ModelReferenceSerializer(
         self,
         obj,
     ):
+        return self.get_preview_image(
+            obj
+        )
+
+    def get_preview_image(
+        self,
+        obj,
+    ):
         if not obj.preview_image:
             return None
 
@@ -51,14 +65,8 @@ class ModelReferenceSerializer(
             )
         )
 
-        url = obj.preview_image.url
-
-        if request:
-            return (
-                request
-                .build_absolute_uri(
-                    url
-                )
-            )
-
-        return url
+        return build_private_media_url(
+            request,
+            "ai:model-reference-preview-download",
+            pk=obj.pk,
+        )

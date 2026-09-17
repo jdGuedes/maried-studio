@@ -118,6 +118,58 @@ class ModelReferenceApiTests(
             codes,
         )
 
+    def test_preview_urls_use_authorized_django_endpoint(
+        self,
+    ):
+        reference = ModelReference.objects.create(
+            code="MODEL_PREVIEW",
+            name="Modelo com preview",
+            slug="modelo-com-preview",
+            description="Referencia com preview.",
+            prompt_instruction="Use a referencia com preview.",
+            preview_image=(
+                "model-references/previews/model-preview.png"
+            ),
+            is_active=True,
+        )
+
+        response = self.client.get(
+            reverse(
+                "ai:model-reference-list"
+            )
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+        )
+
+        item = next(
+            result
+            for result in response.data["results"]
+            if result["code"] == reference.code
+        )
+
+        expected_path = reverse(
+            "ai:model-reference-preview-download",
+            kwargs={
+                "pk": reference.pk,
+            },
+        )
+
+        self.assertEqual(
+            item["preview_image"],
+            f"http://testserver{expected_path}",
+        )
+        self.assertEqual(
+            item["preview_image_url"],
+            f"http://testserver{expected_path}",
+        )
+        self.assertNotIn(
+            "/media/",
+            item["preview_image_url"],
+        )
+
     def test_list_requires_authentication(
         self,
     ):

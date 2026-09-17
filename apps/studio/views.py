@@ -1,4 +1,5 @@
 import logging
+import mimetypes
 
 from django.conf import settings
 from django.shortcuts import get_object_or_404
@@ -235,6 +236,40 @@ class SceneTemplateListView(
         return qs.order_by(
             "sort_order",
             "name",
+        )
+
+
+class SceneTemplatePreviewDownloadView(
+    APIView
+):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def get(
+        self,
+        request,
+        pk,
+    ):
+        template = get_object_or_404(
+            SceneTemplate.objects.filter(
+                is_active=True,
+                generation_mode=GenerationMode.INSTAGRAM,
+            ),
+            pk=pk,
+        )
+
+        return build_private_image_response(
+            template.preview_image,
+            mime_type=(
+                mimetypes.guess_type(
+                    template.preview_image.name
+                )[0]
+                or "application/octet-stream"
+            ),
+            filename_prefix=(
+                "maried-scene-template"
+            ),
         )
 
 

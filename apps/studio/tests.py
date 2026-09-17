@@ -45,7 +45,7 @@ from apps.studio.models import (
     GenerationStatus,
     SceneTemplate,
 )
-from apps.studio.serializers import GenerationCreateSerializer
+from apps.studio.serializers import GenerationCreateSerializer, SceneTemplateSerializer
 from apps.studio.services.generation_service import GenerationService
 from apps.studio.services.generation_queue import GenerationQueueService
 from apps.studio.services.performance import GenerationPerformanceTracker
@@ -119,6 +119,44 @@ class GenerationCreateSerializerTests(
         self.assertIn(
             "model_reference_id",
             serializer.errors,
+        )
+
+
+class SceneTemplateSerializerTests(
+    TestCase
+):
+    def test_preview_image_uses_authorized_django_endpoint(self):
+        template = SceneTemplate.objects.create(
+            name="Lifestyle",
+            slug="lifestyle-private-preview",
+            generation_mode=GenerationMode.INSTAGRAM,
+            category=ProductCategory.EARRING,
+            preview_image="templates/previews/lifestyle.png",
+            prompt_template="Prompt de teste.",
+            is_active=True,
+        )
+
+        serializer = SceneTemplateSerializer(
+            template,
+            context={
+                "request": None,
+            },
+        )
+
+        expected_path = reverse(
+            "scene-template-preview-download",
+            kwargs={
+                "pk": template.pk,
+            },
+        )
+
+        self.assertEqual(
+            serializer.data["preview_image"],
+            expected_path,
+        )
+        self.assertNotIn(
+            "/media/",
+            serializer.data["preview_image"],
         )
 
     def test_body_detail_rejects_scene_template(
@@ -3176,6 +3214,59 @@ class ProductReuseGenerationApiTests(
         self.assertEqual(
             extra["output_size_bytes"],
             len(self.image_bytes()),
+        )
+
+        self.wallet.refresh_from_db()
+        self.assertEqual(
+            self.wallet.plan_balance,
+            10,
+        )
+        self.assertEqual(
+            self.wallet.reserved_balance,
+            0,
+        )
+
+    def test_generation_storage_read_failure_refunds_credit_before_provider(
+        self,
+    ):
+        response = self.post_generation(
+            product=self.product,
+            key="reuse-storage-read-failure",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            202,
+        )
+
+        generation = Generation.objects.get(
+            id=response.data["id"]
+        )
+
+        with patch(
+            "apps.ai.providers.openai.OpenAIImageProvider.generate"
+        ) as provider_generate:
+            with patch(
+                "django.db.models.fields.files.FieldFile.open",
+                side_effect=RuntimeError("storage read down"),
+            ):
+                with self.assertRaises(
+                    RuntimeError
+                ):
+                    GenerationQueueService.process_generation(
+                        generation.id
+                    )
+
+        provider_generate.assert_not_called()
+
+        generation.refresh_from_db()
+        self.assertEqual(
+            generation.status,
+            GenerationStatus.FAILED,
+        )
+        self.assertEqual(
+            generation.error_code,
+            "RuntimeError",
         )
 
         self.wallet.refresh_from_db()

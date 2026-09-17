@@ -42,6 +42,26 @@ Do not run migrations from the web or worker startup commands.
 
 ## Pending Deploy Dependencies
 
-- Private media storage remains pending in `DEPLOY-002-FIX-002`.
 - Shared Redis/cache remains pending in `SECURITY-002-P1-003`.
 - Health/readiness endpoints remain pending in `DEPLOY-002-FIX-004`.
+
+## Private Media Storage
+
+Local development uses Django `FileSystemStorage`.
+
+Staging and production use Django's `STORAGES` abstraction with Supabase Storage through its S3-compatible endpoint. The bucket must be private and provisioned outside application startup.
+
+Required environment variable names:
+
+- `DJANGO_MEDIA_STORAGE_BACKEND=supabase`
+- `SUPABASE_STORAGE_ENDPOINT`
+- `SUPABASE_STORAGE_REGION`
+- `SUPABASE_STORAGE_BUCKET`
+- `SUPABASE_STORAGE_ACCESS_KEY`
+- `SUPABASE_STORAGE_SECRET_KEY`
+
+Django Web and the generation worker must receive credentials for the same environment-specific bucket. Do not expose these values to the frontend.
+
+Static files are not moved to Supabase Storage in this task.
+
+Existing local media is not migrated automatically. If production media exists before enabling remote storage, handle it in `DEPLOY-STORAGE-MIGRATION-001`.

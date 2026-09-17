@@ -6,6 +6,8 @@ import dj_database_url
 from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
+from .storage import build_storages_config
+
 
 # ============================================================
 # BASE
@@ -483,6 +485,12 @@ MEDIA_ROOT = (
 PRIVATE_MEDIA_BY_DEFAULT = env_bool(
     "DJANGO_PRIVATE_MEDIA_BY_DEFAULT",
     default=True,
+)
+
+DJANGO_MEDIA_STORAGE_BACKEND, STORAGES = build_storages_config(
+    django_env=DJANGO_ENV,
+    base_dir=BASE_DIR,
+    env=os.environ,
 )
 
 

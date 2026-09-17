@@ -16,6 +16,8 @@ from .models import (
 # ==========================================================
 
 class SceneTemplateSerializer(serializers.ModelSerializer):
+    preview_image = serializers.SerializerMethodField()
+
     class Meta:
         model = SceneTemplate
 
@@ -29,6 +31,23 @@ class SceneTemplateSerializer(serializers.ModelSerializer):
             "version",
             "sort_order",
         ]
+
+    def get_preview_image(
+        self,
+        obj,
+    ):
+        if not obj.preview_image:
+            return None
+
+        request = self.context.get(
+            "request"
+        )
+
+        return build_private_media_url(
+            request,
+            "scene-template-preview-download",
+            pk=obj.pk,
+        )
 
 
 # ==========================================================
