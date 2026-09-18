@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 
 from .cache import build_caches_config
 from .storage import build_storages_config
+from .web_security import REMOTE_WEB_ENVS, build_web_security_config
 
 
 # ============================================================
@@ -87,50 +88,41 @@ IS_PRODUCTION = (
     DJANGO_ENV == "production"
 )
 
+IS_REMOTE_ENV = (
+    DJANGO_ENV in REMOTE_WEB_ENVS
+)
+
 SECRET_KEY = os.getenv(
     "DJANGO_SECRET_KEY",
     "",
 )
 
 if not SECRET_KEY:
-    if IS_PRODUCTION:
+    if IS_REMOTE_ENV:
         raise ImproperlyConfigured(
-            "DJANGO_SECRET_KEY precisa estar configurado em produção."
+            "DJANGO_SECRET_KEY precisa estar configurado em staging/produção."
         )
 
     SECRET_KEY = "dev-only-secret-key"
 
 if (
-    IS_PRODUCTION
+    IS_REMOTE_ENV
     and SECRET_KEY == "dev-only-secret-key"
 ):
     raise ImproperlyConfigured(
-        "DJANGO_SECRET_KEY de desenvolvimento não pode ser usada em produção."
+        "DJANGO_SECRET_KEY de desenvolvimento não pode ser usada "
+        "em staging/produção."
     )
 
 DEBUG = env_bool(
     "DJANGO_DEBUG",
-    default=not IS_PRODUCTION,
+    default=not IS_REMOTE_ENV,
 )
 
-if IS_PRODUCTION and DEBUG:
+if IS_REMOTE_ENV and DEBUG:
     raise ImproperlyConfigured(
-        "DJANGO_DEBUG deve ser false em produção."
+        "DJANGO_DEBUG deve ser false em staging/produção."
     )
-
-ALLOWED_HOSTS = env_list(
-    "DJANGO_ALLOWED_HOSTS",
-    default=[
-        "127.0.0.1",
-        "localhost",
-    ],
-)
-
-if IS_PRODUCTION and not ALLOWED_HOSTS:
-    raise ImproperlyConfigured(
-        "DJANGO_ALLOWED_HOSTS precisa estar configurado em produção."
-    )
-
 
 # ============================================================
 # APLICAÇÕES
@@ -608,13 +600,16 @@ STRIPE_ALLOW_LIVE_MODE = env_bool(
 
 
 # ============================================================
-# FRONTEND LOCAL - NEXT.JS
+# FRONTEND / WEB SECURITY
 # ============================================================
 
-FRONTEND_URL = os.getenv(
-    "FRONTEND_URL",
-    "http://localhost:3000",
-).rstrip("/")
+WEB_SECURITY = build_web_security_config(
+    django_env=DJANGO_ENV,
+    env=os.environ,
+)
+
+FRONTEND_URL = WEB_SECURITY["FRONTEND_URL"]
+ALLOWED_HOSTS = WEB_SECURITY["ALLOWED_HOSTS"]
 
 EMAIL_PASSWORD_RECOVERY_ENABLED = env_bool(
     "EMAIL_PASSWORD_RECOVERY_ENABLED",
@@ -639,97 +634,53 @@ EMAIL_FROM = (
     )
 )
 
-CORS_ALLOWED_ORIGINS = env_list(
-    "DJANGO_CORS_ALLOWED_ORIGINS",
-    default=[] if IS_PRODUCTION else [
-        "http://localhost:3000",
-    ],
-)
+CORS_ALLOWED_ORIGINS = WEB_SECURITY["CORS_ALLOWED_ORIGINS"]
 
-if IS_PRODUCTION and not CORS_ALLOWED_ORIGINS:
-    raise ImproperlyConfigured(
-        "DJANGO_CORS_ALLOWED_ORIGINS precisa estar configurado em produção."
-    )
-
-CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_CREDENTIALS = WEB_SECURITY["CORS_ALLOW_CREDENTIALS"]
 
 
 # ============================================================
 # CSRF
 # ============================================================
 
-CSRF_TRUSTED_ORIGINS = env_list(
-    "DJANGO_CSRF_TRUSTED_ORIGINS",
-    default=[] if IS_PRODUCTION else [
-        "http://localhost:3000",
-    ],
-)
-
-if IS_PRODUCTION and not CSRF_TRUSTED_ORIGINS:
-    raise ImproperlyConfigured(
-        "DJANGO_CSRF_TRUSTED_ORIGINS precisa estar configurado em produção."
-    )
+CSRF_TRUSTED_ORIGINS = WEB_SECURITY["CSRF_TRUSTED_ORIGINS"]
 
 
 # ============================================================
 # COOKIES / HTTPS
 # ============================================================
 
-SESSION_COOKIE_SECURE = env_bool(
-    "DJANGO_SESSION_COOKIE_SECURE",
-    default=IS_PRODUCTION,
-)
+SESSION_COOKIE_SECURE = WEB_SECURITY["SESSION_COOKIE_SECURE"]
 
-CSRF_COOKIE_SECURE = env_bool(
-    "DJANGO_CSRF_COOKIE_SECURE",
-    default=IS_PRODUCTION,
-)
+CSRF_COOKIE_SECURE = WEB_SECURITY["CSRF_COOKIE_SECURE"]
 
-SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_HTTPONLY = WEB_SECURITY["SESSION_COOKIE_HTTPONLY"]
 
-CSRF_COOKIE_HTTPONLY = False
+CSRF_COOKIE_HTTPONLY = WEB_SECURITY["CSRF_COOKIE_HTTPONLY"]
 
-SESSION_COOKIE_SAMESITE = os.getenv(
-    "DJANGO_SESSION_COOKIE_SAMESITE",
-    "Lax",
-)
+SESSION_COOKIE_SAMESITE = WEB_SECURITY["SESSION_COOKIE_SAMESITE"]
 
-CSRF_COOKIE_SAMESITE = os.getenv(
-    "DJANGO_CSRF_COOKIE_SAMESITE",
-    "Lax",
-)
+CSRF_COOKIE_SAMESITE = WEB_SECURITY["CSRF_COOKIE_SAMESITE"]
 
-SECURE_SSL_REDIRECT = env_bool(
-    "DJANGO_SECURE_SSL_REDIRECT",
-    default=IS_PRODUCTION,
-)
+SESSION_COOKIE_DOMAIN = WEB_SECURITY["SESSION_COOKIE_DOMAIN"]
 
-SECURE_HSTS_SECONDS = env_int(
-    "DJANGO_SECURE_HSTS_SECONDS",
-    3600 if IS_PRODUCTION else 0,
-)
+CSRF_COOKIE_DOMAIN = WEB_SECURITY["CSRF_COOKIE_DOMAIN"]
 
-SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool(
-    "DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS",
-    default=False,
-)
+SECURE_SSL_REDIRECT = WEB_SECURITY["SECURE_SSL_REDIRECT"]
 
-SECURE_HSTS_PRELOAD = env_bool(
-    "DJANGO_SECURE_HSTS_PRELOAD",
-    default=False,
-)
+SECURE_HSTS_SECONDS = WEB_SECURITY["SECURE_HSTS_SECONDS"]
+
+SECURE_HSTS_INCLUDE_SUBDOMAINS = WEB_SECURITY[
+    "SECURE_HSTS_INCLUDE_SUBDOMAINS"
+]
+
+SECURE_HSTS_PRELOAD = WEB_SECURITY["SECURE_HSTS_PRELOAD"]
 
 SECURE_CONTENT_TYPE_NOSNIFF = True
 
-SECURE_REFERRER_POLICY = os.getenv(
-    "DJANGO_SECURE_REFERRER_POLICY",
-    "same-origin",
-)
+SECURE_REFERRER_POLICY = WEB_SECURITY["SECURE_REFERRER_POLICY"]
 
-if env_bool(
-    "DJANGO_USE_X_FORWARDED_PROTO",
-    default=IS_PRODUCTION,
-):
+if WEB_SECURITY["USE_X_FORWARDED_PROTO"]:
     SECURE_PROXY_SSL_HEADER = (
         "HTTP_X_FORWARDED_PROTO",
         "https",

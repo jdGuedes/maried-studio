@@ -16,7 +16,7 @@ Frontend:
 npm run start -- --hostname 0.0.0.0 --port ${PORT:-3000}
 ```
 
-`NEXT_PUBLIC_API_URL` is read by the Next.js client bundle at build time. Set a different build arg for staging and production before building the frontend image; otherwise the local development fallback may be compiled into the image.
+`NEXT_PUBLIC_API_URL` is read by the Next.js client bundle at build time. Set a different build arg for staging and production before building the frontend image; production builds fail fast when this value is missing.
 
 Backend:
 
@@ -84,3 +84,45 @@ Use `rediss://` for remote Redis in staging and production. Do not disable certi
 Configuration missing or insecure in staging/production fails fast at settings load. Runtime Redis outages preserve the existing rate-limit fail-open behavior: security-sensitive requests continue, a safe warning is logged, and rate-limit protection is temporarily reduced.
 
 Rate-limit counters are ephemeral security state. They are not business state and do not require the same backup policy as PostgreSQL or private object storage.
+
+## Domain, Cookies, CORS, and CSRF
+
+Local development uses HTTP localhost origins only:
+
+- Frontend: `http://localhost:3000`
+- Backend: `http://localhost:8000`
+
+Staging and production must provide explicit HTTPS configuration through environment variables:
+
+- `FRONTEND_URL`
+- `NEXT_PUBLIC_API_URL`
+- `DJANGO_ALLOWED_HOSTS`
+- `DJANGO_CORS_ALLOWED_ORIGINS`
+- `DJANGO_CSRF_TRUSTED_ORIGINS`
+- `DJANGO_SESSION_COOKIE_SECURE=true`
+- `DJANGO_CSRF_COOKIE_SECURE=true`
+- `DJANGO_SESSION_COOKIE_SAMESITE`
+- `DJANGO_CSRF_COOKIE_SAMESITE`
+- `DJANGO_SESSION_COOKIE_DOMAIN`
+- `DJANGO_CSRF_COOKIE_DOMAIN`
+- `DJANGO_SECURE_SSL_REDIRECT`
+- `DJANGO_USE_X_FORWARDED_PROTO`
+
+Staging and production reject localhost fallback, wildcard hosts, wildcard CORS origins, wildcard CSRF origins, and non-HTTPS origins.
+
+The preferred production topology is same-site cross-origin subdomains:
+
+- Frontend: `https://app.<domain>`
+- API: `https://api.<domain>`
+
+In that topology, the session cookie should remain host-only for the API whenever possible. The frontend must not read the session cookie; it only sends requests with `credentials: "include"`.
+
+The frontend currently reads the `csrftoken` cookie and sends it as `X-CSRFToken`, so the CSRF cookie intentionally remains readable by JavaScript. If the final domain requires sharing the CSRF cookie across subdomains, configure `DJANGO_CSRF_COOKIE_DOMAIN` only for the CSRF cookie. Do not broaden `DJANGO_SESSION_COOKIE_DOMAIN` unless there is a proven need.
+
+Use `SameSite=Lax` for same-site app/API subdomains when browser validation confirms the flow. Use `SameSite=None` only for a real cross-site staging topology, and only with secure cookies.
+
+Fly terminates TLS before Django. `DJANGO_USE_X_FORWARDED_PROTO=true` prepares Django to honor `X-Forwarded-Proto`; validate this behavior in staging before enabling production traffic.
+
+CORS is an allowlist for browser access, not authorization. Authentication, CSRF, permissions, private media authorization, and tenant isolation remain backend responsibilities.
+
+Before staging homologation, run a real browser test and inspect DevTools for `Set-Cookie`, `Secure`, `SameSite`, `Domain`, CORS headers, CSRF bootstrap, login, `/me`, logout, password change, account recovery, private media, and rate limit behavior.

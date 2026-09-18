@@ -2,15 +2,15 @@ import {
   ensureCsrfCookie,
 } from "@/lib/api";
 
+import {
+  API_URL,
+} from "@/lib/api-url";
+
 
 // ==========================================================
 // MARIED STUDIO
 // ASSINATURA DO CLIENTE
 // ==========================================================
-
-const API_URL =
-  process.env.NEXT_PUBLIC_API_URL ??
-  "http://localhost:8000";
 
 
 // ==========================================================
